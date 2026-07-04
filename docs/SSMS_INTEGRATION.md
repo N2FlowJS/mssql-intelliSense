@@ -1,66 +1,237 @@
-﻿# SSMS integration
+﻿# SSMS Integration
 
-`MssqlIntelliSense.SsmsExtension` is the host-independent adapter between an SSMS query editor and `MssqlIntelliSense.Core`. `MssqlIntelliSense.SsmsHost` is the installable Visual Studio Shell package for SSMS 22.
+`MssqlIntelliSense.SsmsHost` is a Visual Studio Shell (VSIX) package for **SSMS 22**, integrating IntelliSense and productivity features directly into the SSMS interface.
 
-## Build and install for SSMS 22
+## Architecture
+
+```
+SSMS 22 (.NET Framework 4.7.2)
+└── MssqlIntelliSense.SsmsHost Package (VSIX, .NET 4.7.2 managed)
+    ├── Menu: MSSQL IntelliSense
+    │   ├── MSSQL IntelliSense (Schema Explorer window)
+    │   ├── Refresh Schema
+    │   ├── Chat Agent (AI chat window)
+    │   └── Tool Lab
+    ├── Schema Explorer Window (WPF/XAML)
+    │   ├── Sidebar: Connections tree (SQLite cache)
+    │   └── Detail panel (object details, settings, about)
+    ├── Chat Agent Window (WPF/XAML)
+    └── Tool Lab Window (WPF/XAML)
+         │
+         └── (cross-process boundary)
+              │
+         .NET 10 CLI Engine (bundled runtime)
+         ├── SqlServerMetadataProvider
+         ├── SqlCompletionProvider
+         ├── DangerousSqlAnalyzer
+         ├── OpenAiSqlAgent
+         ├── SelectStarExpander
+         └── TableQualifier
+```
+
+The extension runs in .NET Framework 4.7.2 (SSMS process). Heavy tasks (metadata scanning, SQL parsing, AI inference) are executed in a .NET 10 engine cross-process to avoid conflicts with the SSMS runtime.
+
+## Installation
+
+### Build Release
 
 ```powershell
 dotnet build src/MssqlIntelliSense.SsmsHost/MssqlIntelliSense.SsmsHost.csproj -c Release
 ```
 
-Close SSMS, then open `src/MssqlIntelliSense.SsmsHost/bin/Release/MssqlIntelliSense.SsmsHost.vsix`. After installation, the commands appear under a dedicated **MSSQL IntelliSense** menu on the main toolbar.
+VSIX output at:
+```
+src/MssqlIntelliSense.SsmsHost/bin/Release/MssqlIntelliSense.SsmsHost.vsix
+```
 
-## Fast Debugging & Development Setup
+### Install VSIX
 
-To speed up development and avoid the slow VSIXInstaller UI, a fast-deployment mechanism is integrated:
+1. Close SSMS completely
+2. Double-click the `.vsix` file or run:
+   ```powershell
+   vsixinstaller /a /s "path/to/MssqlIntelliSense.SsmsHost.vsix"
+   ```
+3. Launch SSMS
 
-### 1. Automatic Deployment on Build (Visual Studio / MSBuild)
-When you build the solution in `Debug` configuration:
+After installation, the **MSSQL IntelliSense** menu appears on the SSMS main menu bar.
+
+### Fast Development Deployment
+
+For faster development, Debug build auto-deploys to the SSMS extensions folder:
+
 ```powershell
 dotnet build MssqlIntelliSense.slnx -c Debug
 ```
-An MSBuild target automatically triggers the deployment script [deploy-ssms.ps1](../scripts/deploy-ssms.ps1). This script:
-- Copies the debug DLLs, `.pkgdef`, and the .NET 10 CLI engine directly to `%LocalAppData%\Microsoft\SSMS\22.0_<hash>\Extensions\MssqlIntelliSense.SsmsHost`.
-- Deletes any old VSIX-installed versions of the extension under other subdirectories to prevent type-loading conflicts.
-- Touches `extensions.configurationchanged` to force SSMS to rebuild its extension cache.
 
-### 2. Debugging with Visual Studio (F5)
-The [MssqlIntelliSense.SsmsHost.csproj.user](../src/MssqlIntelliSense.SsmsHost/MssqlIntelliSense.SsmsHost.csproj.user) file is configured to launch SSMS automatically.
-1. Open the solution in Visual Studio.
-2. Set `MssqlIntelliSense.SsmsHost` as your startup project.
-3. Make sure the configuration is set to **Debug**.
-4. Press **F5**. Visual Studio will build, deploy the files to the SSMS Extensions directory, launch `Ssms.exe`, and attach the debugger automatically.
+The MSBuild target calls `scripts/deploy-ssms.ps1` to:
+1. Copy DLLs, `.pkgdef`, .NET 10 CLI engine to:
+   ```
+   %LocalAppData%\Microsoft\SSMS\22.0_<hash>\Extensions\MssqlIntelliSense.SsmsHost
+   ```
+2. Delete old extension versions (if any) to avoid type-loading conflicts
+3. Touch `extensions.configurationchanged` to force SSMS to rebuild extension cache
 
-### 3. Deploy and Launch via PowerShell Script
-You can also deploy manually and control launching/killing of SSMS directly via:
+### Debug with Visual Studio (F5)
+
+The `MssqlIntelliSense.SsmsHost.csproj.user` file is configured to auto-launch SSMS when debugging:
+
+1. Open solution in Visual Studio
+2. Set `MssqlIntelliSense.SsmsHost` as startup project
+3. Ensure configuration is set to **Debug**
+4. Press **F5**
+
+Visual Studio will:
+- Build project
+- Deploy files to SSMS extensions directory
+- Launch `Ssms.exe`
+- Attach debugger automatically
+
+### Manual Deploy and Launch
+
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/deploy-ssms.ps1 -Kill -Launch
 ```
-- `-Kill`: Force-closes any running instances of `Ssms.exe` before copying files (required since SSMS locks extension DLLs).
-- `-Launch`: Automatically starts SSMS after deployment finishes.
+
+Flags:
+- `-Kill`: Force-close any running `Ssms.exe` (required because SSMS locks extension DLLs)
+- `-Launch`: Auto-start SSMS after deployment completes
 
 ---
 
-Although the underlying shell version for SSMS 22 is Visual Studio Shell 18.x, the product installation target itself is identified as `Microsoft.VisualStudio.Ssms` with version range `[22.0,23.0)`. Targeting `Microsoft.VisualStudio.Product.Ssms` or using wrong version ranges like `[18.0,19.0)` will cause `NoApplicableSKUsException`.
+## Menu Items
 
-For `Expand SELECT *` and `Suggest JOIN`, configure a connection string under **Tools > Options > MSSQL IntelliSense > General**. Prefer Windows authentication and do not persist a database password in this setting.
+### MSSQL IntelliSense
 
-## Implemented host behavior
+Opens **Schema Explorer Window** - the main extension window:
 
-The SSMS 22 package:
+| Panel | Description |
+|-------|-------------|
+| **Sidebar** | Hierarchical TreeView: Server → Database → Schema → Objects. Click to view details of each object. |
+| **Detail Content** | Displays details when an object is selected (columns, indexes, foreign keys, parameters, etc.) |
+| **Settings** | Configure AI endpoint, model, API key; snippet directory |
+| **About** | Version info, database path, cached connection count |
 
-1. Registers seven commands: Format SQL, Explain SQL, Expand SELECT *, Suggest JOIN, Improve SQL, Qualify Table Names, and Generate CRUD Procedures.
-2. Implement `ISsmsEditorContext` using the active SQL editor selection.
-3. Runs the .NET 10 CLI engine outside the SSMS .NET Framework 4.7.2 process.
-4. Replaces the selection for formatting, expansion, and AI improvement; displays results for analysis/JOIN suggestions.
-5. Displays actionable errors without crashing the host package.
+### Refresh Schema
 
-The host must marshal editor reads and writes onto the UI thread when its shell API requires it. SQL parsing, formatting, analysis, and metadata lookup should remain off the UI thread.
+Re-scans schema for the active connection. Shows progress in the SSMS output pane. Useful when database schema changes.
 
-## Example host wiring
+### Chat Agent
 
-```csharp
+Opens **Chat Agent Window** - AI chat interface directly in SSMS. The agent can query schema metadata to accurately answer questions about SQL.
 
+### Tool Lab
+
+Opens **Tool Lab Window** - auxiliary productivity tools.
+
+---
+
+## Configuration
+
+### Connection String
+
+Go to **Tools > Options > MSSQL IntelliSense > General** to configure the default connection string.
+
+**Recommendation**: Use Windows Authentication (`Integrated Security=true`), do not persist passwords in this setting.
+
+### AI Configuration
+
+AI API key and model are read from SSMS process environment:
+
+**Option 1: System Environment Variables**
+```powershell
+# In PowerShell before launching SSMS
+$env:OPENAI_API_KEY = "sk-..."
+$env:OPENAI_MODEL = "gpt-4o"
+ssms
 ```
 
-Keeping this boundary separate lets the same core work with different SSMS releases and makes command behavior testable without launching SSMS. A future host can replace the configured connection string with SSMS active-connection discovery without changing the engine.
+**Option 2: Via Settings Panel** in Schema Explorer Window (saved in local SQLite DB, not extension settings)
+
+---
+
+## Package Identity
+
+| Property | Value |
+|----------|-------|
+| **Product** | MSSQL IntelliSense |
+| **Version** | 0.2.71 |
+| **Package GUID** | 16f11772-cdb0-42ca-a596-d755543518ac |
+| **Command Set GUID** | 63a8fcd9-601f-427d-a253-d4942b4ff2aa |
+
+### VS SKU Targeting
+
+- **Shell Version**: Visual Studio Shell 18.x
+- **Product ID**: `Microsoft.VisualStudio.Product.Ssms`
+- **Version Range**: `[22.0,23.0)` for SSMS 22
+
+> **Note**: Targeting wrong version range (e.g., `[18.0,19.0)`) will cause `NoApplicableSKUsException`.
+
+---
+
+## Cross-Process Execution
+
+SSMS 22 uses .NET Framework 4.7.2. The extension package (VSIX) also runs in the SSMS process. However, heavy tasks are executed in a .NET 10 CLI engine cross-process to:
+
+1. Avoid conflict between .NET Framework and .NET Core/10 runtime
+2. Allow use of latest NuGet packages (OpenAI, EF Core, etc.)
+3. Isolate stable extension host from potentially unstable engine
+
+The extension uses `AppDomain.CurrentDomain.AssemblyResolve` to preload bundled assemblies from the VSIX package instead of loading from GAC:
+
+```csharp
+// Packaged assemblies
+static readonly string[] PackagedRuntimeAssemblies =
+[
+    "OpenAI",
+    "System.ClientModel",
+    "System.IO.Pipelines",
+    "System.Net.ServerSentEvents",
+    "Microsoft.Bcl.AsyncInterfaces",
+    "System.Threading.Tasks.Extensions",
+];
+```
+
+---
+
+## Connection Discovery
+
+The extension auto-detects SSMS active connection via:
+
+1. **Primary**: `ServiceCache.ScriptFactory.CurrentlyActiveWndConnectionInfo.UIConnectionInfo`
+   - From assembly `SqlPackageBase`
+   - Provides: ServerName, DatabaseName, UserName, Password, AuthenticationType
+
+2. **Fallback**: Toolbar database combo
+   - Iterates through all visible CommandBars
+   - Finds ComboBox containing database name
+   - Filters invalid values (containing `\`, `:`, `/`, or ending with `%`)
+
+Active connection is cached for 750ms to avoid spamming the SSMS UI thread.
+
+---
+
+## Self-Healing Cleanup
+
+On initialization, the extension auto-cleans old versions of the extension installed in sibling directories within the extensions folder, avoiding type-loading conflicts when SSMS loads assemblies.
+
+---
+
+## Logging
+
+The extension logs to multiple places:
+
+1. **SSMS Output Window** - "MSSQL IntelliSense" pane (GUID: `5F2E23E6-2005-4D05-B86D-8D5FA5470FE7`)
+2. **File**: `%USERPROFILE%\.gemini\antigravity-cli\package_log.txt`
+
+Log format: `[yyyy-MM-dd HH:mm:ss.fff] message`
+
+---
+
+## Registered Commands
+
+| Command ID | Name | Description |
+|------------|------|-------------|
+| 0x010A | Refresh Schema | Re-scan schema for active connection |
+| 0x010B | mssql-intellisense-window | Open Schema Explorer window |
+| 0x010C | chat-agent-window | Open Chat Agent window |
+| 0x010D | tool-lab-window | Open Tool Lab window |
