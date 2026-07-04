@@ -1,0 +1,90 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011">
+  <Metadata>
+    <Identity Id="MssqlIntelliSense.Ssms22" Version="0.2.71" Language="en-US" Publisher="MSSQL IntelliSense" />
+    <DisplayName>MSSQL IntelliSense for SSMS 22</DisplayName>
+    <Description xml:space="preserve">T-SQL formatting, analysis, AI improvement, SELECT star expansion, and JOIN suggestions.</Description>
+    <Tags>SQL;SSMS;T-SQL;formatter</Tags>
+  </Metadata>
+  <Installation InstalledByMsi="false">
+    <!-- SSMS 22 product version is 22.x; the underlying Visual Studio shell is 18.x. -->
+    <InstallationTarget Id="Microsoft.VisualStudio.Ssms" Version="[22.0,23.0)">
+      <ProductArchitecture>amd64</ProductArchitecture>
+    </InstallationTarget>
+  </Installation>
+  <Dependencies>
+    <Dependency Id="Microsoft.Framework.NDP" DisplayName="Microsoft .NET Framework" Version="[4.7.2,)" />
+  </Dependencies>
+  <Assets>
+    <Asset Type="Microsoft.VisualStudio.VsPackage" d:Source="Project" d:ProjectName="MssqlIntelliSense.SsmsHost" Path="|%CurrentProject%;PkgdefProjectOutputGroup|" xmlns:d="http://schemas.microsoft.com/developer/vsx-schema-design/2011" />
+    <Asset Type="Microsoft.VisualStudio.MefComponent" Path="MssqlIntelliSense.SsmsHost.dll" />
+  </Assets>
+  <Prerequisites>
+    <Prerequisite Id="Microsoft.VisualStudio.Component.CoreEditor" Version="[18.0,19.0)" DisplayName="SSMS core editor" />
+  </Prerequisites>
+</PackageManifest>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

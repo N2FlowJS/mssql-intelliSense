@@ -1,0 +1,158 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <UseWPF>true</UseWPF>
+    <UseCodebase>true</UseCodebase>
+    <GeneratePkgDefFile>true</GeneratePkgDefFile>
+    <IncludeAssemblyInVSIXContainer>true</IncludeAssemblyInVSIXContainer>
+    <IncludeDebugSymbolsInVSIXContainer>true</IncludeDebugSymbolsInVSIXContainer>
+    <CopyBuildOutputToOutputDirectory>true</CopyBuildOutputToOutputDirectory>
+    <CreateVsixContainer>true</CreateVsixContainer>
+    <VSSDKBuildToolsAutoSetup>true</VSSDKBuildToolsAutoSetup>
+    <!-- SSMS is a 64-bit host; SourceGear.sqlite3 Any CPU check is suppressed by the target override below -->
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+    <StartAction>Program</StartAction>
+    <StartProgram Condition="Exists('C:\Program Files\Microsoft SQL Server Management Studio 22\Release\Common7\IDE\Ssms.exe')">C:\Program Files\Microsoft SQL Server Management Studio 22\Release\Common7\IDE\Ssms.exe</StartProgram>
+    <StartProgram Condition="'$(StartProgram)' == '' And Exists('C:\Program Files\Microsoft SQL Server Management Studio 22\Common7\IDE\Ssms.exe')">C:\Program Files\Microsoft SQL Server Management Studio 22\Common7\IDE\Ssms.exe</StartProgram>
+    <StartProgram Condition="'$(StartProgram)' == '' And Exists('C:\Program Files (x86)\Microsoft SQL Server Management Studio 20\Common7\IDE\Ssms.exe')">C:\Program Files (x86)\Microsoft SQL Server Management Studio 20\Common7\IDE\Ssms.exe</StartProgram>
+    <StartProgram Condition="'$(StartProgram)' == ''">C:\Program Files\Microsoft SQL Server Management Studio 22\Release\Common7\IDE\Ssms.exe</StartProgram>
+    <StartArguments></StartArguments>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="MessagePack" Version="3.1.7" GeneratePathProperty="true" />
+    <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="10.0.9" GeneratePathProperty="true" />
+    <PackageReference Include="System.ClientModel" Version="1.10.0" GeneratePathProperty="true" />
+    <PackageReference Include="System.IO.Pipelines" Version="10.0.9" GeneratePathProperty="true" />
+    <PackageReference Include="System.Net.ServerSentEvents" Version="10.0.2" GeneratePathProperty="true" />
+    <PackageReference Include="System.Text.Encodings.Web" Version="10.0.9" GeneratePathProperty="true" />
+    <PackageReference Include="System.Text.Json" Version="10.0.9" GeneratePathProperty="true" />
+    <PackageReference Include="Microsoft.VisualStudio.SDK" Version="17.14.40265" ExcludeAssets="runtime" />
+    <PackageReference Include="Microsoft.VSSDK.BuildTools" Version="18.5.40034">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="SourceGear.sqlite3" Version="3.50.4.5" />
+    <PackageReference Include="SQLitePCLRaw.core" Version="2.1.11" GeneratePathProperty="true">
+      <IncludeAssemblyInVSIXContainer>true</IncludeAssemblyInVSIXContainer>
+    </PackageReference>
+    <PackageReference Include="SQLitePCLRaw.provider.dynamic_cdecl" Version="2.1.11">
+      <IncludeAssemblyInVSIXContainer>true</IncludeAssemblyInVSIXContainer>
+    </PackageReference>
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.11">
+      <IncludeAssemblyInVSIXContainer>true</IncludeAssemblyInVSIXContainer>
+    </PackageReference>
+    <PackageReference Include="System.Threading.Tasks.Extensions" Version="4.6.3" GeneratePathProperty="true" />
+    <Reference Include="System.Design" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="$(PkgSQLitePCLRaw_core)\lib\net461\SQLitePCLRaw.core.dll" Condition="Exists('$(PkgSQLitePCLRaw_core)\lib\net461\SQLitePCLRaw.core.dll')">
+      <Link>SQLitePCLRaw.core.dll</Link>
+      <IncludeInVSIX>true</IncludeInVSIX>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="$(PkgSQLitePCLRaw_core)\lib\netstandard2.0\SQLitePCLRaw.core.dll" Condition="!Exists('$(PkgSQLitePCLRaw_core)\lib\net461\SQLitePCLRaw.core.dll') And Exists('$(PkgSQLitePCLRaw_core)\lib\netstandard2.0\SQLitePCLRaw.core.dll')">
+      <Link>SQLitePCLRaw.core.dll</Link>
+      <IncludeInVSIX>true</IncludeInVSIX>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="$(PkgSystem_Text_Json)\lib\net462\System.Text.Json.dll" Condition="Exists('$(PkgSystem_Text_Json)\lib\net462\System.Text.Json.dll')">
+      <Link>System.Text.Json.dll</Link>
+      <IncludeInVSIX>true</IncludeInVSIX>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="$(PkgSystem_Text_Json)\lib\netstandard2.0\System.Text.Json.dll" Condition="!Exists('$(PkgSystem_Text_Json)\lib\net462\System.Text.Json.dll') And Exists('$(PkgSystem_Text_Json)\lib\netstandard2.0\System.Text.Json.dll')">
+      <Link>System.Text.Json.dll</Link>
+      <IncludeInVSIX>true</IncludeInVSIX>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="$(PkgSystem_Text_Encodings_Web)\lib\net462\System.Text.Encodings.Web.dll" Condition="Exists('$(PkgSystem_Text_Encodings_Web)\lib\net462\System.Text.Encodings.Web.dll')">
+      <Link>System.Text.Encodings.Web.dll</Link>
+      <IncludeInVSIX>true</IncludeInVSIX>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="$(PkgSystem_Text_Encodings_Web)\lib\netstandard2.0\System.Text.Encodings.Web.dll" Condition="!Exists('$(PkgSystem_Text_Encodings_Web)\lib\net462\System.Text.Encodings.Web.dll') And Exists('$(PkgSystem_Text_Encodings_Web)\lib\netstandard2.0\System.Text.Encodings.Web.dll')">
+      <Link>System.Text.Encodings.Web.dll</Link>
+      <IncludeInVSIX>true</IncludeInVSIX>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="$(PkgMessagePack)\lib\netstandard2.0\MessagePack.dll" Condition="Exists('$(PkgMessagePack)\lib\netstandard2.0\MessagePack.dll')">
+      <Link>MessagePack.dll</Link>
+      <IncludeInVSIX>true</IncludeInVSIX>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="$(PkgMicrosoft_Bcl_AsyncInterfaces)\lib\net462\Microsoft.Bcl.AsyncInterfaces.dll" Condition="Exists('$(PkgMicrosoft_Bcl_AsyncInterfaces)\lib\net462\Microsoft.Bcl.AsyncInterfaces.dll')">
+      <Link>Microsoft.Bcl.AsyncInterfaces.dll</Link>
+      <IncludeInVSIX>true</IncludeInVSIX>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="$(PkgMicrosoft_Bcl_AsyncInterfaces)\lib\netstandard2.0\Microsoft.Bcl.AsyncInterfaces.dll" Condition="!Exists('$(PkgMicrosoft_Bcl_AsyncInterfaces)\lib\net462\Microsoft.Bcl.AsyncInterfaces.dll') And Exists('$(PkgMicrosoft_Bcl_AsyncInterfaces)\lib\netstandard2.0\Microsoft.Bcl.AsyncInterfaces.dll')">
+      <Link>Microsoft.Bcl.AsyncInterfaces.dll</Link>
+      <IncludeInVSIX>true</IncludeInVSIX>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="$(PkgSystem_ClientModel)\lib\netstandard2.0\System.ClientModel.dll" Condition="Exists('$(PkgSystem_ClientModel)\lib\netstandard2.0\System.ClientModel.dll')">
+      <Link>System.ClientModel.dll</Link>
+      <IncludeInVSIX>true</IncludeInVSIX>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="$(PkgSystem_IO_Pipelines)\lib\net462\System.IO.Pipelines.dll" Condition="Exists('$(PkgSystem_IO_Pipelines)\lib\net462\System.IO.Pipelines.dll')">
+      <Link>System.IO.Pipelines.dll</Link>
+      <IncludeInVSIX>true</IncludeInVSIX>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="$(PkgSystem_IO_Pipelines)\lib\netstandard2.0\System.IO.Pipelines.dll" Condition="!Exists('$(PkgSystem_IO_Pipelines)\lib\net462\System.IO.Pipelines.dll') And Exists('$(PkgSystem_IO_Pipelines)\lib\netstandard2.0\System.IO.Pipelines.dll')">
+      <Link>System.IO.Pipelines.dll</Link>
+      <IncludeInVSIX>true</IncludeInVSIX>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="$(PkgSystem_Net_ServerSentEvents)\lib\net462\System.Net.ServerSentEvents.dll" Condition="Exists('$(PkgSystem_Net_ServerSentEvents)\lib\net462\System.Net.ServerSentEvents.dll')">
+      <Link>System.Net.ServerSentEvents.dll</Link>
+      <IncludeInVSIX>true</IncludeInVSIX>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="$(PkgSystem_Net_ServerSentEvents)\lib\netstandard2.0\System.Net.ServerSentEvents.dll" Condition="!Exists('$(PkgSystem_Net_ServerSentEvents)\lib\net462\System.Net.ServerSentEvents.dll') And Exists('$(PkgSystem_Net_ServerSentEvents)\lib\netstandard2.0\System.Net.ServerSentEvents.dll')">
+      <Link>System.Net.ServerSentEvents.dll</Link>
+      <IncludeInVSIX>true</IncludeInVSIX>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="$(PkgSystem_Threading_Tasks_Extensions)\lib\net462\System.Threading.Tasks.Extensions.dll" Condition="Exists('$(PkgSystem_Threading_Tasks_Extensions)\lib\net462\System.Threading.Tasks.Extensions.dll')">
+      <Link>System.Threading.Tasks.Extensions.dll</Link>
+      <IncludeInVSIX>true</IncludeInVSIX>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="$(PkgSystem_Threading_Tasks_Extensions)\lib\netstandard2.0\System.Threading.Tasks.Extensions.dll" Condition="!Exists('$(PkgSystem_Threading_Tasks_Extensions)\lib\net462\System.Threading.Tasks.Extensions.dll') And Exists('$(PkgSystem_Threading_Tasks_Extensions)\lib\netstandard2.0\System.Threading.Tasks.Extensions.dll')">
+      <Link>System.Threading.Tasks.Extensions.dll</Link>
+      <IncludeInVSIX>true</IncludeInVSIX>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Reference Include="System.ComponentModel.Composition" />
+    <Reference Include="System.Threading.Tasks" />
+    <Reference Include="PresentationCore" />
+    <Reference Include="PresentationFramework" />
+    <Reference Include="WindowsBase" />
+    <Reference Include="System.Xaml" />
+    <Reference Include="System.ServiceProcess" />
+  </ItemGroup>
+  <ItemGroup>
+  
+    <None Include="source.extension.vsixmanifest">
+      <SubType>Designer</SubType>
+    </None>
+    <ProjectReference Include="..\MssqlIntelliSense.Core\MssqlIntelliSense.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectCapability Include="CreateVsixContainer" />
+  </ItemGroup>
+  <!-- Suppress SourceGear.sqlite3 "does not support Any CPU" check: PlatformTarget is already x64 -->
+  <Target Name="CheckForAnyCPU" BeforeTargets="BeforeBuild" />
+
+  <Target Name="AutoBumpVersion" BeforeTargets="PrepareForBuild" Condition="'$(Configuration)' == 'Release'">
+    <Exec Command="powershell -NoProfile -Command &quot;&amp; { $manifestPath = 'source.extension.vsixmanifest'; if (Test-Path $manifestPath) { $content = Get-Content -Path $manifestPath -Raw; if ($content -match 'Identity\s+[^&gt;]*Version=\&quot;(\d+\.\d+\.\d+)\&quot;') { $currentVersion = $Matches[1]; $parts = $currentVersion.Split('.'); $patch = [int]$parts[2] + 1; $newVersion = $parts[0] + '.' + $parts[1] + '.' + $patch; Write-Host ('Auto-bumping version from ' + $currentVersion + ' to ' + $newVersion + '...'); $content = $content -replace ('Version=\&quot;' + $currentVersion + '\&quot;'), ('Version=\&quot;' + $newVersion + '\&quot;'); Set-Content -Path $manifestPath -Value $content -Encoding UTF8; $packagePath = 'MssqlIntelliSensePackage.cs'; if (Test-Path $packagePath) { $packageContent = Get-Content -Path $packagePath -Raw; $packageContent = $packageContent -replace ('CurrentVersion = new\(\&quot;' + $currentVersion + '\&quot;\)'), ('CurrentVersion = new(\&quot;' + $newVersion + '\&quot;)'); Set-Content -Path $packagePath -Value $packageContent -Encoding UTF8; } } } }&quot;" WorkingDirectory="$(MSBuildProjectDirectory)" />
+  </Target>
+  <Target Name="DeployToSsms" AfterTargets="Build" Condition="'$(Configuration)' == 'Debug' And '$(DisableSsmsDeploy)' != 'true'">
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\..\..\scripts\deploy-ssms.ps1&quot; -ProjectDir &quot;$(MSBuildProjectDirectory)&quot; -TargetDir &quot;$(TargetDir).&quot;" />
+  </Target>
+</Project>

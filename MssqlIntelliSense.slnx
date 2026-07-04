@@ -1,0 +1,11 @@
+﻿<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/MssqlIntelliSense.Core/MssqlIntelliSense.Core.csproj" />
+    <Project Path="src/MssqlIntelliSense.Cli/MssqlIntelliSense.Cli.csproj" />
+    <Project Path="src/MssqlIntelliSense.SsmsHost/MssqlIntelliSense.SsmsHost.csproj" />
+  </Folder>
+
+  <Folder Name="/tests/">
+    <Project Path="tests/MssqlIntelliSense.Core.Tests/MssqlIntelliSense.Core.Tests.csproj" />
+  </Folder>
+</Solution>

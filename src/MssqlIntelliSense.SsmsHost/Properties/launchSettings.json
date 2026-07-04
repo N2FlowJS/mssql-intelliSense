@@ -1,0 +1,11 @@
+{
+  "profiles": {
+    "Start SSMS 22": {
+      "commandName": "Executable",
+      "executablePath": "C:\\Program Files\\Microsoft SQL Server Management Studio 22\\Release\\Common7\\IDE\\Ssms.exe",
+      "commandLineArgs": "",
+      "nativeDebugging": false
+    }
+  },
+  "$schema": "http://json.schemastore.org/launchsettings.json"
+}
