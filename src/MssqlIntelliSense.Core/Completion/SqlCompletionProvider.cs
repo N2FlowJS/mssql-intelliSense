@@ -99,6 +99,12 @@ public sealed class SqlCompletionProvider
             sql,
             caretPosition,
             prefix);
+        InsertValuesCompletionHelper.AddInsertValuesCompletions(
+            suggestions,
+            metadata,
+            sql,
+            caretPosition,
+            prefix);
 
         if (isTableContext)
         {
@@ -121,17 +127,26 @@ public sealed class SqlCompletionProvider
         }
         else if (isOrderByContext)
         {
-            var selectAliases = SqlContextAnalyzer.ExtractSelectAliases(sql, caretPosition);
-            foreach (var alias in selectAliases.Where(a => SqlCompletionHelper.Matches(a, prefix)))
+            var isOrderByClauseContext = OrderByCompletionHelper.IsOrderByClauseContext(sql, caretPosition);
+            var isGroupByClauseContext = GroupByCompletionHelper.IsGroupByClauseContext(sql, caretPosition);
+            if (isOrderByClauseContext)
             {
-                suggestions.Add(new SqlCompletionItem(
-                    alias,
-                    SqlCompletionHelper.Quote(alias),
-                    SqlCompletionKind.Column,
-                    "SELECT output alias"));
+                var selectAliases = SqlContextAnalyzer.ExtractSelectAliases(sql, caretPosition);
+                foreach (var alias in selectAliases.Where(a => SqlCompletionHelper.Matches(a, prefix)))
+                {
+                    suggestions.Add(new SqlCompletionItem(
+                        alias,
+                        SqlCompletionHelper.Quote(alias),
+                        SqlCompletionKind.Column,
+                        "SELECT output alias"));
+                }
+            }
+            if (isGroupByClauseContext)
+            {
+                GroupByCompletionHelper.AddGroupByCompletions(suggestions, sql, caretPosition, prefix);
             }
             ColumnCompletionHelper.AddVisibleColumnCompletions(suggestions, metadata, sql, prefix);
-            OrderByCompletionHelper.AddOrderByCompletions(suggestions, prefix);
+            OrderByCompletionHelper.AddOrderByCompletions(suggestions, sql, caretPosition, prefix);
             KeywordCompletionHelper.AddKeywordCompletions(suggestions, prefix, isExpressionContext: true);
         }
         else if (isComparisonRhsContext)
@@ -509,7 +524,7 @@ public sealed class SqlCompletionProvider
         label ??= $"{proc.Schema}.{proc.Name}";
         if (isExecContext && proc.Parameters.Count > 0)
         {
-            var paramList = string.Join(", ", proc.Parameters.Select(p => $"{p.Name} = ?"));
+            var paramList = string.Join(", ", proc.Parameters.Select(SqlCompletionHelper.FormatProcedureArgument));
             var bodyInsertText = $"{insertText}({paramList})";
             var caretOffset = insertText.Length + 1;
             var placeholderStart = bodyInsertText.IndexOf('?', caretOffset);

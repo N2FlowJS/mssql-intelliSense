@@ -34,6 +34,10 @@ public static class ComparisonRhsCompletionHelper
         {
             AddSnippet(suggestions, "BETWEEN end", "?", "BETWEEN end value");
         }
+        else if (context == RhsContext.Value && SqlCompletionHelper.Matches("value", prefix))
+        {
+            AddSnippet(suggestions, "value", "?", "Comparison value");
+        }
     }
 
     private static void AddSnippet(
@@ -88,6 +92,12 @@ public static class ComparisonRhsCompletionHelper
         for (var i = previousTokenIndex; i >= 0; i--)
         {
             var token = relevantTokens[i];
+            if (token.TokenType == TSqlTokenType.EqualsSign ||
+                token.TokenType == TSqlTokenType.LessThan ||
+                token.TokenType == TSqlTokenType.GreaterThan)
+            {
+                return RhsContext.Value;
+            }
             if (token.TokenType == TSqlTokenType.Like)
                 return RhsContext.Like;
             if (token.Text.Equals("IN", StringComparison.OrdinalIgnoreCase))
@@ -133,6 +143,7 @@ public static class ComparisonRhsCompletionHelper
         Like,
         In,
         Between,
-        BetweenEnd
+        BetweenEnd,
+        Value
     }
 }

@@ -19,6 +19,15 @@ public static class PredicateCompletionHelper
         if (!IsPredicateStartContext(sql, caretPosition)) return;
 
         var sources = SqlContextAnalyzer.FindSources(sql, metadata);
+        if (IsHavingStartContext(sql, caretPosition))
+        {
+            AddAggregatePredicateItem(suggestions, prefix, "COUNT(*) > ?", "COUNT predicate");
+            AddAggregatePredicateItem(suggestions, prefix, "SUM(?) > ?", "SUM predicate");
+            AddAggregatePredicateItem(suggestions, prefix, "AVG(?) > ?", "AVG predicate");
+            AddAggregatePredicateItem(suggestions, prefix, "MIN(?) = ?", "MIN predicate");
+            AddAggregatePredicateItem(suggestions, prefix, "MAX(?) = ?", "MAX predicate");
+        }
+
         foreach (var source in sources)
         {
             foreach (var column in source.Columns.Where(c => SqlCompletionHelper.Matches(c.Name, prefix)))
@@ -58,12 +67,45 @@ public static class PredicateCompletionHelper
             selectionEnd));
     }
 
+    private static void AddAggregatePredicateItem(
+        List<SqlCompletionItem> suggestions,
+        string prefix,
+        string insertText,
+        string description)
+    {
+        var label = insertText;
+        if (!SqlCompletionHelper.Matches(label, prefix))
+            return;
+
+        var placeholderStart = insertText.IndexOf("?", StringComparison.Ordinal);
+        var selectionEnd = placeholderStart >= 0 ? placeholderStart + 1 : -1;
+        suggestions.Add(new SqlCompletionItem(
+            label,
+            insertText,
+            SqlCompletionKind.Snippet,
+            description,
+            placeholderStart,
+            placeholderStart,
+            selectionEnd));
+    }
+
     private static bool IsPredicateStartContext(string sql, int caretPosition)
+    {
+        return GetPredicateStartToken(sql, caretPosition) != null;
+    }
+
+    private static bool IsHavingStartContext(string sql, int caretPosition)
+    {
+        var token = GetPredicateStartToken(sql, caretPosition);
+        return token?.TokenType == TSqlTokenType.Having;
+    }
+
+    private static TSqlParserToken? GetPredicateStartToken(string sql, int caretPosition)
     {
         using var reader = new StringReader(sql);
         var parser = new TSql160Parser(initialQuotedIdentifiers: true);
         var tokens = parser.GetTokenStream(reader, out _);
-        if (tokens == null) return false;
+        if (tokens == null) return null;
 
         var relevantTokens = tokens
             .Where(t => t.Offset < caretPosition &&
@@ -71,7 +113,7 @@ public static class PredicateCompletionHelper
                         t.TokenType != TSqlTokenType.SingleLineComment &&
                         t.TokenType != TSqlTokenType.MultilineComment)
             .ToList();
-        if (relevantTokens.Count == 0) return false;
+        if (relevantTokens.Count == 0) return null;
 
         var previousTokenIndex = relevantTokens.Count - 1;
         var previousToken = relevantTokens[previousTokenIndex];
@@ -81,12 +123,14 @@ public static class PredicateCompletionHelper
             previousTokenIndex--;
         }
 
-        if (previousTokenIndex < 0) return false;
+        if (previousTokenIndex < 0) return null;
 
         var previous = relevantTokens[previousTokenIndex];
         return previous.TokenType == TSqlTokenType.Where ||
                previous.TokenType == TSqlTokenType.Having ||
                previous.Text.Equals("AND", StringComparison.OrdinalIgnoreCase) ||
-               previous.Text.Equals("OR", StringComparison.OrdinalIgnoreCase);
+               previous.Text.Equals("OR", StringComparison.OrdinalIgnoreCase)
+            ? previous
+            : null;
     }
 }

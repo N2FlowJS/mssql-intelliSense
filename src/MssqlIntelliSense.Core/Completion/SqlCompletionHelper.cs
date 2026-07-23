@@ -200,4 +200,10 @@ public static class SqlCompletionHelper
         if (string.IsNullOrEmpty(paramName)) return string.Empty;
         return paramName.StartsWith("@", StringComparison.Ordinal) ? paramName : "@" + paramName;
     }
+
+    public static string FormatProcedureArgument(FunctionParameterMetadata parameter)
+    {
+        var argument = $"{FormatParameter(parameter.Name)} = ?";
+        return parameter.IsOutput ? $"{argument} OUTPUT" : argument;
+    }
 }

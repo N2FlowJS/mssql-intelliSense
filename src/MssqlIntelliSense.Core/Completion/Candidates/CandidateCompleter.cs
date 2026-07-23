@@ -129,7 +129,7 @@ public sealed class CandidateCompleter
 
     private CompletionFragment GetExecFragment(ProcedureCandidate candidate, CompletionFragment baseFragment)
     {
-        var paramList = string.Join(", ", candidate.Parameters.Select(p => $"{p.Name} = ?"));
+        var paramList = string.Join(", ", candidate.Parameters.Select(SqlCompletionHelper.FormatProcedureArgument));
         var text = $"{baseFragment.Text}({paramList})";
         var caretOffset = baseFragment.Text.Length + 1;
         var placeholderStart = text.IndexOf('?', caretOffset);

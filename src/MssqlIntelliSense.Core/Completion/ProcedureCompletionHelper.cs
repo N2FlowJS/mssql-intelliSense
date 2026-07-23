@@ -142,7 +142,7 @@ public static void AddProcedureCompletions(
         label ??= $"{proc.Schema}.{proc.Name}";
         if (isExecContext && proc.Parameters.Count > 0)
         {
-            var paramList = string.Join(", ", proc.Parameters.Select(p => $"{p.Name} = ?"));
+            var paramList = string.Join(", ", proc.Parameters.Select(SqlCompletionHelper.FormatProcedureArgument));
             var bodyInsertText = $"{insertText}({paramList})";
             var caretOffset = insertText.Length + 1; // position after '('
             var placeholderStart = bodyInsertText.IndexOf('?', caretOffset);

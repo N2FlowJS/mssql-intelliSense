@@ -193,6 +193,21 @@ public sealed class SqlCompletionProviderTests
     }
 
     [Fact]
+    public void GetCompletions_AfterComparisonOperatorSuggestsValueSkeleton()
+    {
+        var sql = "SELECT * FROM dbo.Users u WHERE u.Id = ";
+        var items = _provider.GetCompletions(sql, sql.Length, TestMetadata.Create());
+
+        var item = items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Snippet &&
+            item.Label == "value").Which;
+
+        item.InsertText.Should().Be("?");
+        item.SelectionStart.Should().Be(0);
+        item.SelectionEnd.Should().Be(1);
+    }
+
+    [Fact]
     public void GetCompletions_AfterLikeSuggestsSearchPatternSkeleton()
     {
         var sql = "SELECT * FROM dbo.Users u WHERE u.Name LIKE ";
@@ -467,6 +482,69 @@ public sealed class SqlCompletionProviderTests
     }
 
     [Fact]
+    public void GetCompletions_GroupByDoesNotSuggestOrderByTailCompletions()
+    {
+        var sql = "SELECT u.Name, COUNT(*) FROM dbo.Users u GROUP BY u.Name DE";
+        var items = _provider.GetCompletions(sql, sql.Length, TestMetadata.Create());
+
+        items.Should().NotContain(item =>
+            item.Kind == SqlCompletionKind.Keyword &&
+            item.Label == "DESC" &&
+            item.Description == "ORDER BY direction");
+        items.Should().NotContain(item =>
+            item.Kind == SqlCompletionKind.Snippet &&
+            item.Label == "OFFSET FETCH");
+    }
+
+    [Fact]
+    public void GetCompletions_OrderBySuggestsSelectAliases()
+    {
+        var sql = "SELECT u.Name AS DisplayName FROM dbo.Users u ORDER BY Dis";
+        var items = _provider.GetCompletions(sql, sql.Length, TestMetadata.Create());
+
+        items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Column &&
+            item.Label == "DisplayName" &&
+            item.InsertText == "[DisplayName]" &&
+            item.Description == "SELECT output alias");
+    }
+
+    [Fact]
+    public void GetCompletions_GroupByDoesNotSuggestSelectAliases()
+    {
+        var sql = "SELECT u.Name AS DisplayName FROM dbo.Users u GROUP BY Dis";
+        var items = _provider.GetCompletions(sql, sql.Length, TestMetadata.Create());
+
+        items.Should().NotContain(item =>
+            item.Kind == SqlCompletionKind.Column &&
+            item.Label == "DisplayName" &&
+            item.Description == "SELECT output alias");
+    }
+
+    [Fact]
+    public void GetCompletions_GroupBySuggestsNonAggregateSelectColumnsSkeleton()
+    {
+        var sql = "SELECT u.Name AS DisplayName, u.CreatedDate, COUNT(*) FROM dbo.Users u GROUP BY ";
+        var items = _provider.GetCompletions(sql, sql.Length, TestMetadata.Create());
+
+        items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Snippet &&
+            item.Label == "GROUP BY SELECT columns" &&
+            item.InsertText == "u.Name, u.CreatedDate");
+    }
+
+    [Fact]
+    public void GetCompletions_OrderByDoesNotSuggestGroupBySelectColumnsSkeleton()
+    {
+        var sql = "SELECT u.Name, COUNT(*) FROM dbo.Users u ORDER BY ";
+        var items = _provider.GetCompletions(sql, sql.Length, TestMetadata.Create());
+
+        items.Should().NotContain(item =>
+            item.Kind == SqlCompletionKind.Snippet &&
+            item.Label == "GROUP BY SELECT columns");
+    }
+
+    [Fact]
     public void GetCompletions_RejectsInvalidCaretPosition()
     {
         var action = () => _provider.GetCompletions("SELECT", 99);
@@ -614,6 +692,51 @@ public sealed class SqlCompletionProviderTests
         item.InsertText.Should().Be("[u].[Name] = ?");
         item.SelectionStart.Should().Be("[u].[Name] = ".Length);
         item.SelectionEnd.Should().Be("[u].[Name] = ?".Length);
+    }
+
+    [Fact]
+    public void GetCompletions_AfterHavingSuggestsAggregatePredicateSkeletons()
+    {
+        var sql = "SELECT u.Name, COUNT(*) FROM dbo.Users u GROUP BY u.Name HAVING CO";
+        var items = _provider.GetCompletions(sql, sql.Length, TestMetadata.Create());
+
+        var item = items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Snippet &&
+            item.Label == "COUNT(*) > ?").Which;
+
+        item.InsertText.Should().Be("COUNT(*) > ?");
+        item.SelectionStart.Should().Be("COUNT(*) > ".Length);
+        item.SelectionEnd.Should().Be(item.SelectionStart + 1);
+    }
+
+    [Fact]
+    public void GetCompletions_AfterHavingSuggestsAggregateArgumentPredicateSkeletons()
+    {
+        var sql = "SELECT u.Name, COUNT(*) FROM dbo.Users u GROUP BY u.Name HAVING SU";
+        var items = _provider.GetCompletions(sql, sql.Length, TestMetadata.Create());
+
+        var item = items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Snippet &&
+            item.Label == "SUM(?) > ?").Which;
+
+        item.InsertText.Should().Be("SUM(?) > ?");
+        item.SelectionStart.Should().Be("SUM(".Length);
+        item.SelectionEnd.Should().Be(item.SelectionStart + 1);
+    }
+
+    [Fact]
+    public void GetCompletions_AfterHavingAggregateComparisonSuggestsValueSkeleton()
+    {
+        var sql = "SELECT u.Name, COUNT(*) FROM dbo.Users u GROUP BY u.Name HAVING COUNT(*) > ";
+        var items = _provider.GetCompletions(sql, sql.Length, TestMetadata.Create());
+
+        var item = items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Snippet &&
+            item.Label == "value").Which;
+
+        item.InsertText.Should().Be("?");
+        item.SelectionStart.Should().Be(0);
+        item.SelectionEnd.Should().Be(1);
     }
 
     [Fact]
@@ -896,6 +1019,35 @@ public sealed class SqlCompletionProviderTests
     }
 
     [Fact]
+    public void GetCandidateCompletions_ProcedureOutputParametersIncludeOutputKeyword()
+    {
+        var metadata = new DatabaseMetadata([], [], [], [], [])
+        {
+            Procedures =
+            [
+                new ProcedureMetadata("dbo", "TryFindUser")
+                {
+                    Parameters =
+                    [
+                        new FunctionParameterMetadata("@Name", "nvarchar", false, 1),
+                        new FunctionParameterMetadata("@UserId", "int", true, 2),
+                    ]
+                }
+            ]
+        };
+        var sql = "EXEC Try";
+        var items = _provider.GetCandidateCompletions(metadata, sql, sql.Length);
+
+        var item = items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Procedure &&
+            item.Label == "dbo.TryFindUser").Which;
+
+        item.InsertText.Should().Be("[dbo].[TryFindUser](@Name = ?, @UserId = ? OUTPUT)");
+        item.SelectionStart.Should().Be(item.InsertText.IndexOf('?', StringComparison.Ordinal));
+        item.SelectionEnd.Should().Be(item.SelectionStart + 1);
+    }
+
+    [Fact]
     public void GetCandidateCompletions_ScalarFunctionSelectsFirstParameter()
     {
         var metadata = new DatabaseMetadata([], [], [], [], [])
@@ -1159,6 +1311,36 @@ public sealed class SqlCompletionProviderTests
     }
 
     [Fact]
+    public void GetCompletions_InsertValuesSuggestsPlaceholdersForExplicitColumns()
+    {
+        var sql = "INSERT INTO dbo.Users ([Name], [CreatedDate]) VALUES (";
+        var items = _provider.GetCompletions(sql, sql.Length, TestMetadata.Create());
+
+        var item = items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Snippet &&
+            item.Label == "VALUES placeholders").Which;
+
+        item.InsertText.Should().Be("?, ?");
+        item.SelectionStart.Should().Be(0);
+        item.SelectionEnd.Should().Be(1);
+    }
+
+    [Fact]
+    public void GetCompletions_InsertValuesSuggestsPlaceholdersForTargetTableColumns()
+    {
+        var sql = "INSERT INTO sales.Orders VALUES (";
+        var items = _provider.GetCompletions(sql, sql.Length, TestMetadata.Create());
+
+        var item = items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Snippet &&
+            item.Label == "VALUES placeholders").Which;
+
+        item.InsertText.Should().Be("?, ?, ?");
+        item.SelectionStart.Should().Be(0);
+        item.SelectionEnd.Should().Be(1);
+    }
+
+    [Fact]
     public void GetCompletions_UpdateSetSuggestsTargetTableColumnsOnly()
     {
         var metadata = TestMetadata.Create();
@@ -1360,6 +1542,36 @@ public sealed class SqlCompletionProviderTests
         procItem.Should().NotBeNull();
         procItem!.InsertText.Should().Be("[GetUser](@UserId = ?, @IncludeInactive = ?)");
         procItem.CaretOffset.Should().Be("[GetUser](".Length);
+        procItem.SelectionStart.Should().Be(procItem.InsertText.IndexOf('?', StringComparison.Ordinal));
+        procItem.SelectionEnd.Should().Be(procItem.SelectionStart + 1);
+    }
+
+    [Fact]
+    public void GetCompletions_ExecSuggestsProcedureOutputParameters()
+    {
+        var metadata = new DatabaseMetadata([], [], [], [], [])
+        {
+            Procedures =
+            [
+                new ProcedureMetadata("dbo", "TryFindUser")
+                {
+                    Parameters =
+                    [
+                        new FunctionParameterMetadata("@Name", "nvarchar", false, 1),
+                        new FunctionParameterMetadata("@UserId", "int", true, 2),
+                    ]
+                }
+            ]
+        };
+
+        var sql = "EXEC dbo.Try";
+        var items = _provider.GetCompletions(sql, sql.Length, metadata);
+
+        var procItem = items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Procedure &&
+            item.Label == "TryFindUser").Which;
+
+        procItem.InsertText.Should().Be("[TryFindUser](@Name = ?, @UserId = ? OUTPUT)");
         procItem.SelectionStart.Should().Be(procItem.InsertText.IndexOf('?', StringComparison.Ordinal));
         procItem.SelectionEnd.Should().Be(procItem.SelectionStart + 1);
     }
