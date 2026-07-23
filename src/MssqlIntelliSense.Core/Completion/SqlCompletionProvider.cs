@@ -157,7 +157,14 @@ public sealed class SqlCompletionProvider
         }
         else if (isUpdateSetContext)
         {
-            ColumnCompletionHelper.AddTargetTableColumns(suggestions, metadata, sql, prefix, targetTableSchema, targetTableName);
+            ColumnCompletionHelper.AddTargetTableColumns(
+                suggestions,
+                metadata,
+                sql,
+                prefix,
+                targetTableSchema,
+                targetTableName,
+                includeAssignments: true);
             KeywordCompletionHelper.AddKeywordCompletions(suggestions, prefix);
         }
         else if (token.Qualifiers.Count > 0)

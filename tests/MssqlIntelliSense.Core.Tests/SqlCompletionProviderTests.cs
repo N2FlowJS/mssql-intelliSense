@@ -471,8 +471,26 @@ public sealed class SqlCompletionProviderTests
         var items = _provider.GetCompletions(sql, sql.Length, metadata);
 
         // Should suggest 'Total' of Orders, but NOT 'Name' of Users
-        items.Should().ContainSingle(item => item.Kind == SqlCompletionKind.Column && item.InsertText == "[Total]");
+        items.Should().ContainSingle(item => item.Kind == SqlCompletionKind.Column && item.InsertText == "[Total] = ?");
         items.Should().NotContain(item => item.InsertText == "[Name]");
+    }
+
+    [Fact]
+    public void GetCompletions_UpdateSetSuggestsAssignmentSkeletons()
+    {
+        var metadata = TestMetadata.Create();
+
+        var sql = "UPDATE sales.Orders SET T";
+        var items = _provider.GetCompletions(sql, sql.Length, metadata);
+
+        var item = items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Column &&
+            item.Label == "Total = ?").Which;
+
+        item.InsertText.Should().Be("[Total] = ?");
+        item.CaretOffset.Should().Be("[Total] = ".Length);
+        item.SelectionStart.Should().Be("[Total] = ".Length);
+        item.SelectionEnd.Should().Be("[Total] = ?".Length);
     }
 
     [Fact]

@@ -71,9 +71,10 @@ public static class ColumnCompletionHelper
         string sql,
         string prefix,
         string? targetSchema,
-        string? targetTableName)
+        string? targetTableName,
+        bool includeAssignments = false)
     {
-        AddTargetTableColumnsInternal(suggestions, metadata, prefix, targetSchema, targetTableName);
+        AddTargetTableColumnsInternal(suggestions, metadata, prefix, targetSchema, targetTableName, includeAssignments);
     }
 
     private static void AddTargetTableColumnsInternal(
@@ -81,7 +82,8 @@ public static class ColumnCompletionHelper
         DatabaseMetadata metadata,
         string prefix,
         string? targetSchema,
-        string? targetTableName)
+        string? targetTableName,
+        bool includeAssignments = false)
     {
         if (string.IsNullOrEmpty(targetTableName))
             return;
@@ -107,11 +109,29 @@ public static class ColumnCompletionHelper
 
         foreach (var column in columns.Where(c => SqlCompletionHelper.Matches(c.Name, prefix)))
         {
+            var insertText = SqlCompletionHelper.Quote(column.Name);
+            var label = column.Name;
+            var caretOffset = -1;
+            var selectionStart = -1;
+            var selectionEnd = -1;
+
+            if (includeAssignments)
+            {
+                insertText = $"{insertText} = ?";
+                label = $"{label} = ?";
+                selectionStart = insertText.Length - 1;
+                selectionEnd = insertText.Length;
+                caretOffset = selectionStart;
+            }
+
             suggestions.Add(new SqlCompletionItem(
-                column.Name,
-                SqlCompletionHelper.Quote(column.Name),
+                label,
+                insertText,
                 SqlCompletionKind.Column,
-                $"{objSchema}.{match.Name}.{column.Name} ({column.DataType})"));
+                $"{objSchema}.{match.Name}.{column.Name} ({column.DataType})",
+                caretOffset,
+                selectionStart,
+                selectionEnd));
         }
     }
 
