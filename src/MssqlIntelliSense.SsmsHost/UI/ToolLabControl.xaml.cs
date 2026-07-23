@@ -133,7 +133,7 @@ public partial class ToolLabControl : UserControl
                 var activeConnectionString = toolConnection.ActiveConnectionString;
                 if (!string.IsNullOrWhiteSpace(activeConnectionString))
                 {
-                    result = MssqlIntelliSenseCacheReader.GetMetadataByConnectionString(activeConnectionString);
+                    result = MssqlIntelliSenseCacheReader.GetMetadataByConnectionString(activeConnectionString!);
                 }
                 else
                 {
@@ -143,7 +143,7 @@ public partial class ToolLabControl : UserControl
                 var activeDatabase = toolConnection.ActiveDatabase;
                 return string.IsNullOrWhiteSpace(activeDatabase)
                     ? result
-                    : MssqlIntelliSenseCacheReader.FilterByDatabase(result, activeDatabase);
+                    : MssqlIntelliSenseCacheReader.FilterByDatabase(result, activeDatabase!);
             });
             var arguments = JsonSerializer.Serialize(new { schemaName, tableName, query, columnName = query }, JsonOptions);
             var output = await Task.Run(() => ExecuteTool(toolName, arguments, metadata));
@@ -183,14 +183,14 @@ public partial class ToolLabControl : UserControl
         var activeDatabase = MssqlIntelliSensePackage.GetActiveDatabaseName();
         if (!string.IsNullOrWhiteSpace(activeConnectionString))
         {
-            var normalizedConnectionString = NormalizeServerConnectionString(activeConnectionString);
+            var normalizedConnectionString = NormalizeServerConnectionString(activeConnectionString!);
             var cachedConnection = MssqlIntelliSenseCacheReader.GetConnections()
                 .FirstOrDefault(c => NormalizeServerConnectionString(c.ConnectionString)
                     .Equals(normalizedConnectionString, StringComparison.OrdinalIgnoreCase));
 
             if (cachedConnection == null && registerIfMissing)
             {
-                var serverName = GetServerName(activeConnectionString);
+                var serverName = GetServerName(activeConnectionString!);
                 var name = string.IsNullOrWhiteSpace(serverName) ? "Active SQL connection" : serverName;
                 var connectionId = MssqlIntelliSenseCacheWriter.RegisterConnection(normalizedConnectionString, name);
                 cachedConnection = MssqlIntelliSenseCacheReader.GetConnections().FirstOrDefault(c => c.Id == connectionId);
@@ -201,7 +201,7 @@ public partial class ToolLabControl : UserControl
                 Connection = cachedConnection,
                 ActiveConnectionString = activeConnectionString,
                 ActiveDatabase = activeDatabase,
-                DisplayName = BuildConnectionDisplayName(activeConnectionString, activeDatabase)
+                DisplayName = BuildConnectionDisplayName(activeConnectionString!, activeDatabase)
             };
         }
 
@@ -222,7 +222,7 @@ public partial class ToolLabControl : UserControl
     {
         if (string.IsNullOrWhiteSpace(connectionString))
         {
-            return connectionString;
+            return string.Empty;
         }
 
         try

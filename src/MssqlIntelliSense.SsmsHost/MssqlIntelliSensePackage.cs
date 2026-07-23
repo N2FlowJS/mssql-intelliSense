@@ -264,11 +264,12 @@ public sealed class MssqlIntelliSensePackage : AsyncPackage
         }
 
         Log($"Manual refresh schema requested for: {connectionString}");
+        var connectionStringToScan = connectionString!;
 
         bool isScanning;
         lock (_scanLock)
         {
-            isScanning = _activelyScanningConnections.Contains(connectionString!);
+            isScanning = _activelyScanningConnections.Contains(connectionStringToScan);
         }
 
         if (isScanning)
@@ -283,15 +284,15 @@ public sealed class MssqlIntelliSensePackage : AsyncPackage
         {
             lock (_scanLock)
             {
-                _activelyScanningConnections.Add(connectionString);
+                _activelyScanningConnections.Add(connectionStringToScan);
             }
             try
             {
                 var name = "SqlServer Connection";
-                var normalizedConnStr = connectionString;
+                var normalizedConnStr = connectionStringToScan;
                 try
                 {
-                    var builder = new Microsoft.Data.SqlClient.SqlConnectionStringBuilder(connectionString);
+                    var builder = new Microsoft.Data.SqlClient.SqlConnectionStringBuilder(connectionStringToScan);
                     name = builder.DataSource;
                     builder.Remove("Initial Catalog");
                     normalizedConnStr = builder.ConnectionString;
@@ -300,7 +301,7 @@ public sealed class MssqlIntelliSensePackage : AsyncPackage
 
                 var connId = MssqlIntelliSense.Core.Metadata.MssqlIntelliSenseCacheWriter.RegisterConnection(normalizedConnStr, name);
                 
-                var provider = new MssqlIntelliSense.Core.Metadata.SqlServerMetadataProvider(connectionString);
+                var provider = new MssqlIntelliSense.Core.Metadata.SqlServerMetadataProvider(connectionStringToScan);
                 var metadata = await provider.GetMetadataAsync(cancellationToken);
 
                 MssqlIntelliSense.Core.Metadata.MssqlIntelliSenseCacheWriter.SaveSchemaCache(connId, metadata);
@@ -317,7 +318,7 @@ public sealed class MssqlIntelliSensePackage : AsyncPackage
             {
                 lock (_scanLock)
                 {
-                    _activelyScanningConnections.Remove(connectionString);
+                    _activelyScanningConnections.Remove(connectionStringToScan);
                 }
             }
         });
@@ -750,10 +751,11 @@ public sealed class MssqlIntelliSensePackage : AsyncPackage
                 if (!string.IsNullOrWhiteSpace(currentConnectionString))
                 {
                     var name = "SqlServer Connection";
-                    var normalizedConnStr = currentConnectionString;
+                    var currentConnectionStringToRegister = currentConnectionString!;
+                    var normalizedConnStr = currentConnectionStringToRegister;
                     try
                     {
-                        var builder = new Microsoft.Data.SqlClient.SqlConnectionStringBuilder(currentConnectionString);
+                        var builder = new Microsoft.Data.SqlClient.SqlConnectionStringBuilder(currentConnectionStringToRegister);
                         name = builder.DataSource;
                         builder.Remove("Initial Catalog");
                         normalizedConnStr = builder.ConnectionString;
@@ -1027,6 +1029,7 @@ public sealed class MssqlIntelliSensePackage : AsyncPackage
 
     private static bool IsLikelyDatabaseName(string? value)
     {
+        if (value == null) return false;
         if (string.IsNullOrWhiteSpace(value)) return false;
         if (value.Length > 128) return false;
         if (value.Contains("\\") || value.Contains(":") || value.Contains("/")) return false;

@@ -172,7 +172,7 @@ public partial class ChatAgentControl : UserControl
                 var activeConnectionString = chatConnection.ActiveConnectionString;
                 if (!string.IsNullOrWhiteSpace(activeConnectionString))
                 {
-                    metadata = MssqlIntelliSenseCacheReader.GetMetadataByConnectionString(activeConnectionString);
+                    metadata = MssqlIntelliSenseCacheReader.GetMetadataByConnectionString(activeConnectionString!);
                 }
                 else if (chatConnection.Connection != null)
                 {
@@ -186,7 +186,7 @@ public partial class ChatAgentControl : UserControl
                 var activeDatabase = chatConnection.ActiveDatabase;
                 return string.IsNullOrWhiteSpace(activeDatabase)
                     ? metadata
-                    : MssqlIntelliSenseCacheReader.FilterByDatabase(metadata, activeDatabase);
+                    : MssqlIntelliSenseCacheReader.FilterByDatabase(metadata, activeDatabase!);
             }
             catch (Exception ex)
             {
@@ -238,14 +238,14 @@ public partial class ChatAgentControl : UserControl
         var activeDatabase = MssqlIntelliSensePackage.GetActiveDatabaseName();
         if (!string.IsNullOrWhiteSpace(activeConnectionString))
         {
-            var normalizedConnectionString = NormalizeServerConnectionString(activeConnectionString);
+            var normalizedConnectionString = NormalizeServerConnectionString(activeConnectionString!);
             var cachedConnection = MssqlIntelliSenseCacheReader.GetConnections()
                 .FirstOrDefault(c => NormalizeServerConnectionString(c.ConnectionString)
                     .Equals(normalizedConnectionString, StringComparison.OrdinalIgnoreCase));
 
             if (cachedConnection == null)
             {
-                var serverName = GetServerName(activeConnectionString);
+                var serverName = GetServerName(activeConnectionString!);
                 var name = string.IsNullOrWhiteSpace(serverName) ? "Active SQL connection" : serverName;
                 var connectionId = MssqlIntelliSenseCacheWriter.RegisterConnection(normalizedConnectionString, name);
                 cachedConnection = MssqlIntelliSenseCacheReader.GetConnections().FirstOrDefault(c => c.Id == connectionId);
@@ -256,7 +256,7 @@ public partial class ChatAgentControl : UserControl
                 Connection = cachedConnection,
                 ActiveConnectionString = activeConnectionString,
                 ActiveDatabase = activeDatabase,
-                DisplayName = BuildConnectionDisplayName(activeConnectionString, activeDatabase),
+                DisplayName = BuildConnectionDisplayName(activeConnectionString!, activeDatabase),
                 FromActiveWindow = true
             };
         }
@@ -279,7 +279,7 @@ public partial class ChatAgentControl : UserControl
     {
         if (string.IsNullOrWhiteSpace(connectionString))
         {
-            return connectionString;
+            return string.Empty;
         }
 
         try
