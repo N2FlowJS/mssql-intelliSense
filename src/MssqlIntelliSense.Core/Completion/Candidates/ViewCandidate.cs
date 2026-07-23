@@ -14,6 +14,8 @@ public sealed class ViewCandidate : DbObjectBase
         _view = view;
         SchemaOwner = schemaOwner;
         DatabaseName = view.Database;
+        Children = new CandidateCollection<ColumnCandidate>(
+            view.Columns.Select(c => new ColumnCandidate(c, this)));
     }
 
     public IDbObject? SchemaOwner { get; }

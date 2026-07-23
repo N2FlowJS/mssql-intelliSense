@@ -87,7 +87,7 @@ public static class ColumnCompletionHelper
             return;
 
         var adapter = new MetadataAdapter(metadata);
-        var currentDb = adapter.Server.CurrentDatabase;
+        var currentDb = adapter.CurrentDatabase;
         var match = currentDb.Schemas
             .SelectMany(s => s.Children.AllCandidates())
             .FirstOrDefault(c =>

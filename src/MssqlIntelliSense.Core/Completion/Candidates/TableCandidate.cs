@@ -16,6 +16,8 @@ public sealed class TableCandidate : DbObjectBase
         _table = table;
         SchemaOwner = schemaOwner;
         DatabaseName = table.Database;
+        Children = new CandidateCollection<ColumnCandidate>(
+            table.Columns.Select(c => new ColumnCandidate(c, this)));
     }
 
     public IDbObject? SchemaOwner { get; }

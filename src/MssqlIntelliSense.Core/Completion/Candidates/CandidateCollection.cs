@@ -30,7 +30,7 @@ public class CandidateCollection<T> : ICandidateCollection<T>, IEnumerable<T>, I
             source = source.Where(c => c.ObjectType == type);
         if (string.IsNullOrEmpty(filter))
             return source.Cast<ICandidate>();
-        return source.Where(c => c.IsPartialNameMatch(filter)).Cast<ICandidate>();
+        return source.Where(c => c.IsPartialNameMatch(filter!)).Cast<ICandidate>();
     }
 
     public IEnumerable<ICandidate> AllCandidates() => _list.Cast<ICandidate>();

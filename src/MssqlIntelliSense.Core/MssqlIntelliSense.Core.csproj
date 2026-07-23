@@ -11,6 +11,7 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.SqlServer.TransactSql.ScriptDom" Version="180.37.3" />
     <PackageReference Include="OpenAI" Version="2.11.0" />
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.3" />
     <PackageReference Include="System.Net.Http.Json" Version="10.0.9" Condition="'$(TargetFramework)' == 'netstandard2.0'" />
     <PackageReference Include="System.Text.Json" Version="10.0.9" Condition="'$(TargetFramework)' == 'netstandard2.0'" />
   </ItemGroup>

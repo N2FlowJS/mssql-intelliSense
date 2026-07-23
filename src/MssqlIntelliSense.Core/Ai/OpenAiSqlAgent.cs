@@ -63,7 +63,8 @@ public class OpenAiSqlAgent : IAiSqlAssistant
             }
             catch (ClientResultException exception)
             {
-                var statusCode = exception.GetRawResponse() != null ? (HttpStatusCode)exception.GetRawResponse().Status : HttpStatusCode.BadRequest;
+                var rawResponse = exception.GetRawResponse();
+                var statusCode = rawResponse != null ? (HttpStatusCode)rawResponse.Status : HttpStatusCode.BadRequest;
                 throw new OpenAiSqlAgentException(exception.Message, statusCode);
             }
             

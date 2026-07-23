@@ -35,13 +35,13 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     <PackageReference Include="SourceGear.sqlite3" Version="3.50.4.5" />
-    <PackageReference Include="SQLitePCLRaw.core" Version="2.1.11" GeneratePathProperty="true">
+    <PackageReference Include="SQLitePCLRaw.core" Version="3.0.3" GeneratePathProperty="true">
       <IncludeAssemblyInVSIXContainer>true</IncludeAssemblyInVSIXContainer>
     </PackageReference>
-    <PackageReference Include="SQLitePCLRaw.provider.dynamic_cdecl" Version="2.1.11">
+    <PackageReference Include="SQLitePCLRaw.provider.dynamic_cdecl" Version="3.0.3">
       <IncludeAssemblyInVSIXContainer>true</IncludeAssemblyInVSIXContainer>
     </PackageReference>
-    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.11">
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.3">
       <IncludeAssemblyInVSIXContainer>true</IncludeAssemblyInVSIXContainer>
     </PackageReference>
     <PackageReference Include="System.Threading.Tasks.Extensions" Version="4.6.3" GeneratePathProperty="true" />

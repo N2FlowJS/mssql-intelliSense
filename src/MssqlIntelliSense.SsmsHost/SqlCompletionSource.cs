@@ -171,7 +171,17 @@ internal sealed class SqlCompletionCommandFilter : IOleCommandTarget
 
                                 _currentSession.Commit();
 
-                                if (match != null && match.CaretOffset >= 0)
+                                if (match != null && match.SelectionStart >= 0 && match.SelectionEnd >= match.SelectionStart)
+                                {
+                                    var selectionStart = Math.Min(startPos + match.SelectionStart, _textView.TextSnapshot.Length);
+                                    var selectionEnd = Math.Min(startPos + match.SelectionEnd, _textView.TextSnapshot.Length);
+                                    var selectionSpan = new SnapshotSpan(
+                                        _textView.TextSnapshot,
+                                        Span.FromBounds(selectionStart, selectionEnd));
+                                    _textView.Selection.Select(selectionSpan, isReversed: false);
+                                    _textView.Caret.MoveTo(selectionSpan.End);
+                                }
+                                else if (match != null && match.CaretOffset >= 0)
                                 {
                                     // Move caret to startPos + match.CaretOffset in the post-commit snapshot
                                     var newPosition = new SnapshotPoint(_textView.TextSnapshot, startPos + match.CaretOffset);

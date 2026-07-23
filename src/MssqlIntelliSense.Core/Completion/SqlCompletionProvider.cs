@@ -87,6 +87,19 @@ public sealed class SqlCompletionProvider
             isFromOrJoinContext,
             isProcedureContext);
 
+        JoinConditionCompletionHelper.AddJoinConditionCompletions(
+            suggestions,
+            metadata,
+            sql,
+            caretPosition,
+            prefix);
+        PredicateCompletionHelper.AddPredicateCompletions(
+            suggestions,
+            metadata,
+            sql,
+            caretPosition,
+            prefix);
+
         if (isTableContext)
         {
             AddTableCompletions(suggestions, metadata, token);

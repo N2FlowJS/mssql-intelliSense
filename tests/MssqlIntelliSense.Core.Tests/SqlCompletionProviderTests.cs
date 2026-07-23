@@ -143,6 +143,44 @@ public sealed class SqlCompletionProviderTests
     }
 
     [Fact]
+    public void GetCompletions_AfterJoinOnSuggestsFkConditionBetweenVisibleAliases()
+    {
+        var sql = "SELECT * FROM dbo.Users u JOIN sales.Orders o ON ";
+        var items = _provider.GetCompletions(sql, sql.Length, TestMetadata.Create());
+
+        items.Should().Contain(item => item.Kind == SqlCompletionKind.Column &&
+                                       item.Label == "o.UserId = u.Id" &&
+                                       item.InsertText == "[o].[UserId] = [u].[Id]");
+    }
+
+    [Fact]
+    public void GetCompletions_AfterWhereSuggestsPredicateSkeletonsForVisibleColumns()
+    {
+        var sql = "SELECT * FROM dbo.Users u WHERE N";
+        var items = _provider.GetCompletions(sql, sql.Length, TestMetadata.Create());
+
+        var item = items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Column &&
+            item.Label == "u.Name = ?").Which;
+
+        item.InsertText.Should().Be("[u].[Name] = ?");
+        item.CaretOffset.Should().Be("[u].[Name] = ".Length);
+        item.SelectionStart.Should().Be("[u].[Name] = ".Length);
+        item.SelectionEnd.Should().Be("[u].[Name] = ?".Length);
+    }
+
+    [Fact]
+    public void GetCompletions_AfterAndSuggestsPredicateSkeletonsForVisibleColumns()
+    {
+        var sql = "SELECT * FROM dbo.Users u WHERE u.Id = 1 AND Na";
+        var items = _provider.GetCompletions(sql, sql.Length, TestMetadata.Create());
+
+        items.Should().Contain(item => item.Kind == SqlCompletionKind.Column &&
+                                       item.Label == "u.Name = ?" &&
+                                       item.InsertText == "[u].[Name] = ?");
+    }
+
+    [Fact]
     public void GetCompletions_JoinContextSuggestsTransitiveJoinClauses()
     {
         var metadata = new DatabaseMetadata(

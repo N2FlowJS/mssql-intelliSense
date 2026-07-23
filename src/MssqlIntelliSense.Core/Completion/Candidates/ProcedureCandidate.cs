@@ -14,6 +14,7 @@ public sealed class ProcedureCandidate : DbObjectBase
         _procedure = procedure;
         SchemaOwner = schemaOwner;
         DatabaseName = procedure.Database;
+        Children = new CandidateCollection<ICandidate>();
     }
 
     public IDbObject? SchemaOwner { get; }

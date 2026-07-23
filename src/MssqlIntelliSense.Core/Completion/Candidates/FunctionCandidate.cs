@@ -14,6 +14,7 @@ public sealed class FunctionCandidate : DbObjectBase
         _function = function;
         SchemaOwner = schemaOwner;
         DatabaseName = function.Database;
+        Children = new CandidateCollection<ICandidate>();
     }
 
     public IDbObject? SchemaOwner { get; }
