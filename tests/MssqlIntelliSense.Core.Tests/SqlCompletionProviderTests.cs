@@ -193,6 +193,89 @@ public sealed class SqlCompletionProviderTests
     }
 
     [Fact]
+    public void GetCompletions_AfterLikeSuggestsSearchPatternSkeleton()
+    {
+        var sql = "SELECT * FROM dbo.Users u WHERE u.Name LIKE ";
+        var items = _provider.GetCompletions(sql, sql.Length, TestMetadata.Create());
+
+        var item = items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Snippet &&
+            item.Label == "LIKE pattern").Which;
+
+        item.InsertText.Should().Be("N'%?%'");
+        item.SelectionStart.Should().Be("N'%".Length);
+        item.SelectionEnd.Should().Be(item.SelectionStart + 1);
+    }
+
+    [Fact]
+    public void GetCompletions_AfterInSuggestsListSkeleton()
+    {
+        var sql = "SELECT * FROM dbo.Users u WHERE u.Id IN ";
+        var items = _provider.GetCompletions(sql, sql.Length, TestMetadata.Create());
+
+        var item = items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Snippet &&
+            item.Label == "IN list").Which;
+
+        item.InsertText.Should().Be("(?)");
+        item.SelectionStart.Should().Be("(".Length);
+        item.SelectionEnd.Should().Be(item.SelectionStart + 1);
+    }
+
+    [Fact]
+    public void GetCompletions_AfterBetweenSuggestsRangeSkeleton()
+    {
+        var sql = "SELECT * FROM dbo.Users u WHERE u.Id BETWEEN ";
+        var items = _provider.GetCompletions(sql, sql.Length, TestMetadata.Create());
+
+        var item = items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Snippet &&
+            item.Label == "BETWEEN range").Which;
+
+        item.InsertText.Should().Be("? AND ?");
+        item.SelectionStart.Should().Be(0);
+        item.SelectionEnd.Should().Be(1);
+    }
+
+    [Fact]
+    public void GetCompletions_AfterNotLikeSuggestsSearchPatternSkeleton()
+    {
+        var sql = "SELECT * FROM dbo.Users u WHERE u.Name NOT LIKE ";
+        var items = _provider.GetCompletions(sql, sql.Length, TestMetadata.Create());
+
+        items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Snippet &&
+            item.Label == "LIKE pattern" &&
+            item.InsertText == "N'%?%'");
+    }
+
+    [Fact]
+    public void GetCompletions_AfterNotInSuggestsListSkeleton()
+    {
+        var sql = "SELECT * FROM dbo.Users u WHERE u.Id NOT IN ";
+        var items = _provider.GetCompletions(sql, sql.Length, TestMetadata.Create());
+
+        items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Snippet &&
+            item.Label == "IN list" &&
+            item.InsertText == "(?)");
+    }
+
+    [Fact]
+    public void GetCompletions_AfterNotKeywordDoesNotEnterComparisonRhsContext()
+    {
+        var sql = "SELECT * FROM dbo.Users u WHERE NOT I";
+        var items = _provider.GetCompletions(sql, sql.Length, TestMetadata.Create());
+
+        items.Should().Contain(item =>
+            item.Kind == SqlCompletionKind.Keyword &&
+            item.InsertText == "IN");
+        items.Should().NotContain(item =>
+            item.Kind == SqlCompletionKind.Snippet &&
+            item.Label == "IN list");
+    }
+
+    [Fact]
     public void GetCompletions_DoesNotSuggestUndeclaredLocalVariablesFromPriorUsage()
     {
         var sql = "SELECT @MissingValue; SELECT @Mi";
@@ -410,6 +493,41 @@ public sealed class SqlCompletionProviderTests
         item.CaretOffset.Should().Be("[u].[Name] = ".Length);
         item.SelectionStart.Should().Be("[u].[Name] = ".Length);
         item.SelectionEnd.Should().Be("[u].[Name] = ?".Length);
+    }
+
+    [Fact]
+    public void GetCompletions_AfterWhereSuggestsPredicateOperatorSkeletons()
+    {
+        var sql = "SELECT * FROM dbo.Users u WHERE N";
+        var items = _provider.GetCompletions(sql, sql.Length, TestMetadata.Create());
+
+        var likeItem = items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Column &&
+            item.Label == "u.Name LIKE ?").Which;
+        likeItem.InsertText.Should().Be("[u].[Name] LIKE ?");
+        likeItem.SelectionStart.Should().Be(likeItem.InsertText.IndexOf("?", StringComparison.Ordinal));
+        likeItem.SelectionEnd.Should().Be(likeItem.SelectionStart + 1);
+
+        var betweenItem = items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Column &&
+            item.Label == "u.Name BETWEEN ? AND ?").Which;
+        betweenItem.InsertText.Should().Be("[u].[Name] BETWEEN ? AND ?");
+        betweenItem.SelectionStart.Should().Be(betweenItem.InsertText.IndexOf("?", StringComparison.Ordinal));
+        betweenItem.SelectionEnd.Should().Be(betweenItem.SelectionStart + 1);
+
+        var inItem = items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Column &&
+            item.Label == "u.Name IN (?)").Which;
+        inItem.InsertText.Should().Be("[u].[Name] IN (?)");
+        inItem.SelectionStart.Should().Be(inItem.InsertText.IndexOf("?", StringComparison.Ordinal));
+        inItem.SelectionEnd.Should().Be(inItem.SelectionStart + 1);
+
+        var nullItem = items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Column &&
+            item.Label == "u.Name IS NULL").Which;
+        nullItem.InsertText.Should().Be("[u].[Name] IS NULL");
+        nullItem.SelectionStart.Should().Be(-1);
+        nullItem.SelectionEnd.Should().Be(-1);
     }
 
     [Fact]

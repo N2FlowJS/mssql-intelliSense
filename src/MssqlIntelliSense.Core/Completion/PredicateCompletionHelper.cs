@@ -23,19 +23,39 @@ public static class PredicateCompletionHelper
         {
             foreach (var column in source.Columns.Where(c => SqlCompletionHelper.Matches(c.Name, prefix)))
             {
-                var label = $"{source.Alias}.{column.Name} = ?";
-                var insertText = $"{SqlCompletionHelper.Quote(source.Alias)}.{SqlCompletionHelper.Quote(column.Name)} = ?";
-                var placeholderStart = insertText.Length - 1;
-                suggestions.Add(new SqlCompletionItem(
-                    label,
-                    insertText,
-                    SqlCompletionKind.Column,
-                    $"Predicate for {source.Schema}.{source.Name}.{column.Name} ({column.DataType})",
-                    placeholderStart,
-                    placeholderStart,
-                    placeholderStart + 1));
+                var qualifiedLabel = $"{source.Alias}.{column.Name}";
+                var qualifiedInsert = $"{SqlCompletionHelper.Quote(source.Alias)}.{SqlCompletionHelper.Quote(column.Name)}";
+                var description = $"Predicate for {source.Schema}.{source.Name}.{column.Name} ({column.DataType})";
+
+                AddPredicateItem(suggestions, qualifiedLabel, qualifiedInsert, " = ?", description);
+                AddPredicateItem(suggestions, qualifiedLabel, qualifiedInsert, " LIKE ?", description);
+                AddPredicateItem(suggestions, qualifiedLabel, qualifiedInsert, " BETWEEN ? AND ?", description);
+                AddPredicateItem(suggestions, qualifiedLabel, qualifiedInsert, " IN (?)", description);
+                AddPredicateItem(suggestions, qualifiedLabel, qualifiedInsert, " IS NULL", description);
+                AddPredicateItem(suggestions, qualifiedLabel, qualifiedInsert, " IS NOT NULL", description);
             }
         }
+    }
+
+    private static void AddPredicateItem(
+        List<SqlCompletionItem> suggestions,
+        string qualifiedLabel,
+        string qualifiedInsert,
+        string operatorText,
+        string description)
+    {
+        var label = $"{qualifiedLabel}{operatorText}";
+        var insertText = $"{qualifiedInsert}{operatorText}";
+        var placeholderStart = insertText.IndexOf("?", StringComparison.Ordinal);
+        var selectionEnd = placeholderStart >= 0 ? placeholderStart + 1 : -1;
+        suggestions.Add(new SqlCompletionItem(
+            label,
+            insertText,
+            SqlCompletionKind.Column,
+            description,
+            placeholderStart,
+            placeholderStart,
+            selectionEnd));
     }
 
     private static bool IsPredicateStartContext(string sql, int caretPosition)

@@ -302,7 +302,7 @@ public static class SqlContextAnalyzer
 
     /// <summary>
     /// Returns true when the caret appears after a comparison operator
-    /// (=, &lt;, &gt;, &lt;=, &gt;=, &lt;&gt;, !=, LIKE, IN, NOT IN).
+    /// (=, &lt;, &gt;, &lt;=, &gt;=, &lt;&gt;, !=, LIKE, IN, NOT IN, BETWEEN).
     /// </summary>
     private static bool IsComparisonRhsContext(IReadOnlyList<TSqlParserToken> tokens, int fromIndex)
     {
@@ -315,7 +315,7 @@ public static class SqlContextAnalyzer
                 t == TSqlTokenType.Like)
                 return true;
             if (string.Equals(tokens[i].Text, "IN", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(tokens[i].Text, "NOT", StringComparison.OrdinalIgnoreCase))
+                string.Equals(tokens[i].Text, "BETWEEN", StringComparison.OrdinalIgnoreCase))
                 return true;
             // Stop at clause / statement boundaries
             if (t == TSqlTokenType.Select || t == TSqlTokenType.From ||

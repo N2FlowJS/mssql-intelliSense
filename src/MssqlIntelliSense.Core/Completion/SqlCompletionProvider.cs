@@ -135,6 +135,11 @@ public sealed class SqlCompletionProvider
         }
         else if (isComparisonRhsContext)
         {
+            ComparisonRhsCompletionHelper.AddComparisonRhsCompletions(
+                suggestions,
+                sql,
+                caretPosition,
+                prefix);
             LocalVariableCompletionHelper.AddLocalVariableCompletions(
                 suggestions,
                 sql,
