@@ -314,6 +314,8 @@ public static class TableCompletionHelper
         var label = $"{schema}.{name}";
         string insertText;
         int caretOffset = -1;
+        int selectionStart = -1;
+        int selectionEnd = -1;
 
         var qualifiedName = $"{SqlCompletionHelper.Quote(schema)}.{SqlCompletionHelper.Quote(name)}";
 
@@ -321,9 +323,12 @@ public static class TableCompletionHelper
         {
             if (parameters != null && parameters.Count > 0)
             {
-                var paramList = string.Join(", ", parameters.Select(p => $"@{p.Name}"));
+                var formattedParams = parameters.Select(p => SqlCompletionHelper.FormatParameter(p.Name)).ToArray();
+                var paramList = string.Join(", ", formattedParams);
                 insertText = $"{qualifiedName}({paramList})";
                 caretOffset = qualifiedName.Length + 1;
+                selectionStart = caretOffset;
+                selectionEnd = selectionStart + formattedParams[0].Length;
             }
             else
             {
@@ -335,9 +340,12 @@ public static class TableCompletionHelper
         {
             var colNames = columns.Select(c => SqlCompletionHelper.Quote(c.Name));
             var colList = string.Join(", ", colNames);
-            var valList = string.Join(", ", columns.Select(c => GetDefaultValue(c.DataType)));
+            var values = columns.Select(c => GetDefaultValue(c.DataType)).ToArray();
+            var valList = string.Join(", ", values);
             insertText = $"{qualifiedName}\r\n({colList})\r\nVALUES ({valList})";
             caretOffset = insertText.Length - (valList.Length + 1);
+            selectionStart = caretOffset;
+            selectionEnd = selectionStart + values[0].Length;
         }
         else if (token.IsOutputIntoContext && columns != null && columns.Count > 0)
         {
@@ -354,7 +362,9 @@ public static class TableCompletionHelper
             insertText,
             kind,
             description,
-            caretOffset));
+            caretOffset,
+            selectionStart,
+            selectionEnd));
     }
 
     private static string GetDefaultValue(string dataType)

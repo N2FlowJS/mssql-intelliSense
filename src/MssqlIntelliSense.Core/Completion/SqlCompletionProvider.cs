@@ -275,7 +275,9 @@ public sealed class SqlCompletionProvider
                     fragment.Text,
                     CandidateKindToSqlCompletionKind(candidate.ObjectType),
                     $"{candidate.ObjectType} {schema.Name}.{candidate.Name}",
-                    fragment.CaretOffset));
+                    fragment.CaretOffset,
+                    fragment.SelectionStart,
+                    fragment.SelectionEnd));
             }
         }
 
@@ -383,13 +385,18 @@ public sealed class SqlCompletionProvider
                         var @params = fn.Parameters;
                         string insertText;
                         int caretOffset;
+                        int selectionStart = -1;
+                        int selectionEnd = -1;
                         var quoted = SqlCompletionHelper.Quote(fn.Name);
 
                         if (@params.Count > 0)
                         {
-                            var paramList = string.Join(", ", @params.Select(p => $"@{p.Name}"));
+                            var formattedParams = @params.Select(p => SqlCompletionHelper.FormatParameter(p.Name)).ToArray();
+                            var paramList = string.Join(", ", formattedParams);
                             insertText = $"{quoted}({paramList})";
                             caretOffset = quoted.Length + 1;
+                            selectionStart = caretOffset;
+                            selectionEnd = selectionStart + formattedParams[0].Length;
                         }
                         else
                         {
@@ -399,7 +406,10 @@ public sealed class SqlCompletionProvider
 
                         suggestions.Add(new SqlCompletionItem(
                             fn.Name, insertText, SqlCompletionKind.Function,
-                            $"Table Function {schema}.{fn.Name}", caretOffset));
+                            $"Table Function {schema}.{fn.Name}",
+                            caretOffset,
+                            selectionStart,
+                            selectionEnd));
                     }
                     break;
                 case SynonymCandidate syn:
@@ -496,8 +506,15 @@ public sealed class SqlCompletionProvider
             var paramList = string.Join(", ", proc.Parameters.Select(p => $"{p.Name} = ?"));
             var bodyInsertText = $"{insertText}({paramList})";
             var caretOffset = insertText.Length + 1;
-            return new SqlCompletionItem(label, bodyInsertText, SqlCompletionKind.Procedure,
-                $"Stored Procedure {proc.Schema}.{proc.Name}", CaretOffset: caretOffset);
+            var placeholderStart = bodyInsertText.IndexOf('?', caretOffset);
+            return new SqlCompletionItem(
+                label,
+                bodyInsertText,
+                SqlCompletionKind.Procedure,
+                $"Stored Procedure {proc.Schema}.{proc.Name}",
+                caretOffset,
+                placeholderStart,
+                placeholderStart + 1);
         }
         return new SqlCompletionItem(label, insertText, SqlCompletionKind.Procedure,
             $"Stored Procedure {proc.Schema}.{proc.Name}");
@@ -519,12 +536,17 @@ public sealed class SqlCompletionProvider
                 var quoted = SqlCompletionHelper.Quote(fn.Name);
                 string insertText;
                 int caretOffset;
+                int selectionStart = -1;
+                int selectionEnd = -1;
 
                 if (fn.Parameters.Count > 0)
                 {
-                    var paramList = string.Join(", ", fn.Parameters.Select(p => $"{p.Name}"));
+                    var formattedParams = fn.Parameters.Select(p => SqlCompletionHelper.FormatParameter(p.Name)).ToArray();
+                    var paramList = string.Join(", ", formattedParams);
                     insertText = $"{quoted}({paramList})";
                     caretOffset = quoted.Length + 1;
+                    selectionStart = caretOffset;
+                    selectionEnd = selectionStart + formattedParams[0].Length;
                 }
                 else
                 {
@@ -537,7 +559,9 @@ public sealed class SqlCompletionProvider
                     insertText,
                     SqlCompletionKind.Function,
                     $"Scalar Function {schema.Name}.{fn.Name} ({fn.ReturnType})",
-                    caretOffset));
+                    caretOffset,
+                    selectionStart,
+                    selectionEnd));
             }
         }
     }
@@ -575,14 +599,19 @@ public sealed class SqlCompletionProvider
                     : SqlCompletionHelper.Quote(t.Name);
                 string insertText;
                 int caretOffset = -1;
+                int selectionStart = -1;
+                int selectionEnd = -1;
 
                 if (includeSchema && token.IsInsertIntoContext && t.Columns.Count > 0)
                 {
                     var colNames = t.Columns.Select(c => SqlCompletionHelper.Quote(c.Name));
                     var colList = string.Join(", ", colNames);
-                    var valList = string.Join(", ", t.Columns.Select(c => GetDefaultValue(c.DataType)));
+                    var values = t.Columns.Select(c => GetDefaultValue(c.DataType)).ToArray();
+                    var valList = string.Join(", ", values);
                     insertText = $"{qualifiedName}\r\n({colList})\r\nVALUES ({valList})";
                     caretOffset = insertText.Length - (valList.Length + 1);
+                    selectionStart = caretOffset;
+                    selectionEnd = selectionStart + values[0].Length;
                 }
                 else if (includeSchema && token.IsOutputIntoContext && t.Columns.Count > 0)
                 {
@@ -596,7 +625,13 @@ public sealed class SqlCompletionProvider
 
                 var label = includeSchema ? $"{schema}.{t.Name}" : t.Name;
                 suggestions.Add(new SqlCompletionItem(
-                    label, insertText, SqlCompletionKind.Table, $"Table {schema}.{t.Name}", caretOffset));
+                    label,
+                    insertText,
+                    SqlCompletionKind.Table,
+                    $"Table {schema}.{t.Name}",
+                    caretOffset,
+                    selectionStart,
+                    selectionEnd));
                 break;
             }
 
@@ -620,12 +655,17 @@ public sealed class SqlCompletionProvider
                 var @params = fn.Parameters;
                 string insertText;
                 int caretOffset;
+                int selectionStart = -1;
+                int selectionEnd = -1;
 
                 if (@params.Count > 0)
                 {
-                    var paramList = string.Join(", ", @params.Select(p => $"@{p.Name}"));
+                    var formattedParams = @params.Select(p => SqlCompletionHelper.FormatParameter(p.Name)).ToArray();
+                    var paramList = string.Join(", ", formattedParams);
                     insertText = $"{baseName}({paramList})";
                     caretOffset = baseName.Length + 1;
+                    selectionStart = caretOffset;
+                    selectionEnd = selectionStart + formattedParams[0].Length;
                 }
                 else
                 {
@@ -635,7 +675,13 @@ public sealed class SqlCompletionProvider
 
                 var label = includeSchema ? $"{schema}.{fn.Name}" : fn.Name;
                 suggestions.Add(new SqlCompletionItem(
-                    label, insertText, SqlCompletionKind.Function, $"Table Function {schema}.{fn.Name}", caretOffset));
+                    label,
+                    insertText,
+                    SqlCompletionKind.Function,
+                    $"Table Function {schema}.{fn.Name}",
+                    caretOffset,
+                    selectionStart,
+                    selectionEnd));
                 break;
             }
 

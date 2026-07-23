@@ -33,7 +33,9 @@ public static class SnippetCompletionHelper
                 expanded.Text,
                 SqlCompletionKind.Snippet,
                 snippet.Description,
-                CaretOffset: expanded.CursorOffset >= 0 ? expanded.CursorOffset : -1));
+                CaretOffset: expanded.CursorOffset >= 0 ? expanded.CursorOffset : -1,
+                SelectionStart: expanded.SelectionStart,
+                SelectionEnd: expanded.SelectionEnd));
         }
     }
 }

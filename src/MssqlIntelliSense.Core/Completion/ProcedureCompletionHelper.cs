@@ -145,12 +145,15 @@ public static void AddProcedureCompletions(
             var paramList = string.Join(", ", proc.Parameters.Select(p => $"{p.Name} = ?"));
             var bodyInsertText = $"{insertText}({paramList})";
             var caretOffset = insertText.Length + 1; // position after '('
+            var placeholderStart = bodyInsertText.IndexOf('?', caretOffset);
             return new SqlCompletionItem(
                 label,
                 bodyInsertText,
                 SqlCompletionKind.Procedure,
                 $"Stored Procedure {proc.Schema}.{proc.Name}",
-                CaretOffset: caretOffset);
+                caretOffset,
+                placeholderStart,
+                placeholderStart + 1);
         }
 
         return new SqlCompletionItem(

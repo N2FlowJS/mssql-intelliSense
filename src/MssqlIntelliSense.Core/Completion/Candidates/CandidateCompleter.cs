@@ -73,22 +73,41 @@ public sealed class CandidateCompleter
     private CompletionFragment GetInsertFragment(TableCandidate candidate, CompletionFragment baseFragment, ICompletionContext context)
     {
         var cols = string.Join(", ", candidate.Columns.Select(c => SqlCompletionHelper.Quote(c.Name)));
-        var vals = string.Join(", ", candidate.Columns.Select(c =>
+        var values = candidate.Columns.Select(c =>
         {
             var def = _getInsertDefault(c.DataType);
             return def;
-        }));
+        }).ToArray();
+        var vals = string.Join(", ", values);
         var text = $"{baseFragment.Text}\n({cols})\nVALUES ({vals})";
-        var caretOffset = baseFragment.Text.Length + 1;
-        return baseFragment with { Text = text, CaretOffset = caretOffset };
+        if (values.Length == 0)
+            return baseFragment with { Text = text };
+
+        var valueStart = text.IndexOf(vals, StringComparison.Ordinal);
+        return baseFragment with
+        {
+            Text = text,
+            CaretOffset = valueStart,
+            SelectionStart = valueStart,
+            SelectionEnd = valueStart + values[0].Length
+        };
     }
 
     private CompletionFragment GetUpdateFragment(TableCandidate candidate, CompletionFragment baseFragment)
     {
         var sets = string.Join(", ", candidate.Columns.Select(c => $"{SqlCompletionHelper.Quote(c.Name)} = ?"));
         var text = $"{baseFragment.Text}\nSET {sets}";
-        var caretOffset = baseFragment.Text.Length + 5;
-        return baseFragment with { Text = text, CaretOffset = caretOffset };
+        var placeholderStart = text.IndexOf("?", StringComparison.Ordinal);
+        if (placeholderStart < 0)
+            return baseFragment with { Text = text };
+
+        return baseFragment with
+        {
+            Text = text,
+            CaretOffset = placeholderStart,
+            SelectionStart = placeholderStart,
+            SelectionEnd = placeholderStart + 1
+        };
     }
 
     private CompletionFragment GetOutputIntoFragment(TableCandidate candidate, CompletionFragment baseFragment)
@@ -113,15 +132,29 @@ public sealed class CandidateCompleter
         var paramList = string.Join(", ", candidate.Parameters.Select(p => $"{p.Name} = ?"));
         var text = $"{baseFragment.Text}({paramList})";
         var caretOffset = baseFragment.Text.Length + 1;
-        return baseFragment with { Text = text, CaretOffset = caretOffset };
+        var placeholderStart = text.IndexOf('?', caretOffset);
+        return baseFragment with
+        {
+            Text = text,
+            CaretOffset = caretOffset,
+            SelectionStart = placeholderStart,
+            SelectionEnd = placeholderStart + 1
+        };
     }
 
     private CompletionFragment GetFunctionParametersFragment(FunctionCandidate candidate, CompletionFragment baseFragment)
     {
-        var paramList = string.Join(", ", candidate.Parameters.Select(p => $"{p.Name}"));
+        var formattedParams = candidate.Parameters.Select(p => SqlCompletionHelper.FormatParameter(p.Name)).ToArray();
+        var paramList = string.Join(", ", formattedParams);
         var text = $"{baseFragment.Text}({paramList})";
         var caretOffset = baseFragment.Text.Length + 1;
-        return baseFragment with { Text = text, CaretOffset = caretOffset };
+        return baseFragment with
+        {
+            Text = text,
+            CaretOffset = caretOffset,
+            SelectionStart = caretOffset,
+            SelectionEnd = caretOffset + formattedParams[0].Length
+        };
     }
 
     private static CompletionFragment DefaultFragment(string text, ICompletionContext context)

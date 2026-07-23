@@ -1,0 +1,368 @@
+<Project>
+  <PropertyGroup>
+    <AssemblyName>MssqlIntelliSense.SsmsHost</AssemblyName>
+    <IntermediateOutputPath>obj\Debug\</IntermediateOutputPath>
+    <BaseIntermediateOutputPath>obj\</BaseIntermediateOutputPath>
+    <MSBuildProjectExtensionsPath>E:\git\mssql-intelliSense\src\MssqlIntelliSense.SsmsHost\obj\</MSBuildProjectExtensionsPath>
+    <_TargetAssemblyProjectName>MssqlIntelliSense.SsmsHost</_TargetAssemblyProjectName>
+    <RootNamespace>MssqlIntelliSense.SsmsHost</RootNamespace>
+  </PropertyGroup>
+  <Import Project="Sdk.props" Sdk="Microsoft.NET.Sdk" />
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <UseWPF>true</UseWPF>
+    <UseCodebase>true</UseCodebase>
+    <GeneratePkgDefFile>true</GeneratePkgDefFile>
+    <IncludeAssemblyInVSIXContainer>true</IncludeAssemblyInVSIXContainer>
+    <IncludeDebugSymbolsInVSIXContainer>true</IncludeDebugSymbolsInVSIXContainer>
+    <CopyBuildOutputToOutputDirectory>true</CopyBuildOutputToOutputDirectory>
+    <CreateVsixContainer>true</CreateVsixContainer>
+    <VSSDKBuildToolsAutoSetup>true</VSSDKBuildToolsAutoSetup>
+    <!-- SSMS is a 64-bit host; SourceGear.sqlite3 Any CPU check is suppressed by the target override below -->
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+    <StartAction>Program</StartAction>
+    <StartProgram Condition="Exists('C:\Program Files\Microsoft SQL Server Management Studio 22\Release\Common7\IDE\Ssms.exe')">C:\Program Files\Microsoft SQL Server Management Studio 22\Release\Common7\IDE\Ssms.exe</StartProgram>
+    <StartProgram Condition="'$(StartProgram)' == '' And Exists('C:\Program Files\Microsoft SQL Server Management Studio 22\Common7\IDE\Ssms.exe')">C:\Program Files\Microsoft SQL Server Management Studio 22\Common7\IDE\Ssms.exe</StartProgram>
+    <StartProgram Condition="'$(StartProgram)' == '' And Exists('C:\Program Files (x86)\Microsoft SQL Server Management Studio 20\Common7\IDE\Ssms.exe')">C:\Program Files (x86)\Microsoft SQL Server Management Studio 20\Common7\IDE\Ssms.exe</StartProgram>
+    <StartProgram Condition="'$(StartProgram)' == ''">C:\Program Files\Microsoft SQL Server Management Studio 22\Release\Common7\IDE\Ssms.exe</StartProgram>
+    <StartArguments>
+    </StartArguments>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="MessagePack" Version="3.1.7" GeneratePathProperty="true" />
+    <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="10.0.9" GeneratePathProperty="true" />
+    <PackageReference Include="System.ClientModel" Version="1.10.0" GeneratePathProperty="true" />
+    <PackageReference Include="System.IO.Pipelines" Version="10.0.9" GeneratePathProperty="true" />
+    <PackageReference Include="System.Net.ServerSentEvents" Version="10.0.2" GeneratePathProperty="true" />
+    <PackageReference Include="System.Text.Encodings.Web" Version="10.0.9" GeneratePathProperty="true" />
+    <PackageReference Include="System.Text.Json" Version="10.0.9" GeneratePathProperty="true" />
+    <PackageReference Include="Microsoft.VisualStudio.SDK" Version="17.14.40265" ExcludeAssets="runtime" />
+    <PackageReference Include="Microsoft.VSSDK.BuildTools" Version="18.5.40034">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="SourceGear.sqlite3" Version="3.50.4.5" />
+    <PackageReference Include="SQLitePCLRaw.core" Version="3.0.3" GeneratePathProperty="true">
+      <IncludeAssemblyInVSIXContainer>true</IncludeAssemblyInVSIXContainer>
+    </PackageReference>
+    <PackageReference Include="SQLitePCLRaw.provider.dynamic_cdecl" Version="3.0.3">
+      <IncludeAssemblyInVSIXContainer>true</IncludeAssemblyInVSIXContainer>
+    </PackageReference>
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.3">
+      <IncludeAssemblyInVSIXContainer>true</IncludeAssemblyInVSIXContainer>
+    </PackageReference>
+    <PackageReference Include="System.Threading.Tasks.Extensions" Version="4.6.3" GeneratePathProperty="true" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="$(PkgSQLitePCLRaw_core)\lib\net461\SQLitePCLRaw.core.dll" Condition="Exists('$(PkgSQLitePCLRaw_core)\lib\net461\SQLitePCLRaw.core.dll')">
+      <Link>SQLitePCLRaw.core.dll</Link>
+      <IncludeInVSIX>true</IncludeInVSIX>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="$(PkgSQLitePCLRaw_core)\lib\netstandard2.0\SQLitePCLRaw.core.dll" Condition="!Exists('$(PkgSQLitePCLRaw_core)\lib\net461\SQLitePCLRaw.core.dll') And Exists('$(PkgSQLitePCLRaw_core)\lib\netstandard2.0\SQLitePCLRaw.core.dll')">
+      <Link>SQLitePCLRaw.core.dll</Link>
+      <IncludeInVSIX>true</IncludeInVSIX>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="$(PkgSystem_Text_Json)\lib\net462\System.Text.Json.dll" Condition="Exists('$(PkgSystem_Text_Json)\lib\net462\System.Text.Json.dll')">
+      <Link>System.Text.Json.dll</Link>
+      <IncludeInVSIX>true</IncludeInVSIX>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="$(PkgSystem_Text_Json)\lib\netstandard2.0\System.Text.Json.dll" Condition="!Exists('$(PkgSystem_Text_Json)\lib\net462\System.Text.Json.dll') And Exists('$(PkgSystem_Text_Json)\lib\netstandard2.0\System.Text.Json.dll')">
+      <Link>System.Text.Json.dll</Link>
+      <IncludeInVSIX>true</IncludeInVSIX>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="$(PkgSystem_Text_Encodings_Web)\lib\net462\System.Text.Encodings.Web.dll" Condition="Exists('$(PkgSystem_Text_Encodings_Web)\lib\net462\System.Text.Encodings.Web.dll')">
+      <Link>System.Text.Encodings.Web.dll</Link>
+      <IncludeInVSIX>true</IncludeInVSIX>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="$(PkgSystem_Text_Encodings_Web)\lib\netstandard2.0\System.Text.Encodings.Web.dll" Condition="!Exists('$(PkgSystem_Text_Encodings_Web)\lib\net462\System.Text.Encodings.Web.dll') And Exists('$(PkgSystem_Text_Encodings_Web)\lib\netstandard2.0\System.Text.Encodings.Web.dll')">
+      <Link>System.Text.Encodings.Web.dll</Link>
+      <IncludeInVSIX>true</IncludeInVSIX>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="$(PkgMessagePack)\lib\netstandard2.0\MessagePack.dll" Condition="Exists('$(PkgMessagePack)\lib\netstandard2.0\MessagePack.dll')">
+      <Link>MessagePack.dll</Link>
+      <IncludeInVSIX>true</IncludeInVSIX>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="$(PkgMicrosoft_Bcl_AsyncInterfaces)\lib\net462\Microsoft.Bcl.AsyncInterfaces.dll" Condition="Exists('$(PkgMicrosoft_Bcl_AsyncInterfaces)\lib\net462\Microsoft.Bcl.AsyncInterfaces.dll')">
+      <Link>Microsoft.Bcl.AsyncInterfaces.dll</Link>
+      <IncludeInVSIX>true</IncludeInVSIX>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="$(PkgMicrosoft_Bcl_AsyncInterfaces)\lib\netstandard2.0\Microsoft.Bcl.AsyncInterfaces.dll" Condition="!Exists('$(PkgMicrosoft_Bcl_AsyncInterfaces)\lib\net462\Microsoft.Bcl.AsyncInterfaces.dll') And Exists('$(PkgMicrosoft_Bcl_AsyncInterfaces)\lib\netstandard2.0\Microsoft.Bcl.AsyncInterfaces.dll')">
+      <Link>Microsoft.Bcl.AsyncInterfaces.dll</Link>
+      <IncludeInVSIX>true</IncludeInVSIX>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="$(PkgSystem_ClientModel)\lib\netstandard2.0\System.ClientModel.dll" Condition="Exists('$(PkgSystem_ClientModel)\lib\netstandard2.0\System.ClientModel.dll')">
+      <Link>System.ClientModel.dll</Link>
+      <IncludeInVSIX>true</IncludeInVSIX>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="$(PkgSystem_IO_Pipelines)\lib\net462\System.IO.Pipelines.dll" Condition="Exists('$(PkgSystem_IO_Pipelines)\lib\net462\System.IO.Pipelines.dll')">
+      <Link>System.IO.Pipelines.dll</Link>
+      <IncludeInVSIX>true</IncludeInVSIX>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="$(PkgSystem_IO_Pipelines)\lib\netstandard2.0\System.IO.Pipelines.dll" Condition="!Exists('$(PkgSystem_IO_Pipelines)\lib\net462\System.IO.Pipelines.dll') And Exists('$(PkgSystem_IO_Pipelines)\lib\netstandard2.0\System.IO.Pipelines.dll')">
+      <Link>System.IO.Pipelines.dll</Link>
+      <IncludeInVSIX>true</IncludeInVSIX>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="$(PkgSystem_Net_ServerSentEvents)\lib\net462\System.Net.ServerSentEvents.dll" Condition="Exists('$(PkgSystem_Net_ServerSentEvents)\lib\net462\System.Net.ServerSentEvents.dll')">
+      <Link>System.Net.ServerSentEvents.dll</Link>
+      <IncludeInVSIX>true</IncludeInVSIX>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="$(PkgSystem_Net_ServerSentEvents)\lib\netstandard2.0\System.Net.ServerSentEvents.dll" Condition="!Exists('$(PkgSystem_Net_ServerSentEvents)\lib\net462\System.Net.ServerSentEvents.dll') And Exists('$(PkgSystem_Net_ServerSentEvents)\lib\netstandard2.0\System.Net.ServerSentEvents.dll')">
+      <Link>System.Net.ServerSentEvents.dll</Link>
+      <IncludeInVSIX>true</IncludeInVSIX>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="$(PkgSystem_Threading_Tasks_Extensions)\lib\net462\System.Threading.Tasks.Extensions.dll" Condition="Exists('$(PkgSystem_Threading_Tasks_Extensions)\lib\net462\System.Threading.Tasks.Extensions.dll')">
+      <Link>System.Threading.Tasks.Extensions.dll</Link>
+      <IncludeInVSIX>true</IncludeInVSIX>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="$(PkgSystem_Threading_Tasks_Extensions)\lib\netstandard2.0\System.Threading.Tasks.Extensions.dll" Condition="!Exists('$(PkgSystem_Threading_Tasks_Extensions)\lib\net462\System.Threading.Tasks.Extensions.dll') And Exists('$(PkgSystem_Threading_Tasks_Extensions)\lib\netstandard2.0\System.Threading.Tasks.Extensions.dll')">
+      <Link>System.Threading.Tasks.Extensions.dll</Link>
+      <IncludeInVSIX>true</IncludeInVSIX>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="source.extension.vsixmanifest">
+      <SubType>Designer</SubType>
+    </None>
+    <ProjectReference Include="..\MssqlIntelliSense.Core\MssqlIntelliSense.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectCapability Include="CreateVsixContainer" />
+  </ItemGroup>
+  <!-- Suppress SourceGear.sqlite3 "does not support Any CPU" check: PlatformTarget is already x64 -->
+  <Target Name="CheckForAnyCPU" BeforeTargets="BeforeBuild" />
+  <Target Name="AutoBumpVersion" BeforeTargets="PrepareForBuild" Condition="'$(Configuration)' == 'Release'">
+    <Exec Command="powershell -NoProfile -Command &quot;&amp; { $manifestPath = 'source.extension.vsixmanifest'; if (Test-Path $manifestPath) { $content = Get-Content -Path $manifestPath -Raw; if ($content -match 'Identity\s+[^&gt;]*Version=\&quot;(\d+\.\d+\.\d+)\&quot;') { $currentVersion = $Matches[1]; $parts = $currentVersion.Split('.'); $patch = [int]$parts[2] + 1; $newVersion = $parts[0] + '.' + $parts[1] + '.' + $patch; Write-Host ('Auto-bumping version from ' + $currentVersion + ' to ' + $newVersion + '...'); $content = $content -replace ('Version=\&quot;' + $currentVersion + '\&quot;'), ('Version=\&quot;' + $newVersion + '\&quot;'); Set-Content -Path $manifestPath -Value $content -Encoding UTF8; $packagePath = 'MssqlIntelliSensePackage.cs'; if (Test-Path $packagePath) { $packageContent = Get-Content -Path $packagePath -Raw; $packageContent = $packageContent -replace ('CurrentVersion = new\(\&quot;' + $currentVersion + '\&quot;\)'), ('CurrentVersion = new(\&quot;' + $newVersion + '\&quot;)'); Set-Content -Path $packagePath -Value $packageContent -Encoding UTF8; } } } }&quot;" WorkingDirectory="$(MSBuildProjectDirectory)" />
+  </Target>
+  <Target Name="DeployToSsms" AfterTargets="Build" Condition="'$(Configuration)' == 'Debug' And '$(DisableSsmsDeploy)' != 'true'">
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\..\..\scripts\deploy-ssms.ps1&quot; -ProjectDir &quot;$(MSBuildProjectDirectory)&quot; -TargetDir &quot;$(TargetDir).&quot;" />
+  </Target>
+  <ItemGroup>
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\azure.core\1.38.0\lib\net472\Azure.Core.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\azure.identity\1.11.4\lib\netstandard2.0\Azure.Identity.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\envdte\17.14.40260\lib\net472\envdte.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\envdte100\17.14.40260\lib\net472\envdte100.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\envdte80\17.14.40260\lib\net472\envdte80.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\envdte90\17.14.40260\lib\net472\envdte90.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\envdte90a\17.14.40260\lib\net472\envdte90a.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\messagepack.annotations\3.1.7\lib\netstandard2.0\MessagePack.Annotations.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\messagepack\3.1.7\lib\net472\MessagePack.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.bcl.asyncinterfaces\10.0.9\lib\net462\Microsoft.Bcl.AsyncInterfaces.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.build.framework\17.14.7\ref\net472\Microsoft.Build.Framework.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\Microsoft.CSharp.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.data.sqlclient\5.2.2\ref\net462\Microsoft.Data.SqlClient.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.data.sqlite.core\8.0.14\lib\netstandard2.0\Microsoft.Data.Sqlite.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.extensions.configuration.abstractions\10.0.3\lib\net462\Microsoft.Extensions.Configuration.Abstractions.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.extensions.dependencyinjection.abstractions\10.0.3\lib\net462\Microsoft.Extensions.DependencyInjection.Abstractions.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.extensions.diagnostics.abstractions\10.0.3\lib\net462\Microsoft.Extensions.Diagnostics.Abstractions.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.extensions.fileproviders.abstractions\10.0.3\lib\net462\Microsoft.Extensions.FileProviders.Abstractions.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.extensions.hosting.abstractions\10.0.3\lib\net462\Microsoft.Extensions.Hosting.Abstractions.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.extensions.logging.abstractions\10.0.3\lib\net462\Microsoft.Extensions.Logging.Abstractions.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.extensions.options\10.0.3\lib\net462\Microsoft.Extensions.Options.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.extensions.primitives\10.0.3\lib\net462\Microsoft.Extensions.Primitives.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.identity.client\4.61.3\lib\net462\Microsoft.Identity.Client.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.identity.client.extensions.msal\4.61.3\lib\netstandard2.0\Microsoft.Identity.Client.Extensions.Msal.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.identitymodel.abstractions\6.35.0\lib\net472\Microsoft.IdentityModel.Abstractions.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.identitymodel.jsonwebtokens\6.35.0\lib\net472\Microsoft.IdentityModel.JsonWebTokens.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.identitymodel.logging\6.35.0\lib\net472\Microsoft.IdentityModel.Logging.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.identitymodel.protocols\6.35.0\lib\net472\Microsoft.IdentityModel.Protocols.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.identitymodel.protocols.openidconnect\6.35.0\lib\net472\Microsoft.IdentityModel.Protocols.OpenIdConnect.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.identitymodel.tokens\6.35.0\lib\net472\Microsoft.IdentityModel.Tokens.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.io.redist\6.1.0\lib\net472\Microsoft.IO.Redist.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.servicehub.framework\4.8.55\lib\net472\Microsoft.ServiceHub.Framework.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.servicehub.resources\4.6.2052\lib\net472\Microsoft.ServiceHub.Resources.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.sqlserver.transactsql.scriptdom\180.37.3\lib\net472\Microsoft.SqlServer.TransactSql.ScriptDom.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.commandbars\17.14.40260\lib\net472\Microsoft.VisualStudio.CommandBars.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.componentmodelhost\17.14.106\lib\net472\Microsoft.VisualStudio.ComponentModelHost.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.composition\17.13.41\lib\net472\Microsoft.VisualStudio.Composition.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.coreutility\17.14.249\lib\net472\Microsoft.VisualStudio.CoreUtility.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.debugger.interop.10.0\17.14.40260\lib\net472\Microsoft.VisualStudio.Debugger.Interop.10.0.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.debugger.interop.12.0\17.14.40260\lib\net472\Microsoft.VisualStudio.Debugger.Interop.12.0.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.debugger.interop.14.0\17.14.40260\lib\net472\Microsoft.VisualStudio.Debugger.Interop.14.0.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.debugger.interop.15.0\17.14.40260\lib\net472\Microsoft.VisualStudio.Debugger.Interop.15.0.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.debugger.interop.16.0\17.14.40260\lib\net472\Microsoft.VisualStudio.Debugger.Interop.16.0.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.debugger.interopa\17.14.40260\lib\net472\Microsoft.VisualStudio.Debugger.InteropA.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.designer.interfaces\17.14.40260\lib\net472\Microsoft.VisualStudio.Designer.Interfaces.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.editor\17.14.249\lib\net472\Microsoft.VisualStudio.Editor.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.extensibility.editor.contracts\17.14.249\lib\netstandard2.0\Microsoft.VisualStudio.Extensibility.Editor.Contracts.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.graphmodel\17.14.40260\lib\net472\Microsoft.VisualStudio.GraphModel.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.imagecatalog\17.14.40260\lib\net472\Microsoft.VisualStudio.ImageCatalog.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.imaging\17.14.40264\lib\net472\Microsoft.VisualStudio.Imaging.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.imaging.interop.14.0.designtime\17.14.40254\lib\net472\Microsoft.VisualStudio.Imaging.Interop.14.0.DesignTime.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.interop\17.14.40260\lib\net472\Microsoft.VisualStudio.Interop.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.language\17.14.249\lib\net472\Microsoft.VisualStudio.Language.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.language.intellisense\17.14.249\lib\net472\Microsoft.VisualStudio.Language.Intellisense.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.language.navigateto.interfaces\17.14.249\lib\net472\Microsoft.VisualStudio.Language.NavigateTo.Interfaces.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.language.standardclassification\17.14.249\lib\net472\Microsoft.VisualStudio.Language.StandardClassification.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.languageserver.client\17.14.60\lib\net472\Microsoft.VisualStudio.LanguageServer.Client.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.linux.connectionmanager.store\17.14.40254\lib\net472\Microsoft.VisualStudio.Linux.ConnectionManager.Store.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.ole.interop\17.14.40260\lib\net472\Microsoft.VisualStudio.OLE.Interop.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.package.languageservice.15.0\17.14.40264\lib\net472\Microsoft.VisualStudio.Package.LanguageService.15.0.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.projectaggregator\17.14.40254\lib\net472\Microsoft.VisualStudio.ProjectAggregator.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.remotecontrol\16.3.52\lib\net45\Microsoft.VisualStudio.RemoteControl.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.rpccontracts\17.14.20\lib\netstandard2.0\Microsoft.VisualStudio.RpcContracts.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.setup.configuration.interop\3.14.2075\lib\net35\Microsoft.VisualStudio.Setup.Configuration.Interop.dll">
+      <EmbedInteropTypes>true</EmbedInteropTypes>
+    </ReferencePath>
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.shell.15.0\17.14.40264\lib\net472\Microsoft.VisualStudio.Shell.15.0.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.shell.design\17.14.40264\lib\net472\Microsoft.VisualStudio.Shell.Design.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.shell.framework\17.14.40264\lib\net472\Microsoft.VisualStudio.Shell.Framework.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.shell.interop.10.0\17.14.40260\lib\net472\Microsoft.VisualStudio.Shell.Interop.10.0.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.shell.interop.11.0\17.14.40260\lib\net472\Microsoft.VisualStudio.Shell.Interop.11.0.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.shell.interop.12.0\17.14.40260\lib\net472\Microsoft.VisualStudio.Shell.Interop.12.0.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.shell.interop.8.0\17.14.40260\lib\net472\Microsoft.VisualStudio.Shell.Interop.8.0.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.shell.interop.9.0\17.14.40260\lib\net472\Microsoft.VisualStudio.Shell.Interop.9.0.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.shell.interop\17.14.40260\lib\net472\Microsoft.VisualStudio.Shell.Interop.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.taskrunnerexplorer.14.0\14.0.0\lib\net40\Microsoft.VisualStudio.TaskRunnerExplorer.14.0.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.telemetry\17.14.18\lib\net45\Microsoft.VisualStudio.Telemetry.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.text.data\17.14.249\lib\net472\Microsoft.VisualStudio.Text.Data.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.text.logic\17.14.249\lib\net472\Microsoft.VisualStudio.Text.Logic.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.text.ui\17.14.249\lib\net472\Microsoft.VisualStudio.Text.UI.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.text.ui.wpf\17.14.249\lib\net472\Microsoft.VisualStudio.Text.UI.Wpf.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.textmanager.interop.10.0\17.14.40260\lib\net472\Microsoft.VisualStudio.TextManager.Interop.10.0.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.textmanager.interop.11.0\17.14.40260\lib\net472\Microsoft.VisualStudio.TextManager.Interop.11.0.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.textmanager.interop.12.0\17.14.40260\lib\net472\Microsoft.VisualStudio.TextManager.Interop.12.0.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.textmanager.interop.8.0\17.14.40260\lib\net472\Microsoft.VisualStudio.TextManager.Interop.8.0.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.textmanager.interop.9.0\17.14.40260\lib\net472\Microsoft.VisualStudio.TextManager.Interop.9.0.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.textmanager.interop\17.14.40260\lib\net472\Microsoft.VisualStudio.TextManager.Interop.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.texttemplating.vshost\17.14.40265\lib\net472\Microsoft.VisualStudio.TextTemplating.VSHost.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.threading.only\17.14.15\lib\net472\Microsoft.VisualStudio.Threading.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.utilities\17.14.40264\lib\net472\Microsoft.VisualStudio.Utilities.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.validation\17.8.8\lib\netstandard2.0\Microsoft.VisualStudio.Validation.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.vcprojectengine\17.14.40264\lib\net472\Microsoft.VisualStudio.VCProjectEngine.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.vshelp\17.14.40260\lib\net472\Microsoft.VisualStudio.VSHelp.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.vshelp80\17.14.40260\lib\net472\Microsoft.VisualStudio.VSHelp80.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.wcfreference.interop\17.14.40260\lib\net472\Microsoft.VisualStudio.WCFReference.Interop.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.web.browserlink.12.0\12.0.0\lib\net40\Microsoft.VisualStudio.Web.BrowserLink.12.0.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\microsoft.win32.registry\5.0.0\ref\net461\Microsoft.Win32.Registry.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\mscorlib.dll" />
+    <ReferencePath Include="E:\git\mssql-intelliSense\src\MssqlIntelliSense.Core\bin\Debug\netstandard2.0\MssqlIntelliSense.Core.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\nerdbank.streams\2.12.87\lib\netstandard2.0\Nerdbank.Streams.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\Facades\netstandard.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\newtonsoft.json\13.0.3\lib\net45\Newtonsoft.Json.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\openai\2.11.0\lib\netstandard2.0\OpenAI.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\PresentationCore.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\PresentationFramework.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\sqlitepclraw.config.e_sqlite3\3.0.3\lib\net471\SQLitePCLRaw.batteries_v2.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\sqlitepclraw.core\3.0.3\lib\netstandard2.0\SQLitePCLRaw.core.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\sqlitepclraw.provider.dynamic_cdecl\3.0.3\lib\netstandard2.0\SQLitePCLRaw.provider.dynamic_cdecl.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\sqlitepclraw.provider.e_sqlite3\3.0.3\lib\net471\SQLitePCLRaw.provider.e_sqlite3.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\stdole\17.14.40260\lib\net472\stdole.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\streamjsonrpc\2.22.11\lib\netstandard2.0\StreamJsonRpc.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\system.buffers\4.6.1\lib\net462\System.Buffers.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\system.clientmodel\1.10.0\lib\netstandard2.0\System.ClientModel.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\system.collections.immutable\9.0.0\lib\net462\System.Collections.Immutable.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\System.ComponentModel.Composition.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\System.ComponentModel.DataAnnotations.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\system.composition.attributedmodel\9.0.0\lib\net462\System.Composition.AttributedModel.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\system.composition.convention\9.0.0\lib\net462\System.Composition.Convention.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\system.composition.hosting\9.0.0\lib\net462\System.Composition.Hosting.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\system.composition.runtime\9.0.0\lib\net462\System.Composition.Runtime.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\system.composition.typedparts\9.0.0\lib\net462\System.Composition.TypedParts.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\System.Configuration.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\System.Core.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\System.Data.DataSetExtensions.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\System.Data.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\System.Data.OracleClient.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\System.Design.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\system.diagnostics.diagnosticsource\10.0.3\lib\net462\System.Diagnostics.DiagnosticSource.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\System.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\System.Drawing.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\System.IdentityModel.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\system.identitymodel.tokens.jwt\6.35.0\lib\net472\System.IdentityModel.Tokens.Jwt.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\System.IO.Compression.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\System.IO.Compression.FileSystem.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\system.io.filesystem.accesscontrol\5.0.0\ref\net461\System.IO.FileSystem.AccessControl.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\system.io.pipelines\10.0.9\lib\net462\System.IO.Pipelines.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\system.memory.data\10.0.3\lib\net462\System.Memory.Data.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\system.memory\4.6.3\lib\net462\System.Memory.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\System.Net.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\System.Net.Http.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\system.net.http.json\10.0.9\lib\net462\System.Net.Http.Json.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\system.net.serversentevents\10.0.2\lib\net462\System.Net.ServerSentEvents.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\System.Numerics.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\system.numerics.vectors\4.6.1\lib\net462\System.Numerics.Vectors.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\system.reflection.metadata\9.0.0\lib\net462\System.Reflection.Metadata.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\system.runtime.compilerservices.unsafe\6.1.2\lib\net462\System.Runtime.CompilerServices.Unsafe.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\Facades\System.Runtime.InteropServices.RuntimeInformation.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\System.Runtime.Serialization.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\system.security.accesscontrol\6.0.0\lib\net461\System.Security.AccessControl.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\system.security.cryptography.protecteddata\4.7.0\ref\net461\System.Security.Cryptography.ProtectedData.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\System.Security.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\system.security.principal.windows\5.0.0\ref\net461\System.Security.Principal.Windows.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\System.ServiceProcess.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\system.text.encodings.web\10.0.9\lib\net462\System.Text.Encodings.Web.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\system.text.json\10.0.9\lib\net462\System.Text.Json.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\system.threading.accesscontrol\9.0.0\lib\net462\System.Threading.AccessControl.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\system.threading.tasks.dataflow\9.0.0\lib\net462\System.Threading.Tasks.Dataflow.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\Facades\System.Threading.Tasks.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\system.threading.tasks.extensions\4.6.3\lib\net462\System.Threading.Tasks.Extensions.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\System.Transactions.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\system.valuetuple\4.6.2\lib\net47\System.ValueTuple.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\System.Windows.Controls.Ribbon.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\System.Windows.Forms.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\System.Xaml.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\System.Xml.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\System.Xml.Linq.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\UIAutomationClient.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\UIAutomationClientsideProviders.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\UIAutomationProvider.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\UIAutomationTypes.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\vslangproj\17.14.40260\lib\net472\VSLangProj.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\vslangproj100\17.14.40260\lib\net472\VSLangProj100.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\vslangproj110\17.14.40260\lib\net472\VSLangProj110.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\vslangproj140\17.14.40260\lib\net472\VSLangProj140.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\vslangproj150\17.14.40260\lib\net472\VSLangProj150.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\vslangproj157\17.14.40260\lib\net472\VSLangProj157.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\vslangproj158\17.14.40260\lib\net472\VSLangProj158.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\vslangproj165\17.14.40260\lib\net472\VSLangProj165.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\vslangproj2\17.14.40260\lib\net472\VSLangProj2.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\vslangproj80\17.14.40260\lib\net472\VSLangProj80.dll" />
+    <ReferencePath Include="C:\Users\sop.son\.nuget\packages\vslangproj90\17.14.40260\lib\net472\VSLangProj90.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\WindowsBase.dll" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="E:\git\mssql-intelliSense\src\MssqlIntelliSense.SsmsHost\obj\Debug\net472\UI\ChatAgentControl.g.cs" />
+    <Compile Include="E:\git\mssql-intelliSense\src\MssqlIntelliSense.SsmsHost\obj\Debug\net472\UI\MssqlIntelliSenseWindow.g.cs" />
+    <Compile Include="E:\git\mssql-intelliSense\src\MssqlIntelliSense.SsmsHost\obj\Debug\net472\UI\ToolLabControl.g.cs" />
+    <Compile Include="E:\git\mssql-intelliSense\src\MssqlIntelliSense.SsmsHost\obj\Debug\net472\GeneratedInternalTypeHelper.g.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Analyzer Include="C:\Users\sop.son\.nuget\packages\messagepackanalyzer\3.1.7\analyzers\roslyn4.3\cs\MessagePack.Analyzers.CodeFixes.dll" />
+    <Analyzer Include="C:\Users\sop.son\.nuget\packages\messagepackanalyzer\3.1.7\analyzers\roslyn4.3\cs\MessagePack.SourceGenerator.dll" />
+    <Analyzer Include="C:\Users\sop.son\.nuget\packages\microsoft.extensions.logging.abstractions\10.0.3\analyzers\dotnet\roslyn4.4\cs\Microsoft.Extensions.Logging.Generators.dll" />
+    <Analyzer Include="C:\Users\sop.son\.nuget\packages\microsoft.extensions.options\10.0.3\analyzers\dotnet\roslyn4.4\cs\Microsoft.Extensions.Options.SourceGeneration.dll" />
+    <Analyzer Include="C:\Users\sop.son\.nuget\packages\microsoft.servicehub.analyzers\4.8.55\analyzers\cs\Microsoft.ServiceHub.Analyzers.CSharp.dll" />
+    <Analyzer Include="C:\Users\sop.son\.nuget\packages\microsoft.servicehub.analyzers\4.8.55\analyzers\cs\Microsoft.ServiceHub.Analyzers.CodeFixes.dll" />
+    <Analyzer Include="C:\Users\sop.son\.nuget\packages\microsoft.servicehub.analyzers\4.8.55\analyzers\cs\Microsoft.ServiceHub.Analyzers.dll" />
+    <Analyzer Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.composition.analyzers\17.13.41\analyzers\cs\Microsoft.VisualStudio.Composition.Analyzers.CSharp.dll" />
+    <Analyzer Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.composition.analyzers\17.13.41\analyzers\cs\Microsoft.VisualStudio.Composition.Analyzers.CodeFixes.dll" />
+    <Analyzer Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.composition.analyzers\17.13.41\analyzers\cs\Microsoft.VisualStudio.Composition.Analyzers.dll" />
+    <Analyzer Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.sdk.analyzers\17.7.105\analyzers\cs\Microsoft.VisualStudio.SDK.Analyzers.CodeFixes.dll" />
+    <Analyzer Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.sdk.analyzers\17.7.105\analyzers\cs\Microsoft.VisualStudio.SDK.Analyzers.dll" />
+    <Analyzer Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.threading.analyzers\17.14.15\analyzers\cs\Microsoft.VisualStudio.Threading.Analyzers.CSharp.dll" />
+    <Analyzer Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.threading.analyzers\17.14.15\analyzers\cs\Microsoft.VisualStudio.Threading.Analyzers.CodeFixes.dll" />
+    <Analyzer Include="C:\Users\sop.son\.nuget\packages\microsoft.visualstudio.threading.analyzers\17.14.15\analyzers\cs\Microsoft.VisualStudio.Threading.Analyzers.dll" />
+    <Analyzer Include="C:\Users\sop.son\.nuget\packages\system.clientmodel\1.10.0\analyzers\dotnet\cs\System.ClientModel.SourceGeneration.dll" />
+    <Analyzer Include="C:\Users\sop.son\.nuget\packages\system.text.json\10.0.9\analyzers\dotnet\roslyn4.4\cs\System.Text.Json.SourceGeneration.dll" />
+  </ItemGroup>
+  <Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk" />
+</Project>

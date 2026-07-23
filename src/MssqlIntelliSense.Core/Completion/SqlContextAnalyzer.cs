@@ -575,6 +575,8 @@ public static class SqlContextAnalyzer
             }
         }
 
+        sources.AddRange(CteCompletionHelper.FindCteSources(sql));
+        sources.AddRange(DerivedTableCompletionHelper.FindDerivedTableSources(sql));
         sources.AddRange(LocalVariableCompletionHelper.FindTableVariableSources(sql));
         sources.AddRange(TemporaryTableCompletionHelper.FindTemporaryTableSources(sql));
         return sources;

@@ -172,6 +172,8 @@ public sealed class AdvancedFeatureTests
 
         result.Text.Should().Be("SELECT * FROM dbo.Users WHERE ");
         result.CursorOffset.Should().Be("SELECT * FROM dbo.Users WHERE ".Length);
+        result.SelectionStart.Should().Be("SELECT ".Length);
+        result.SelectionEnd.Should().Be("SELECT *".Length);
     }
 
     [Fact]
@@ -188,6 +190,8 @@ public sealed class AdvancedFeatureTests
 
         result.Text.Should().Be("SELECT * FROM dbo.Users");
         result.CursorOffset.Should().Be(-1);
+        result.SelectionStart.Should().Be(-1);
+        result.SelectionEnd.Should().Be(-1);
     }
 
     [Fact]
@@ -228,6 +232,32 @@ public sealed class AdvancedFeatureTests
         suggestions[0].Label.Should().Be("sf");
         suggestions[0].Kind.Should().Be(SqlCompletionKind.Snippet);
         suggestions[0].Description.Should().Be("SELECT FROM");
+        suggestions[0].SelectionStart.Should().Be(-1);
+        suggestions[0].SelectionEnd.Should().Be(-1);
+    }
+
+    [Fact]
+    public void SnippetCompletionHelper_SelectsFirstPlaceholder()
+    {
+        var suggestions = new List<SqlCompletionItem>();
+        var snippets = new List<Snippet>
+        {
+            new()
+            {
+                Prefix = "cv",
+                Description = "CREATE VIEW",
+                Body = "CREATE VIEW $view_name$\nAS\n$CURSOR$",
+                Placeholders = [new SnippetPlaceholder("view_name", "view_name")]
+            }
+        };
+
+        SnippetCompletionHelper.AddSnippetCompletions(suggestions, "cv", null, snippets);
+
+        var item = suggestions.Should().ContainSingle().Which;
+        item.InsertText.Should().Be("CREATE VIEW view_name\nAS\n");
+        item.CaretOffset.Should().Be("CREATE VIEW view_name\nAS\n".Length);
+        item.SelectionStart.Should().Be("CREATE VIEW ".Length);
+        item.SelectionEnd.Should().Be("CREATE VIEW view_name".Length);
     }
 
     [Fact]

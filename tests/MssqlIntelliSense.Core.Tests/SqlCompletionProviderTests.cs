@@ -49,6 +49,95 @@ public sealed class SqlCompletionProviderTests
     }
 
     [Fact]
+    public void GetCompletions_AfterCteAliasDotSuggestsExplicitColumns()
+    {
+        var sql = "WITH user_cte (Id, Name) AS (SELECT Id, Name FROM dbo.Users) SELECT c.Na FROM user_cte c";
+        var caret = sql.IndexOf("c.Na", StringComparison.Ordinal) + 4;
+        var items = _provider.GetCompletions(sql, caret, TestMetadata.Create());
+
+        items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Column &&
+            item.InsertText == "[Name]" &&
+            item.Description.Contains("cte.user_cte.Name"));
+    }
+
+    [Fact]
+    public void GetCompletions_SelectListSuggestsExplicitCteColumns()
+    {
+        var sql = "WITH user_cte (Id, Name) AS (SELECT Id, Name FROM dbo.Users) SELECT Na FROM user_cte";
+        var caret = sql.IndexOf("Na FROM", StringComparison.Ordinal) + 2;
+        var items = _provider.GetCompletions(sql, caret, TestMetadata.Create());
+
+        items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Column &&
+            item.Label == "user_cte.Name" &&
+            item.InsertText == "[user_cte].[Name]");
+    }
+
+    [Fact]
+    public void GetCompletions_AfterCteAliasDotSuggestsInferredColumns()
+    {
+        var sql = "WITH user_cte AS (SELECT Id, Name FROM dbo.Users) SELECT c.Na FROM user_cte c";
+        var caret = sql.IndexOf("c.Na", StringComparison.Ordinal) + 4;
+        var items = _provider.GetCompletions(sql, caret, TestMetadata.Create());
+
+        items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Column &&
+            item.InsertText == "[Name]" &&
+            item.Description.Contains("cte.user_cte.Name"));
+    }
+
+    [Fact]
+    public void GetCompletions_CteInferredColumnsUseSelectAliases()
+    {
+        var sql = "WITH user_cte AS (SELECT Name AS DisplayName FROM dbo.Users) SELECT c.Dis FROM user_cte c";
+        var caret = sql.IndexOf("c.Dis", StringComparison.Ordinal) + 5;
+        var items = _provider.GetCompletions(sql, caret, TestMetadata.Create());
+
+        items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Column &&
+            item.InsertText == "[DisplayName]");
+    }
+
+    [Fact]
+    public void GetCompletions_AfterDerivedTableAliasDotSuggestsInferredColumns()
+    {
+        var sql = "SELECT d.Na FROM (SELECT Id, Name FROM dbo.Users) d";
+        var caret = sql.IndexOf("d.Na", StringComparison.Ordinal) + 4;
+        var items = _provider.GetCompletions(sql, caret, TestMetadata.Create());
+
+        items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Column &&
+            item.InsertText == "[Name]" &&
+            item.Description.Contains("derived.d.Name"));
+    }
+
+    [Fact]
+    public void GetCompletions_DerivedTableInferredColumnsUseSelectAliases()
+    {
+        var sql = "SELECT d.Dis FROM (SELECT Name AS DisplayName FROM dbo.Users) d";
+        var caret = sql.IndexOf("d.Dis", StringComparison.Ordinal) + 5;
+        var items = _provider.GetCompletions(sql, caret, TestMetadata.Create());
+
+        items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Column &&
+            item.InsertText == "[DisplayName]");
+    }
+
+    [Fact]
+    public void GetCompletions_SelectListSuggestsDerivedTableColumns()
+    {
+        var sql = "SELECT Na FROM (SELECT Id, Name FROM dbo.Users) d";
+        var caret = sql.IndexOf("Na FROM", StringComparison.Ordinal) + 2;
+        var items = _provider.GetCompletions(sql, caret, TestMetadata.Create());
+
+        items.Should().Contain(item =>
+            item.Kind == SqlCompletionKind.Column &&
+            item.Label == "d.Name" &&
+            item.InsertText == "[d].[Name]");
+    }
+
+    [Fact]
     public void GetCompletions_AfterDotWithEmptyPrefixSuggestsAllColumns()
     {
         var sql = "SELECT u. FROM dbo.Users AS u";
@@ -418,6 +507,99 @@ public sealed class SqlCompletionProviderTests
     }
 
     [Fact]
+    public void GetCompletions_ScalarFunctionWithParametersSelectsFirstParameter()
+    {
+        var metadata = new DatabaseMetadata([], [], [], [], [])
+        {
+            Functions =
+            [
+                new FunctionMetadata("dbo", "CalcScore")
+                {
+                    FunctionType = "FN",
+                    ReturnType = "int",
+                    Parameters =
+                    [
+                        new FunctionParameterMetadata("id", "int", false, 1),
+                        new FunctionParameterMetadata("@weight", "decimal", false, 2)
+                    ]
+                }
+            ]
+        };
+
+        var sql = "SELECT Cal";
+        var items = _provider.GetCompletions(sql, sql.Length, metadata);
+
+        var item = items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Function &&
+            item.Label == "dbo.CalcScore").Which;
+        item.InsertText.Should().Be("[CalcScore](@id, @weight)");
+        item.CaretOffset.Should().Be("[CalcScore]".Length + 1);
+        item.SelectionStart.Should().Be(item.CaretOffset);
+        item.SelectionEnd.Should().Be(item.CaretOffset + "@id".Length);
+    }
+
+    [Fact]
+    public void GetCandidateCompletions_ParameterizedProcedureSelectsFirstPlaceholder()
+    {
+        var sql = "EXEC Get";
+        var items = _provider.GetCandidateCompletions(TestMetadata.Create(), sql, sql.Length);
+
+        var item = items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Procedure &&
+            item.Label == "dbo.GetUser").Which;
+        item.InsertText.Should().Be("[GetUser](@UserId = ?, @IncludeInactive = ?)");
+        item.CaretOffset.Should().Be("[GetUser](".Length);
+        item.SelectionStart.Should().Be(item.InsertText.IndexOf('?', StringComparison.Ordinal));
+        item.SelectionEnd.Should().Be(item.SelectionStart + 1);
+    }
+
+    [Fact]
+    public void GetCandidateCompletions_ScalarFunctionSelectsFirstParameter()
+    {
+        var metadata = new DatabaseMetadata([], [], [], [], [])
+        {
+            Functions =
+            [
+                new FunctionMetadata("dbo", "CalcScore")
+                {
+                    FunctionType = "FN",
+                    ReturnType = "int",
+                    Parameters =
+                    [
+                        new FunctionParameterMetadata("id", "int", false, 1),
+                        new FunctionParameterMetadata("@weight", "decimal", false, 2)
+                    ]
+                }
+            ]
+        };
+
+        var sql = "SELECT Cal";
+        var items = _provider.GetCandidateCompletions(metadata, sql, sql.Length);
+
+        var item = items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Function &&
+            item.Label == "dbo.CalcScore").Which;
+        item.InsertText.Should().Be("[CalcScore](@id, @weight)");
+        item.CaretOffset.Should().Be("[CalcScore](".Length);
+        item.SelectionStart.Should().Be(item.CaretOffset);
+        item.SelectionEnd.Should().Be(item.CaretOffset + "@id".Length);
+    }
+
+    [Fact]
+    public void GetCandidateCompletions_InsertTableSelectsFirstValue()
+    {
+        var sql = "INSERT INTO Ord";
+        var items = _provider.GetCandidateCompletions(TestMetadata.Create(), sql, sql.Length);
+
+        var item = items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Table &&
+            item.Label == "sales.Orders").Which;
+        item.InsertText.Should().Be("[Orders]\n([Id], [UserId], [Total])\nVALUES (0, 0, 0)");
+        item.SelectionStart.Should().Be(item.InsertText.IndexOf("0, 0, 0", StringComparison.Ordinal));
+        item.SelectionEnd.Should().Be(item.SelectionStart + "0".Length);
+    }
+
+    [Fact]
     public void GetCompletions_TypeContextDoesNotAddFunctionParentheses()
     {
         // DECLARE context: types added without parentheses
@@ -602,6 +784,8 @@ public sealed class SqlCompletionProviderTests
         var withParamsItem1 = items1.Should().ContainSingle(item => item.Kind == SqlCompletionKind.Function && item.Label == "dbo.MyTvftWithParams").Which;
         withParamsItem1.InsertText.Should().Be("[dbo].[MyTvftWithParams](@id, @name)");
         withParamsItem1.CaretOffset.Should().Be("[dbo].[MyTvftWithParams]".Length + 1);
+        withParamsItem1.SelectionStart.Should().Be(withParamsItem1.CaretOffset);
+        withParamsItem1.SelectionEnd.Should().Be(withParamsItem1.CaretOffset + "@id".Length);
 
         // 2. Qualified
         var sql2 = "SELECT * FROM dbo.";
@@ -614,6 +798,8 @@ public sealed class SqlCompletionProviderTests
         var withParamsItem2 = items2.Should().ContainSingle(item => item.Kind == SqlCompletionKind.Function && item.Label == "MyTvftWithParams").Which;
         withParamsItem2.InsertText.Should().Be("[MyTvftWithParams](@id, @name)");
         withParamsItem2.CaretOffset.Should().Be("[MyTvftWithParams]".Length + 1);
+        withParamsItem2.SelectionStart.Should().Be(withParamsItem2.CaretOffset);
+        withParamsItem2.SelectionEnd.Should().Be(withParamsItem2.CaretOffset + "@id".Length);
     }
 
     [Fact]
@@ -801,6 +987,8 @@ public sealed class SqlCompletionProviderTests
         orderItem.Should().NotBeNull();
         orderItem!.InsertText.Should().Contain("([Id], [UserId], [Total])");
         orderItem.InsertText.Should().Contain("VALUES (0, 0, 0)");
+        orderItem.SelectionStart.Should().Be(orderItem.InsertText.IndexOf("0, 0, 0", StringComparison.Ordinal));
+        orderItem.SelectionEnd.Should().Be(orderItem.SelectionStart + "0".Length);
     }
 
     [Fact]
@@ -830,6 +1018,8 @@ public sealed class SqlCompletionProviderTests
         procItem.Should().NotBeNull();
         procItem!.InsertText.Should().Be("[GetUser](@UserId = ?, @IncludeInactive = ?)");
         procItem.CaretOffset.Should().Be("[GetUser](".Length);
+        procItem.SelectionStart.Should().Be(procItem.InsertText.IndexOf('?', StringComparison.Ordinal));
+        procItem.SelectionEnd.Should().Be(procItem.SelectionStart + 1);
     }
 
     [Fact]
@@ -858,6 +1048,8 @@ public sealed class SqlCompletionProviderTests
         procItem.Should().NotBeNull();
         procItem!.InsertText.Should().Be("[dbo].[GetUser](@UserId = ?, @IncludeInactive = ?)");
         procItem.CaretOffset.Should().Be("[dbo].[GetUser](".Length);
+        procItem.SelectionStart.Should().Be(procItem.InsertText.IndexOf('?', StringComparison.Ordinal));
+        procItem.SelectionEnd.Should().Be(procItem.SelectionStart + 1);
     }
 
     [Fact]
@@ -872,6 +1064,8 @@ public sealed class SqlCompletionProviderTests
         procItem.Should().NotBeNull();
         procItem!.InsertText.Should().Be("[GetUser](@UserId = ?, @IncludeInactive = ?)");
         procItem.CaretOffset.Should().Be("[GetUser](".Length);
+        procItem.SelectionStart.Should().Be(procItem.InsertText.IndexOf('?', StringComparison.Ordinal));
+        procItem.SelectionEnd.Should().Be(procItem.SelectionStart + 1);
     }
 }
 

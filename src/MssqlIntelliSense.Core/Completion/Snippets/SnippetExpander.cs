@@ -1,12 +1,15 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 
 namespace MssqlIntelliSense.Core.Completion.Snippets;
 
 public sealed record ExpandedSnippet(
     string Text,
-    int CursorOffset);
+    int CursorOffset,
+    int SelectionStart = -1,
+    int SelectionEnd = -1);
 
 public static class SnippetExpander
 {
@@ -29,6 +32,11 @@ public static class SnippetExpander
 
         var sb = new StringBuilder(body);
         int cursorOffset = -1;
+        int selectionStart = -1;
+        int selectionEnd = -1;
+        var userPlaceholders = new HashSet<string>(
+            snippet.Placeholders.Select(p => p.Name),
+            StringComparer.OrdinalIgnoreCase);
 
         foreach (var kv in resolved)
         {
@@ -36,6 +44,12 @@ public static class SnippetExpander
             int idx = 0;
             while ((idx = sb.ToString().IndexOf(placeholder, idx, StringComparison.OrdinalIgnoreCase)) >= 0)
             {
+                if (selectionStart < 0 && userPlaceholders.Contains(kv.Key))
+                {
+                    selectionStart = idx;
+                    selectionEnd = idx + kv.Value.Length;
+                }
+
                 sb.Remove(idx, placeholder.Length);
                 sb.Insert(idx, kv.Value);
                 idx += kv.Value.Length;
@@ -49,8 +63,13 @@ public static class SnippetExpander
         {
             cursorOffset = cursorIdx;
             finalText = finalText.Remove(cursorIdx, 1);
+            if (selectionStart > cursorIdx)
+            {
+                selectionStart--;
+                selectionEnd--;
+            }
         }
 
-        return new ExpandedSnippet(finalText, cursorOffset);
+        return new ExpandedSnippet(finalText, cursorOffset, selectionStart, selectionEnd);
     }
 }

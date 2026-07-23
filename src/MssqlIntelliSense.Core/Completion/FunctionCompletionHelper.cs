@@ -20,13 +20,18 @@ public static class FunctionCompletionHelper
             var @params = fn.Parameters;
             string insertText;
             int caretOffset;
+            int selectionStart = -1;
+            int selectionEnd = -1;
             var quoted = SqlCompletionHelper.Quote(fn.Name);
 
             if (@params.Count > 0)
             {
-                var paramList = string.Join(", ", @params.Select(p => SqlCompletionHelper.FormatParameter(p.Name)));
+                var formattedParams = @params.Select(p => SqlCompletionHelper.FormatParameter(p.Name)).ToArray();
+                var paramList = string.Join(", ", formattedParams);
                 insertText = $"{quoted}({paramList})";
                 caretOffset = quoted.Length + 1;
+                selectionStart = caretOffset;
+                selectionEnd = selectionStart + formattedParams[0].Length;
             }
             else
             {
@@ -39,7 +44,9 @@ public static class FunctionCompletionHelper
                 insertText,
                 SqlCompletionKind.Function,
                 $"Scalar Function {fn.Schema}.{fn.Name} ({fn.ReturnType})",
-                caretOffset));
+                caretOffset,
+                selectionStart,
+                selectionEnd));
         }
     }
 }
