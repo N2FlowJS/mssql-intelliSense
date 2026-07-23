@@ -592,7 +592,8 @@ public partial class ChatAgentControl : UserControl
         var tcs = new TaskCompletionSource<bool>();
         using var registration = cancellationToken.Register(() => tcs.TrySetCanceled());
 
-        await Dispatcher.InvokeAsync(() => AddToolApprovalCard(toolCall, tcs));
+        await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
+        AddToolApprovalCard(toolCall, tcs);
         return await tcs.Task;
     }
 
@@ -976,7 +977,7 @@ public partial class ChatAgentControl : UserControl
             await Task.Run(async () =>
             {
                 var completionOptions = new ChatCompletionOptions();
-                foreach (var chatUpdate in chatClient.CompleteChatStreaming(messages, completionOptions, cancellationToken))
+                await foreach (var chatUpdate in chatClient.CompleteChatStreamingAsync(messages, completionOptions, cancellationToken))
                 {
                     cancellationToken.ThrowIfCancellationRequested();
 
@@ -1089,7 +1090,11 @@ public partial class ChatAgentControl : UserControl
             }
             else
             {
-                Dispatcher.Invoke(() => AddChatMessage("Error", message, isUser: false));
+                ThreadHelper.JoinableTaskFactory.Run(async () =>
+                {
+                    await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                    AddChatMessage("Error", message, isUser: false);
+                });
             }
         }
         catch
