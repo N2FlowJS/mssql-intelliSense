@@ -75,7 +75,15 @@ internal sealed class SqlCompletionCommandFilter : IOleCommandTarget
         "USING",
         "TRUNCATE",
         "DELETE",
-        "INSERT"
+        "INSERT",
+        "WHERE",
+        "HAVING",
+        "AND",
+        "OR",
+        "ON",
+        "SET",
+        "BY",
+        "OUTPUT"
     ];
 
     private readonly IVsTextView _textViewAdapter;
@@ -681,6 +689,7 @@ internal static class CompletionIconProvider
         SqlCompletionKind.UserType => "User type",
         SqlCompletionKind.Synonym => "Synonym",
         SqlCompletionKind.BaseType => "Data type",
+        SqlCompletionKind.Variable => "Variable",
         SqlCompletionKind.Snippet => "Snippet",
         _ => "Completion item"
     };
@@ -699,6 +708,7 @@ internal static class CompletionIconProvider
         SqlCompletionKind.UserType => KnownMonikers.Property,
         SqlCompletionKind.Synonym => KnownMonikers.Reference,
         SqlCompletionKind.BaseType => KnownMonikers.Property,
+        SqlCompletionKind.Variable => KnownMonikers.Property,
         SqlCompletionKind.Snippet => KnownMonikers.Snippet,
         _ => KnownMonikers.StatusInformation
     };

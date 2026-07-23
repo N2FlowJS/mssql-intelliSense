@@ -102,6 +102,7 @@ public sealed class SqlCompletionProvider
 
         if (isTableContext)
         {
+            LocalVariableCompletionHelper.AddTableVariableCompletions(suggestions, sql, caretPosition, prefix);
             AddTableCompletions(suggestions, metadata, token);
             if (isJoinContext)
             {
@@ -133,6 +134,12 @@ public sealed class SqlCompletionProvider
         }
         else if (isComparisonRhsContext)
         {
+            LocalVariableCompletionHelper.AddLocalVariableCompletions(
+                suggestions,
+                sql,
+                caretPosition,
+                prefix,
+                includeWhenPrefixEmpty: true);
             ColumnCompletionHelper.AddVisibleColumnCompletions(suggestions, metadata, sql, prefix);
             AddScalarFunctionCompletions(suggestions, metadata, token);
             KeywordCompletionHelper.AddKeywordCompletions(suggestions, prefix, isExpressionContext: true);
@@ -173,6 +180,7 @@ public sealed class SqlCompletionProvider
         }
         else
         {
+            LocalVariableCompletionHelper.AddLocalVariableCompletions(suggestions, sql, caretPosition, prefix);
             ColumnCompletionHelper.AddVisibleColumnCompletions(suggestions, metadata, sql, prefix, targetTableSchema, targetTableName);
             AddScalarFunctionCompletions(suggestions, metadata, token);
             SnippetCompletionHelper.AddSnippetCompletions(suggestions, prefix, _usageRecorder, GetSnippets());

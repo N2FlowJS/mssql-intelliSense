@@ -65,6 +65,7 @@ public static class PredicateCompletionHelper
 
         var previous = relevantTokens[previousTokenIndex];
         return previous.TokenType == TSqlTokenType.Where ||
+               previous.TokenType == TSqlTokenType.Having ||
                previous.Text.Equals("AND", StringComparison.OrdinalIgnoreCase) ||
                previous.Text.Equals("OR", StringComparison.OrdinalIgnoreCase);
     }

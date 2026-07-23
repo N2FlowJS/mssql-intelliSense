@@ -14,6 +14,7 @@ public enum SqlCompletionKind
     UserType,
     Synonym,
     BaseType,
+    Variable,
     Snippet
 }
 

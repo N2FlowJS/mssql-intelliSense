@@ -81,6 +81,75 @@ public sealed class SqlCompletionProviderTests
     }
 
     [Fact]
+    public void GetCompletions_SelectAtSuggestsDeclaredLocalVariables()
+    {
+        var sql = "DECLARE @CustomerId int; SELECT @Cu";
+        var items = _provider.GetCompletions(sql, sql.Length, TestMetadata.Create());
+
+        items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Variable &&
+            item.Label == "@CustomerId" &&
+            item.InsertText == "@CustomerId");
+    }
+
+    [Fact]
+    public void GetCompletions_ComparisonRhsSuggestsDeclaredLocalVariables()
+    {
+        var sql = "DECLARE @CustomerId int; SELECT * FROM dbo.Users u WHERE u.Id = @Cu";
+        var items = _provider.GetCompletions(sql, sql.Length, TestMetadata.Create());
+
+        items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Variable &&
+            item.InsertText == "@CustomerId");
+    }
+
+    [Fact]
+    public void GetCompletions_DoesNotSuggestUndeclaredLocalVariablesFromPriorUsage()
+    {
+        var sql = "SELECT @MissingValue; SELECT @Mi";
+        var items = _provider.GetCompletions(sql, sql.Length, TestMetadata.Create());
+
+        items.Should().NotContain(item =>
+            item.Kind == SqlCompletionKind.Variable &&
+            item.InsertText == "@MissingValue");
+    }
+
+    [Fact]
+    public void GetCompletions_FromSuggestsDeclaredTableVariables()
+    {
+        var sql = "DECLARE @Ids TABLE (Id int); SELECT * FROM @I";
+        var items = _provider.GetCompletions(sql, sql.Length, TestMetadata.Create());
+
+        items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Variable &&
+            item.Label == "@Ids" &&
+            item.InsertText == "@Ids" &&
+            item.Description == "Table variable");
+    }
+
+    [Fact]
+    public void GetCompletions_JoinSuggestsDeclaredTableVariables()
+    {
+        var sql = "DECLARE @Ids TABLE (Id int); SELECT * FROM dbo.Users u JOIN @I";
+        var items = _provider.GetCompletions(sql, sql.Length, TestMetadata.Create());
+
+        items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Variable &&
+            item.InsertText == "@Ids");
+    }
+
+    [Fact]
+    public void GetCompletions_FromDoesNotSuggestScalarLocalVariables()
+    {
+        var sql = "DECLARE @CustomerId int; SELECT * FROM @Cu";
+        var items = _provider.GetCompletions(sql, sql.Length, TestMetadata.Create());
+
+        items.Should().NotContain(item =>
+            item.Kind == SqlCompletionKind.Variable &&
+            item.InsertText == "@CustomerId");
+    }
+
+    [Fact]
     public void GetCompletions_RejectsInvalidCaretPosition()
     {
         var action = () => _provider.GetCompletions("SELECT", 99);
@@ -178,6 +247,21 @@ public sealed class SqlCompletionProviderTests
         items.Should().Contain(item => item.Kind == SqlCompletionKind.Column &&
                                        item.Label == "u.Name = ?" &&
                                        item.InsertText == "[u].[Name] = ?");
+    }
+
+    [Fact]
+    public void GetCompletions_AfterHavingSuggestsPredicateSkeletonsForVisibleColumns()
+    {
+        var sql = "SELECT u.Name, COUNT(*) FROM dbo.Users u GROUP BY u.Name HAVING N";
+        var items = _provider.GetCompletions(sql, sql.Length, TestMetadata.Create());
+
+        var item = items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Column &&
+            item.Label == "u.Name = ?").Which;
+
+        item.InsertText.Should().Be("[u].[Name] = ?");
+        item.SelectionStart.Should().Be("[u].[Name] = ".Length);
+        item.SelectionEnd.Should().Be("[u].[Name] = ?".Length);
     }
 
     [Fact]

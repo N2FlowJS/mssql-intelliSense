@@ -145,19 +145,20 @@ public static class SqlCompletionHelper
     public static int KindRank(SqlCompletionKind kind) => kind switch
     {
         SqlCompletionKind.Column      => 0,
-        SqlCompletionKind.BaseType    => 1,
-        SqlCompletionKind.Table       => 2,
-        SqlCompletionKind.View        => 3,
-        SqlCompletionKind.Synonym     => 4,
-        SqlCompletionKind.Procedure   => 5,
-        SqlCompletionKind.Function    => 6,
-        SqlCompletionKind.UserType    => 7,
-        SqlCompletionKind.Schema      => 8,
-        SqlCompletionKind.Database    => 9,
-        SqlCompletionKind.LinkedServer => 10,
-        SqlCompletionKind.Snippet     => 11,
-        SqlCompletionKind.Keyword     => 12,
-        _ => 12
+        SqlCompletionKind.Variable    => 1,
+        SqlCompletionKind.BaseType    => 2,
+        SqlCompletionKind.Table       => 3,
+        SqlCompletionKind.View        => 4,
+        SqlCompletionKind.Synonym     => 5,
+        SqlCompletionKind.Procedure   => 6,
+        SqlCompletionKind.Function    => 7,
+        SqlCompletionKind.UserType    => 8,
+        SqlCompletionKind.Schema      => 9,
+        SqlCompletionKind.Database    => 10,
+        SqlCompletionKind.LinkedServer => 11,
+        SqlCompletionKind.Snippet     => 12,
+        SqlCompletionKind.Keyword     => 13,
+        _ => 13
     };
 
     public static string Quote(string identifier) => $"[{identifier.Replace("]", "]]", StringComparison.Ordinal)}]";
