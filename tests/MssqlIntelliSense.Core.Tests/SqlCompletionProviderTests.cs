@@ -150,6 +150,31 @@ public sealed class SqlCompletionProviderTests
     }
 
     [Fact]
+    public void GetCompletions_AfterTableVariableAliasDotSuggestsDeclaredColumns()
+    {
+        var sql = "DECLARE @Ids TABLE (Id int, Name nvarchar(100)); SELECT i.Na FROM @Ids i";
+        var caret = sql.IndexOf("i.Na", StringComparison.Ordinal) + 4;
+        var items = _provider.GetCompletions(sql, caret, TestMetadata.Create());
+
+        items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Column &&
+            item.InsertText == "[Name]" &&
+            item.Description.Contains("@.@Ids.Name"));
+    }
+
+    [Fact]
+    public void GetCompletions_SelectListSuggestsDeclaredTableVariableColumns()
+    {
+        var sql = "DECLARE @Ids TABLE (Id int, Name nvarchar(100)); SELECT Na FROM @Ids";
+        var caret = sql.IndexOf("Na FROM", StringComparison.Ordinal) + 2;
+        var items = _provider.GetCompletions(sql, caret, TestMetadata.Create());
+
+        items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Column &&
+            item.InsertText == "[Name]");
+    }
+
+    [Fact]
     public void GetCompletions_FromSuggestsCreatedTemporaryTables()
     {
         var sql = "CREATE TABLE #Results (Id int); SELECT * FROM #R";
@@ -182,6 +207,31 @@ public sealed class SqlCompletionProviderTests
         items.Should().NotContain(item =>
             item.Kind == SqlCompletionKind.Table &&
             item.InsertText == "#Existing");
+    }
+
+    [Fact]
+    public void GetCompletions_AfterTempTableAliasDotSuggestsCreatedColumns()
+    {
+        var sql = "CREATE TABLE #Results (Id int, Name nvarchar(100)); SELECT r.Na FROM #Results r";
+        var caret = sql.IndexOf("r.Na", StringComparison.Ordinal) + 4;
+        var items = _provider.GetCompletions(sql, caret, TestMetadata.Create());
+
+        items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Column &&
+            item.InsertText == "[Name]" &&
+            item.Description.Contains("#.#Results.Name"));
+    }
+
+    [Fact]
+    public void GetCompletions_SelectListSuggestsCreatedTempTableColumns()
+    {
+        var sql = "CREATE TABLE #Results (Id int, Name nvarchar(100)); SELECT Na FROM #Results";
+        var caret = sql.IndexOf("Na FROM", StringComparison.Ordinal) + 2;
+        var items = _provider.GetCompletions(sql, caret, TestMetadata.Create());
+
+        items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Column &&
+            item.InsertText == "[Name]");
     }
 
     [Fact]
