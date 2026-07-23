@@ -485,7 +485,7 @@ public sealed class SqlCompletionProviderTests
         var sql = "COA";
         var items = _provider.GetCompletions(sql, sql.Length);
 
-        items.Should().Contain(item => item.Kind == SqlCompletionKind.Keyword && item.InsertText == "COALESCE()");
+        items.Should().Contain(item => item.Kind == SqlCompletionKind.Keyword && item.InsertText == "COALESCE(?, ?)");
 
         // Non-function keywords (types) don't get parentheses
         var sql2 = "NVAR";
@@ -495,15 +495,179 @@ public sealed class SqlCompletionProviderTests
     }
 
     [Fact]
-    public void GetCompletions_FunctionKeywordsGetAutoParentheses()
+    public void GetCompletions_FunctionKeywordsGetArgumentSkeletons()
     {
         var sql = "COA";
         var items = _provider.GetCompletions(sql, sql.Length);
 
-        items.Should().Contain(item =>
+        var item = items.Should().ContainSingle(item =>
             item.Kind == SqlCompletionKind.Keyword &&
-            item.InsertText == "COALESCE()" &&
-            item.CaretOffset == 9);
+            item.Label == "COALESCE").Which;
+
+        item.InsertText.Should().Be("COALESCE(?, ?)");
+        item.CaretOffset.Should().Be("COALESCE(".Length);
+        item.SelectionStart.Should().Be(item.CaretOffset);
+        item.SelectionEnd.Should().Be(item.CaretOffset + 1);
+    }
+
+    [Fact]
+    public void GetCompletions_CastKeywordSelectsExpressionPlaceholder()
+    {
+        var sql = "CAS";
+        var items = _provider.GetCompletions(sql, sql.Length);
+
+        var item = items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Keyword &&
+            item.Label == "CAST").Which;
+
+        item.InsertText.Should().Be("CAST(? AS INT)");
+        item.CaretOffset.Should().Be("CAST(".Length);
+        item.SelectionStart.Should().Be(item.CaretOffset);
+        item.SelectionEnd.Should().Be(item.CaretOffset + 1);
+    }
+
+    [Fact]
+    public void GetCompletions_AggregateKeywordsGetArgumentSkeletons()
+    {
+        var sql = "SU";
+        var items = _provider.GetCompletions(sql, sql.Length);
+
+        var item = items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Keyword &&
+            item.Label == "SUM").Which;
+
+        item.InsertText.Should().Be("SUM(?)");
+        item.CaretOffset.Should().Be("SUM(".Length);
+        item.SelectionStart.Should().Be(item.CaretOffset);
+        item.SelectionEnd.Should().Be(item.CaretOffset + 1);
+    }
+
+    [Fact]
+    public void GetCompletions_CountKeywordDefaultsToCountStar()
+    {
+        var sql = "COU";
+        var items = _provider.GetCompletions(sql, sql.Length);
+
+        var item = items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Keyword &&
+            item.Label == "COUNT").Which;
+
+        item.InsertText.Should().Be("COUNT(*)");
+        item.CaretOffset.Should().Be(-1);
+        item.SelectionStart.Should().Be(-1);
+        item.SelectionEnd.Should().Be(-1);
+    }
+
+    [Fact]
+    public void GetCompletions_DateAddKeywordSelectsNumberPlaceholder()
+    {
+        var sql = "DATEA";
+        var items = _provider.GetCompletions(sql, sql.Length);
+
+        var item = items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Keyword &&
+            item.Label == "DATEADD").Which;
+
+        item.InsertText.Should().Be("DATEADD(day, ?, ?)");
+        item.CaretOffset.Should().Be("DATEADD(day, ".Length);
+        item.SelectionStart.Should().Be(item.CaretOffset);
+        item.SelectionEnd.Should().Be(item.CaretOffset + 1);
+    }
+
+    [Fact]
+    public void GetCompletions_GetDateKeywordAddsParentheses()
+    {
+        var sql = "GETD";
+        var items = _provider.GetCompletions(sql, sql.Length);
+
+        var item = items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Keyword &&
+            item.Label == "GETDATE").Which;
+
+        item.InsertText.Should().Be("GETDATE()");
+        item.CaretOffset.Should().Be(-1);
+        item.SelectionStart.Should().Be(-1);
+        item.SelectionEnd.Should().Be(-1);
+    }
+
+    [Fact]
+    public void GetCompletions_StringKeywordSelectsExpressionPlaceholder()
+    {
+        var sql = "LOW";
+        var items = _provider.GetCompletions(sql, sql.Length);
+
+        var item = items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Keyword &&
+            item.Label == "LOWER").Which;
+
+        item.InsertText.Should().Be("LOWER(?)");
+        item.CaretOffset.Should().Be("LOWER(".Length);
+        item.SelectionStart.Should().Be(item.CaretOffset);
+        item.SelectionEnd.Should().Be(item.CaretOffset + 1);
+    }
+
+    [Fact]
+    public void GetCompletions_SubstringKeywordAddsArgumentSkeleton()
+    {
+        var sql = "SUBS";
+        var items = _provider.GetCompletions(sql, sql.Length);
+
+        var item = items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Keyword &&
+            item.Label == "SUBSTRING").Which;
+
+        item.InsertText.Should().Be("SUBSTRING(?, ?, ?)");
+        item.CaretOffset.Should().Be("SUBSTRING(".Length);
+        item.SelectionStart.Should().Be(item.CaretOffset);
+        item.SelectionEnd.Should().Be(item.CaretOffset + 1);
+    }
+
+    [Fact]
+    public void GetCompletions_NumericKeywordSelectsExpressionPlaceholder()
+    {
+        var sql = "ROU";
+        var items = _provider.GetCompletions(sql, sql.Length);
+
+        var item = items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Keyword &&
+            item.Label == "ROUND").Which;
+
+        item.InsertText.Should().Be("ROUND(?, ?)");
+        item.CaretOffset.Should().Be("ROUND(".Length);
+        item.SelectionStart.Should().Be(item.CaretOffset);
+        item.SelectionEnd.Should().Be(item.CaretOffset + 1);
+    }
+
+    [Fact]
+    public void GetCompletions_RandKeywordAddsParentheses()
+    {
+        var sql = "RAN";
+        var items = _provider.GetCompletions(sql, sql.Length);
+
+        var item = items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Keyword &&
+            item.Label == "RAND").Which;
+
+        item.InsertText.Should().Be("RAND()");
+        item.CaretOffset.Should().Be(-1);
+        item.SelectionStart.Should().Be(-1);
+        item.SelectionEnd.Should().Be(-1);
+    }
+
+    [Fact]
+    public void GetCompletions_RowNumberKeywordAddsOverOrderBySkeleton()
+    {
+        var sql = "ROW_N";
+        var items = _provider.GetCompletions(sql, sql.Length);
+
+        var item = items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Keyword &&
+            item.Label == "ROW_NUMBER").Which;
+
+        item.InsertText.Should().Be("ROW_NUMBER() OVER (ORDER BY ?)");
+        item.CaretOffset.Should().Be("ROW_NUMBER() OVER (ORDER BY ".Length);
+        item.SelectionStart.Should().Be(item.CaretOffset);
+        item.SelectionEnd.Should().Be(item.CaretOffset + 1);
     }
 
     [Fact]

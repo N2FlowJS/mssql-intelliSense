@@ -9,10 +9,65 @@ public static class KeywordCompletionHelper
 {
     private static readonly HashSet<string> FunctionKeywordSet = new(StringComparer.OrdinalIgnoreCase)
     {
+        "COUNT", "SUM", "AVG", "MIN", "MAX",
         "COALESCE", "NULLIF", "ISNULL", "CAST", "CONVERT", "TRY_CAST", "TRY_CONVERT",
+        "DATEADD", "DATEDIFF", "DATEPART", "YEAR", "MONTH", "DAY", "GETDATE", "SYSDATETIME",
+        "UPPER", "LOWER", "LTRIM", "RTRIM", "TRIM", "LEN", "LEFT", "RIGHT", "SUBSTRING", "REPLACE", "CONCAT",
+        "ABS", "ROUND", "CEILING", "FLOOR", "POWER", "SQRT", "RAND",
         "ROW_NUMBER", "RANK", "DENSE_RANK", "NTILE", "LAG", "LEAD",
         "FIRST_VALUE", "LAST_VALUE"
     };
+
+    private static readonly IReadOnlyDictionary<string, string> FunctionKeywordTemplates =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["COUNT"] = "COUNT(*)",
+            ["SUM"] = "SUM(?)",
+            ["AVG"] = "AVG(?)",
+            ["MIN"] = "MIN(?)",
+            ["MAX"] = "MAX(?)",
+            ["COALESCE"] = "COALESCE(?, ?)",
+            ["ISNULL"] = "ISNULL(?, ?)",
+            ["NULLIF"] = "NULLIF(?, ?)",
+            ["CAST"] = "CAST(? AS INT)",
+            ["TRY_CAST"] = "TRY_CAST(? AS INT)",
+            ["CONVERT"] = "CONVERT(INT, ?)",
+            ["TRY_CONVERT"] = "TRY_CONVERT(INT, ?)",
+            ["DATEADD"] = "DATEADD(day, ?, ?)",
+            ["DATEDIFF"] = "DATEDIFF(day, ?, ?)",
+            ["DATEPART"] = "DATEPART(day, ?)",
+            ["YEAR"] = "YEAR(?)",
+            ["MONTH"] = "MONTH(?)",
+            ["DAY"] = "DAY(?)",
+            ["GETDATE"] = "GETDATE()",
+            ["SYSDATETIME"] = "SYSDATETIME()",
+            ["UPPER"] = "UPPER(?)",
+            ["LOWER"] = "LOWER(?)",
+            ["LTRIM"] = "LTRIM(?)",
+            ["RTRIM"] = "RTRIM(?)",
+            ["TRIM"] = "TRIM(?)",
+            ["LEN"] = "LEN(?)",
+            ["LEFT"] = "LEFT(?, ?)",
+            ["RIGHT"] = "RIGHT(?, ?)",
+            ["SUBSTRING"] = "SUBSTRING(?, ?, ?)",
+            ["REPLACE"] = "REPLACE(?, ?, ?)",
+            ["CONCAT"] = "CONCAT(?, ?)",
+            ["ABS"] = "ABS(?)",
+            ["ROUND"] = "ROUND(?, ?)",
+            ["CEILING"] = "CEILING(?)",
+            ["FLOOR"] = "FLOOR(?)",
+            ["POWER"] = "POWER(?, ?)",
+            ["SQRT"] = "SQRT(?)",
+            ["RAND"] = "RAND()",
+            ["ROW_NUMBER"] = "ROW_NUMBER() OVER (ORDER BY ?)",
+            ["RANK"] = "RANK() OVER (ORDER BY ?)",
+            ["DENSE_RANK"] = "DENSE_RANK() OVER (ORDER BY ?)",
+            ["LAG"] = "LAG(?) OVER (ORDER BY ?)",
+            ["LEAD"] = "LEAD(?) OVER (ORDER BY ?)",
+            ["FIRST_VALUE"] = "FIRST_VALUE(?) OVER (ORDER BY ?)",
+            ["LAST_VALUE"] = "LAST_VALUE(?) OVER (ORDER BY ?)",
+            ["NTILE"] = "NTILE(?) OVER (ORDER BY ?)"
+        };
 
     private static readonly string[] CustomKeywords =
     [
@@ -74,15 +129,38 @@ public static class KeywordCompletionHelper
         {
             if (isExpressionContext && FunctionKeywordSet.Contains(keyword))
             {
-                var insertText = $"{keyword}()";
-                suggestions.Add(new SqlCompletionItem(
-                    keyword, insertText, SqlCompletionKind.Keyword, "T-SQL function", keyword.Length + 1));
+                suggestions.Add(CreateFunctionKeywordItem(keyword));
             }
             else
             {
                 suggestions.Add(new SqlCompletionItem(keyword, keyword, SqlCompletionKind.Keyword, "T-SQL keyword"));
             }
         }
+    }
+
+    private static SqlCompletionItem CreateFunctionKeywordItem(string keyword)
+    {
+        if (!FunctionKeywordTemplates.TryGetValue(keyword, out var insertText))
+        {
+            insertText = $"{keyword}()";
+            return new SqlCompletionItem(
+                keyword,
+                insertText,
+                SqlCompletionKind.Keyword,
+                "T-SQL function",
+                keyword.Length + 1);
+        }
+
+        var selectionStart = insertText.IndexOf("?", StringComparison.Ordinal);
+        var selectionEnd = selectionStart >= 0 ? selectionStart + 1 : -1;
+        return new SqlCompletionItem(
+            keyword,
+            insertText,
+            SqlCompletionKind.Keyword,
+            "T-SQL function",
+            selectionStart,
+            selectionStart,
+            selectionEnd);
     }
 
     public static bool IsFunctionKeyword(string keyword) =>
