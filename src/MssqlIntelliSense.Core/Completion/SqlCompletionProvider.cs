@@ -103,6 +103,7 @@ public sealed class SqlCompletionProvider
         if (isTableContext)
         {
             LocalVariableCompletionHelper.AddTableVariableCompletions(suggestions, sql, caretPosition, prefix);
+            TemporaryTableCompletionHelper.AddTemporaryTableCompletions(suggestions, sql, caretPosition, prefix);
             AddTableCompletions(suggestions, metadata, token);
             if (isJoinContext)
             {

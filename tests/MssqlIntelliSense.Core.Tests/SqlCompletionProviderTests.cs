@@ -150,6 +150,41 @@ public sealed class SqlCompletionProviderTests
     }
 
     [Fact]
+    public void GetCompletions_FromSuggestsCreatedTemporaryTables()
+    {
+        var sql = "CREATE TABLE #Results (Id int); SELECT * FROM #R";
+        var items = _provider.GetCompletions(sql, sql.Length, TestMetadata.Create());
+
+        items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Table &&
+            item.Label == "#Results" &&
+            item.InsertText == "#Results" &&
+            item.Description == "Temporary table");
+    }
+
+    [Fact]
+    public void GetCompletions_JoinSuggestsSelectIntoTemporaryTables()
+    {
+        var sql = "SELECT Id INTO #UserIds FROM dbo.Users; SELECT * FROM dbo.Users u JOIN #U";
+        var items = _provider.GetCompletions(sql, sql.Length, TestMetadata.Create());
+
+        items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Table &&
+            item.InsertText == "#UserIds");
+    }
+
+    [Fact]
+    public void GetCompletions_DoesNotTreatInsertIntoTemporaryTableAsDeclaration()
+    {
+        var sql = "INSERT INTO #Existing SELECT 1; SELECT * FROM #E";
+        var items = _provider.GetCompletions(sql, sql.Length, TestMetadata.Create());
+
+        items.Should().NotContain(item =>
+            item.Kind == SqlCompletionKind.Table &&
+            item.InsertText == "#Existing");
+    }
+
+    [Fact]
     public void GetCompletions_RejectsInvalidCaretPosition()
     {
         var action = () => _provider.GetCompletions("SELECT", 99);

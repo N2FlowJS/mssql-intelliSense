@@ -135,14 +135,14 @@ public partial class MssqlIntelliSenseWindow : Window
 
     private void MssqlIntelliSenseWindow_Loaded(object sender, RoutedEventArgs e)
     {
-        ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
+        ThreadHelper.JoinableTaskFactory.Run(async () =>
         {
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
 
             SettingsNavIcon.Source = SchemaExplorerIconProvider.GetIcon(SchemaExplorerIcon.Settings);
             AboutNavIcon.Source = SchemaExplorerIconProvider.GetIcon(SchemaExplorerIcon.Information);
             await RefreshConnectionsTreeAsync();
-        }).FileAndForget("MssqlIntelliSense/LoadSchemaExplorerWindow");
+        });
     }
 
     private static TreeViewItemViewModel CreateLoadingNode()
@@ -1104,15 +1104,15 @@ public partial class MssqlIntelliSenseWindow : Window
 
         MssqlIntelliSensePackage.Instance?.ForceRefreshSchemaForConnectionString(connStr, progress, () =>
         {
-            Dispatcher.Invoke(() =>
+            ThreadHelper.JoinableTaskFactory.Run(async () =>
             {
-                ThreadHelper.ThrowIfNotOnUIThread();
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
 
                 ScanProgressPanel.Visibility = Visibility.Collapsed;
                 DetailContentPanel.Visibility = Visibility.Visible;
 
                 _connectionData.Clear();
-                RefreshConnectionsTree();
+                await RefreshConnectionsTreeAsync();
             });
         }, scope, databaseName);
     }
