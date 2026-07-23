@@ -69,6 +69,14 @@ public static class KeywordCompletionHelper
             ["NTILE"] = "NTILE(?) OVER (ORDER BY ?)"
         };
 
+    private static readonly IReadOnlyDictionary<string, string> ExpressionKeywordTemplates =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["CASE"] = "CASE WHEN ? THEN ? ELSE ? END",
+            ["EXISTS"] = "EXISTS (SELECT 1 FROM ?)",
+            ["NOT EXISTS"] = "NOT EXISTS (SELECT 1 FROM ?)"
+        };
+
     private static readonly string[] CustomKeywords =
     [
         "LEFT JOIN", "RIGHT JOIN", "INNER JOIN", "FULL JOIN", "CROSS JOIN",
@@ -78,6 +86,7 @@ public static class KeywordCompletionHelper
         "REAL", "DATE", "DATETIME", "DATETIME2", "SMALLDATETIME", "CHAR", "VARCHAR", "NCHAR",
         "NVARCHAR", "UNIQUEIDENTIFIER", "XML",
         "CROSS APPLY", "OUTER APPLY",
+        "NOT EXISTS",
         "THROW", "TRY", "CATCH",
         "RECOMPILE", "MAXDOP", "OFFSET", "FETCH", "OPTION"
     ];
@@ -127,7 +136,11 @@ public static class KeywordCompletionHelper
     {
         foreach (var keyword in Keywords.Where(keyword => SqlCompletionHelper.Matches(keyword, prefix)))
         {
-            if (isExpressionContext && FunctionKeywordSet.Contains(keyword))
+            if (isExpressionContext && ExpressionKeywordTemplates.ContainsKey(keyword))
+            {
+                suggestions.Add(CreateExpressionKeywordItem(keyword));
+            }
+            else if (isExpressionContext && FunctionKeywordSet.Contains(keyword))
             {
                 suggestions.Add(CreateFunctionKeywordItem(keyword));
             }
@@ -136,6 +149,21 @@ public static class KeywordCompletionHelper
                 suggestions.Add(new SqlCompletionItem(keyword, keyword, SqlCompletionKind.Keyword, "T-SQL keyword"));
             }
         }
+    }
+
+    private static SqlCompletionItem CreateExpressionKeywordItem(string keyword)
+    {
+        var insertText = ExpressionKeywordTemplates[keyword];
+        var selectionStart = insertText.IndexOf("?", StringComparison.Ordinal);
+        var selectionEnd = selectionStart >= 0 ? selectionStart + 1 : -1;
+        return new SqlCompletionItem(
+            keyword,
+            insertText,
+            SqlCompletionKind.Keyword,
+            "T-SQL expression",
+            selectionStart,
+            selectionStart,
+            selectionEnd);
     }
 
     private static SqlCompletionItem CreateFunctionKeywordItem(string keyword)

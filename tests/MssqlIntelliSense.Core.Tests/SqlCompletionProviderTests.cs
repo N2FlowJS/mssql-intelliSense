@@ -208,6 +208,50 @@ public sealed class SqlCompletionProviderTests
     }
 
     [Fact]
+    public void GetCompletions_AfterStringColumnComparisonSuggestsStringValueSkeleton()
+    {
+        var sql = "SELECT * FROM dbo.Users u WHERE u.Name = ";
+        var items = _provider.GetCompletions(sql, sql.Length, TestMetadata.Create());
+
+        var item = items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Snippet &&
+            item.Label == "string value").Which;
+
+        item.InsertText.Should().Be("N'?'");
+        item.SelectionStart.Should().Be("N'".Length);
+        item.SelectionEnd.Should().Be(item.SelectionStart + 1);
+        items.Should().Contain(item =>
+            item.Kind == SqlCompletionKind.Snippet &&
+            item.Label == "value" &&
+            item.InsertText == "?");
+    }
+
+    [Fact]
+    public void GetCompletions_AfterDateColumnComparisonSuggestsDateValueSkeleton()
+    {
+        var metadata = new DatabaseMetadata(
+            [
+                new TableMetadata("dbo", "Users",
+                    [
+                        new("Id", "int", false, 1),
+                        new("CreatedDate", "datetime2", false, 2)
+                    ],
+                    ["Id"])
+            ],
+            [], [], [], []);
+        var sql = "SELECT * FROM dbo.Users u WHERE u.CreatedDate >= ";
+        var items = _provider.GetCompletions(sql, sql.Length, metadata);
+
+        var item = items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Snippet &&
+            item.Label == "date value").Which;
+
+        item.InsertText.Should().Be("'?'");
+        item.SelectionStart.Should().Be("'".Length);
+        item.SelectionEnd.Should().Be(item.SelectionStart + 1);
+    }
+
+    [Fact]
     public void GetCompletions_AfterLikeSuggestsSearchPatternSkeleton()
     {
         var sql = "SELECT * FROM dbo.Users u WHERE u.Name LIKE ";
@@ -828,6 +872,54 @@ public sealed class SqlCompletionProviderTests
     }
 
     [Fact]
+    public void GetCompletions_CaseKeywordGetsExpressionSkeleton()
+    {
+        var sql = "SELECT CA";
+        var items = _provider.GetCompletions(sql, sql.Length);
+
+        var item = items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Keyword &&
+            item.Label == "CASE").Which;
+
+        item.InsertText.Should().Be("CASE WHEN ? THEN ? ELSE ? END");
+        item.CaretOffset.Should().Be("CASE WHEN ".Length);
+        item.SelectionStart.Should().Be(item.CaretOffset);
+        item.SelectionEnd.Should().Be(item.CaretOffset + 1);
+    }
+
+    [Fact]
+    public void GetCompletions_ExistsKeywordGetsSubquerySkeleton()
+    {
+        var sql = "SELECT * FROM dbo.Users u WHERE EX";
+        var items = _provider.GetCompletions(sql, sql.Length, TestMetadata.Create());
+
+        var item = items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Keyword &&
+            item.Label == "EXISTS").Which;
+
+        item.InsertText.Should().Be("EXISTS (SELECT 1 FROM ?)");
+        item.CaretOffset.Should().Be("EXISTS (SELECT 1 FROM ".Length);
+        item.SelectionStart.Should().Be(item.CaretOffset);
+        item.SelectionEnd.Should().Be(item.CaretOffset + 1);
+    }
+
+    [Fact]
+    public void GetCompletions_NotExistsKeywordGetsSubquerySkeleton()
+    {
+        var sql = "SELECT * FROM dbo.Users u WHERE NO";
+        var items = _provider.GetCompletions(sql, sql.Length, TestMetadata.Create());
+
+        var item = items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Keyword &&
+            item.Label == "NOT EXISTS").Which;
+
+        item.InsertText.Should().Be("NOT EXISTS (SELECT 1 FROM ?)");
+        item.CaretOffset.Should().Be("NOT EXISTS (SELECT 1 FROM ".Length);
+        item.SelectionStart.Should().Be(item.CaretOffset);
+        item.SelectionEnd.Should().Be(item.CaretOffset + 1);
+    }
+
+    [Fact]
     public void GetCompletions_AggregateKeywordsGetArgumentSkeletons()
     {
         var sql = "SU";
@@ -1042,7 +1134,7 @@ public sealed class SqlCompletionProviderTests
             item.Kind == SqlCompletionKind.Procedure &&
             item.Label == "dbo.TryFindUser").Which;
 
-        item.InsertText.Should().Be("[dbo].[TryFindUser](@Name = ?, @UserId = ? OUTPUT)");
+        item.InsertText.Should().Be("[TryFindUser](@Name = ?, @UserId = ? OUTPUT)");
         item.SelectionStart.Should().Be(item.InsertText.IndexOf('?', StringComparison.Ordinal));
         item.SelectionEnd.Should().Be(item.SelectionStart + 1);
     }
@@ -1210,6 +1302,18 @@ public sealed class SqlCompletionProviderTests
     }
 
     [Fact]
+    public void GetCompletions_FromSuggestsTableAliasSkeleton()
+    {
+        var sql = "SELECT * FROM Us";
+        var items = _provider.GetCompletions(sql, sql.Length, TestMetadata.Create());
+
+        items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Snippet &&
+            item.Label == "dbo.Users AS alias" &&
+            item.InsertText == "[dbo].[Users] AS [u]");
+    }
+
+    [Fact]
     public void GetCompletions_TypeContextSuggestsBaseTypesAndUserTypes()
     {
         var metadata = new DatabaseMetadata([], [], [], [], [])
@@ -1294,6 +1398,34 @@ public sealed class SqlCompletionProviderTests
         withParamsItem2.CaretOffset.Should().Be("[MyTvftWithParams]".Length + 1);
         withParamsItem2.SelectionStart.Should().Be(withParamsItem2.CaretOffset);
         withParamsItem2.SelectionEnd.Should().Be(withParamsItem2.CaretOffset + "@id".Length);
+    }
+
+    [Fact]
+    public void GetCompletions_TableFunctionSuggestsAliasSkeleton()
+    {
+        var metadata = new DatabaseMetadata([], [], [], [], [])
+        {
+            Functions =
+            [
+                new FunctionMetadata("dbo", "MyTableFunction")
+                {
+                    FunctionType = "TF",
+                    Parameters = [new FunctionParameterMetadata("id", "int", false, 1)]
+                }
+            ]
+        };
+
+        var sql = "SELECT * FROM My";
+        var items = _provider.GetCompletions(sql, sql.Length, metadata);
+
+        var item = items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Snippet &&
+            item.Label == "dbo.MyTableFunction AS alias").Which;
+
+        item.InsertText.Should().Be("[dbo].[MyTableFunction](@id) AS [mtf]");
+        item.CaretOffset.Should().Be("[dbo].[MyTableFunction](".Length);
+        item.SelectionStart.Should().Be(item.CaretOffset);
+        item.SelectionEnd.Should().Be(item.CaretOffset + "@id".Length);
     }
 
     [Fact]

@@ -153,6 +153,7 @@ public sealed class SqlCompletionProvider
         {
             ComparisonRhsCompletionHelper.AddComparisonRhsCompletions(
                 suggestions,
+                metadata,
                 sql,
                 caretPosition,
                 prefix);
@@ -392,14 +393,22 @@ public sealed class SqlCompletionProvider
             switch (candidate)
             {
                 case TableCandidate t:
-                    suggestions.Add(new SqlCompletionItem(
-                        t.Name, SqlCompletionHelper.Quote(t.Name), SqlCompletionKind.Table,
-                        $"Table {schema}.{t.Name}"));
+                    AddSchemaQualifiedObjectCompletion(
+                        suggestions,
+                        t.Name,
+                        SqlCompletionHelper.Quote(t.Name),
+                        SqlCompletionKind.Table,
+                        $"Table {schema}.{t.Name}",
+                        token);
                     break;
                 case ViewCandidate v:
-                    suggestions.Add(new SqlCompletionItem(
-                        v.Name, SqlCompletionHelper.Quote(v.Name), SqlCompletionKind.View,
-                        $"View {schema}.{v.Name}"));
+                    AddSchemaQualifiedObjectCompletion(
+                        suggestions,
+                        v.Name,
+                        SqlCompletionHelper.Quote(v.Name),
+                        SqlCompletionKind.View,
+                        $"View {schema}.{v.Name}",
+                        token);
                     break;
                 case FunctionCandidate fn when fn.FunctionType is "TF" or "IF":
                     {
@@ -431,6 +440,17 @@ public sealed class SqlCompletionProvider
                             caretOffset,
                             selectionStart,
                             selectionEnd));
+                        AddFromJoinAliasCompletion(
+                            suggestions,
+                            $"{fn.Name} AS alias",
+                            insertText,
+                            SqlCompletionKind.Function,
+                            $"Table Function {schema}.{fn.Name} alias",
+                            token,
+                            fn.Name,
+                            caretOffset,
+                            selectionStart,
+                            selectionEnd);
                     }
                     break;
                 case SynonymCandidate syn:
@@ -589,6 +609,73 @@ public sealed class SqlCompletionProvider
 
     // ── Helpers ────────────────────────────────────────────────────────────
 
+    private static void AddSchemaQualifiedObjectCompletion(
+        List<SqlCompletionItem> suggestions,
+        string label,
+        string insertText,
+        SqlCompletionKind kind,
+        string description,
+        CompletionToken token)
+    {
+        suggestions.Add(new SqlCompletionItem(label, insertText, kind, description));
+        AddFromJoinAliasCompletion(
+            suggestions,
+            $"{label} AS alias",
+            insertText,
+            kind,
+            $"{description} alias",
+            token,
+            label);
+    }
+
+    private static void AddFromJoinAliasCompletion(
+        List<SqlCompletionItem> suggestions,
+        string label,
+        string insertText,
+        SqlCompletionKind kind,
+        string description,
+        CompletionToken token,
+        string objectName,
+        int caretOffset = -1,
+        int selectionStart = -1,
+        int selectionEnd = -1)
+    {
+        if (!token.IsFromJoinContext ||
+            token.IsInsertIntoContext ||
+            token.IsOutputIntoContext)
+        {
+            return;
+        }
+
+        var alias = GenerateAlias(objectName);
+        suggestions.Add(new SqlCompletionItem(
+            label,
+            $"{insertText} AS {SqlCompletionHelper.Quote(alias)}",
+            SqlCompletionKind.Snippet,
+            description,
+            caretOffset,
+            selectionStart,
+            selectionEnd));
+    }
+
+    private static string GenerateAlias(string name)
+    {
+        var letters = name
+            .Where(char.IsLetter)
+            .ToArray();
+        if (letters.Length == 0)
+            return "x";
+
+        var initials = letters
+            .Where(char.IsUpper)
+            .Select(char.ToLowerInvariant)
+            .ToArray();
+        if (initials.Length > 1)
+            return new string(initials);
+
+        return char.ToLowerInvariant(letters[0]).ToString();
+    }
+
     private static CompletionContext BuildCompletionContext(CompletionToken token)
     {
         return new CompletionContext
@@ -653,6 +740,17 @@ public sealed class SqlCompletionProvider
                     caretOffset,
                     selectionStart,
                     selectionEnd));
+                AddFromJoinAliasCompletion(
+                    suggestions,
+                    $"{label} AS alias",
+                    insertText,
+                    SqlCompletionKind.Table,
+                    $"Table {schema}.{t.Name} alias",
+                    token,
+                    t.Name,
+                    caretOffset,
+                    selectionStart,
+                    selectionEnd);
                 break;
             }
 
@@ -664,6 +762,14 @@ public sealed class SqlCompletionProvider
                 var label = includeSchema ? $"{schema}.{v.Name}" : v.Name;
                 suggestions.Add(new SqlCompletionItem(
                     label, qualifiedName, SqlCompletionKind.View, $"View {schema}.{v.Name}"));
+                AddFromJoinAliasCompletion(
+                    suggestions,
+                    $"{label} AS alias",
+                    qualifiedName,
+                    SqlCompletionKind.View,
+                    $"View {schema}.{v.Name} alias",
+                    token,
+                    v.Name);
                 break;
             }
 
@@ -703,6 +809,17 @@ public sealed class SqlCompletionProvider
                     caretOffset,
                     selectionStart,
                     selectionEnd));
+                AddFromJoinAliasCompletion(
+                    suggestions,
+                    $"{label} AS alias",
+                    insertText,
+                    SqlCompletionKind.Function,
+                    $"Table Function {schema}.{fn.Name} alias",
+                    token,
+                    fn.Name,
+                    caretOffset,
+                    selectionStart,
+                    selectionEnd);
                 break;
             }
 

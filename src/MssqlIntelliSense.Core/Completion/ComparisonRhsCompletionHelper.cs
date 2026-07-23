@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using Microsoft.SqlServer.TransactSql.ScriptDom;
+using MssqlIntelliSense.Core.Metadata;
 
 namespace MssqlIntelliSense.Core.Completion;
 
@@ -10,6 +11,7 @@ public static class ComparisonRhsCompletionHelper
 {
     public static void AddComparisonRhsCompletions(
         List<SqlCompletionItem> suggestions,
+        DatabaseMetadata metadata,
         string sql,
         int caretPosition,
         string prefix)
@@ -34,9 +36,34 @@ public static class ComparisonRhsCompletionHelper
         {
             AddSnippet(suggestions, "BETWEEN end", "?", "BETWEEN end value");
         }
-        else if (context == RhsContext.Value && SqlCompletionHelper.Matches("value", prefix))
+        else if (context == RhsContext.Value)
         {
-            AddSnippet(suggestions, "value", "?", "Comparison value");
+            AddTypedValueCompletions(suggestions, metadata, sql, caretPosition, prefix);
+            if (SqlCompletionHelper.Matches("value", prefix))
+            {
+                AddSnippet(suggestions, "value", "?", "Comparison value");
+            }
+        }
+    }
+
+    private static void AddTypedValueCompletions(
+        List<SqlCompletionItem> suggestions,
+        DatabaseMetadata metadata,
+        string sql,
+        int caretPosition,
+        string prefix)
+    {
+        var dataType = TryGetComparedColumnDataType(sql, caretPosition, metadata);
+        if (dataType == null)
+            return;
+
+        if (IsStringType(dataType) && SqlCompletionHelper.Matches("string value", prefix))
+        {
+            AddSnippet(suggestions, "string value", "N'?'", "Unicode string comparison value");
+        }
+        else if (IsDateOrTimeType(dataType) && SqlCompletionHelper.Matches("date value", prefix))
+        {
+            AddSnippet(suggestions, "date value", "'?'", "Date/time comparison value");
         }
     }
 
@@ -92,9 +119,7 @@ public static class ComparisonRhsCompletionHelper
         for (var i = previousTokenIndex; i >= 0; i--)
         {
             var token = relevantTokens[i];
-            if (token.TokenType == TSqlTokenType.EqualsSign ||
-                token.TokenType == TSqlTokenType.LessThan ||
-                token.TokenType == TSqlTokenType.GreaterThan)
+            if (IsComparisonOperator(token))
             {
                 return RhsContext.Value;
             }
@@ -115,6 +140,117 @@ public static class ComparisonRhsCompletionHelper
         }
 
         return RhsContext.None;
+    }
+
+    private static string? TryGetComparedColumnDataType(string sql, int caretPosition, DatabaseMetadata metadata)
+    {
+        using var reader = new StringReader(sql);
+        var parser = new TSql160Parser(initialQuotedIdentifiers: true);
+        var tokens = parser.GetTokenStream(reader, out _);
+        if (tokens == null)
+            return null;
+
+        var relevantTokens = tokens
+            .Where(t => t.Offset < caretPosition &&
+                        t.TokenType != TSqlTokenType.WhiteSpace &&
+                        t.TokenType != TSqlTokenType.SingleLineComment &&
+                        t.TokenType != TSqlTokenType.MultilineComment)
+            .ToList();
+
+        var previousTokenIndex = relevantTokens.Count - 1;
+        if (previousTokenIndex < 0)
+            return null;
+
+        var previousToken = relevantTokens[previousTokenIndex];
+        if (previousToken.Offset + previousToken.Text.Length >= caretPosition &&
+            SqlCompletionHelper.IsIdentifierOrKeyword(previousToken))
+        {
+            previousTokenIndex--;
+        }
+
+        for (var i = previousTokenIndex; i >= 0; i--)
+        {
+            var token = relevantTokens[i];
+            if (IsComparisonOperator(token))
+            {
+                return TryGetColumnDataTypeBeforeOperator(sql, metadata, relevantTokens, i);
+            }
+
+            if (token.TokenType == TSqlTokenType.Where ||
+                token.TokenType == TSqlTokenType.Having ||
+                token.TokenType == TSqlTokenType.Join ||
+                token.TokenType == TSqlTokenType.Comma ||
+                token.TokenType == TSqlTokenType.Semicolon)
+            {
+                break;
+            }
+        }
+
+        return null;
+    }
+
+    private static string? TryGetColumnDataTypeBeforeOperator(
+        string sql,
+        DatabaseMetadata metadata,
+        IReadOnlyList<TSqlParserToken> tokens,
+        int operatorIndex)
+    {
+        while (operatorIndex > 0 && IsComparisonOperator(tokens[operatorIndex - 1]))
+        {
+            operatorIndex--;
+        }
+
+        var columnIndex = operatorIndex - 1;
+        if (columnIndex < 0 || !SqlCompletionHelper.IsIdentifierOrKeyword(tokens[columnIndex]))
+            return null;
+
+        var columnName = SqlCompletionHelper.Unquote(tokens[columnIndex].Text);
+        string? alias = null;
+        if (columnIndex >= 2 &&
+            tokens[columnIndex - 1].TokenType == TSqlTokenType.Dot &&
+            SqlCompletionHelper.IsIdentifierOrKeyword(tokens[columnIndex - 2]))
+        {
+            alias = SqlCompletionHelper.Unquote(tokens[columnIndex - 2].Text);
+        }
+
+        var sources = SqlContextAnalyzer.FindSources(sql, metadata);
+        if (alias != null)
+        {
+            var source = sources.FirstOrDefault(s => s.Alias.Equals(alias, StringComparison.OrdinalIgnoreCase));
+            return source?.Columns.FirstOrDefault(c => c.Name.Equals(columnName, StringComparison.OrdinalIgnoreCase))?.DataType;
+        }
+
+        var matches = sources
+            .SelectMany(s => s.Columns)
+            .Where(c => c.Name.Equals(columnName, StringComparison.OrdinalIgnoreCase))
+            .Take(2)
+            .ToArray();
+
+        return matches.Length == 1 ? matches[0].DataType : null;
+    }
+
+    private static bool IsStringType(string dataType)
+    {
+        return dataType.Contains("char", StringComparison.OrdinalIgnoreCase) ||
+               dataType.Contains("text", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsDateOrTimeType(string dataType)
+    {
+        return dataType.Contains("date", StringComparison.OrdinalIgnoreCase) ||
+               dataType.Contains("time", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsComparisonOperator(TSqlParserToken token)
+    {
+        if (token.TokenType == TSqlTokenType.EqualsSign ||
+            token.TokenType == TSqlTokenType.LessThan ||
+            token.TokenType == TSqlTokenType.GreaterThan)
+        {
+            return true;
+        }
+
+        return token.Text is "=" or "<" or ">" or "<=" or ">=" or "<>" or "!=";
     }
 
     private static bool IsInsideBetween(IReadOnlyList<TSqlParserToken> tokens, int fromIndex)

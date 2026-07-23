@@ -312,6 +312,7 @@ public static class SqlContextAnalyzer
             if (t == TSqlTokenType.EqualsSign ||
                 t == TSqlTokenType.LessThan   ||
                 t == TSqlTokenType.GreaterThan ||
+                IsComparisonOperatorText(tokens[i].Text) ||
                 t == TSqlTokenType.Like)
                 return true;
             if (string.Equals(tokens[i].Text, "IN", StringComparison.OrdinalIgnoreCase) ||
@@ -326,6 +327,9 @@ public static class SqlContextAnalyzer
         }
         return false;
     }
+
+    private static bool IsComparisonOperatorText(string text) =>
+        text is "=" or "<" or ">" or "<=" or ">=" or "<>" or "!=";
 
     /// <summary>
     /// Scans the SELECT list (up to FROM) and returns all column aliases defined there.
