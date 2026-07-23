@@ -238,6 +238,24 @@ public sealed class SqlCompletionProviderTests
     }
 
     [Fact]
+    public void GetCompletions_AfterBetweenAndSuggestsEndValueSkeleton()
+    {
+        var sql = "SELECT * FROM dbo.Users u WHERE u.Id BETWEEN 1 AND ";
+        var items = _provider.GetCompletions(sql, sql.Length, TestMetadata.Create());
+
+        var item = items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Snippet &&
+            item.Label == "BETWEEN end").Which;
+
+        item.InsertText.Should().Be("?");
+        item.SelectionStart.Should().Be(0);
+        item.SelectionEnd.Should().Be(1);
+        items.Should().NotContain(item =>
+            item.Kind == SqlCompletionKind.Snippet &&
+            item.Label == "BETWEEN range");
+    }
+
+    [Fact]
     public void GetCompletions_AfterNotLikeSuggestsSearchPatternSkeleton()
     {
         var sql = "SELECT * FROM dbo.Users u WHERE u.Name NOT LIKE ";
@@ -404,6 +422,48 @@ public sealed class SqlCompletionProviderTests
         items.Should().ContainSingle(item =>
             item.Kind == SqlCompletionKind.Column &&
             item.InsertText == "[Name]");
+    }
+
+    [Fact]
+    public void GetCompletions_OrderBySuggestsDirectionKeywords()
+    {
+        var sql = "SELECT * FROM dbo.Users u ORDER BY u.Name DE";
+        var items = _provider.GetCompletions(sql, sql.Length, TestMetadata.Create());
+
+        items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Keyword &&
+            item.Label == "DESC" &&
+            item.InsertText == "DESC");
+    }
+
+    [Fact]
+    public void GetCompletions_OrderBySuggestsOffsetFetchSkeleton()
+    {
+        var sql = "SELECT * FROM dbo.Users u ORDER BY u.Name OF";
+        var items = _provider.GetCompletions(sql, sql.Length, TestMetadata.Create());
+
+        var item = items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Snippet &&
+            item.Label == "OFFSET FETCH").Which;
+
+        item.InsertText.Should().Be("OFFSET ? ROWS FETCH NEXT ? ROWS ONLY");
+        item.SelectionStart.Should().Be("OFFSET ".Length);
+        item.SelectionEnd.Should().Be(item.SelectionStart + 1);
+    }
+
+    [Fact]
+    public void GetCompletions_OrderBySuggestsFetchNextSkeleton()
+    {
+        var sql = "SELECT * FROM dbo.Users u ORDER BY u.Name OFFSET 10 ROWS F";
+        var items = _provider.GetCompletions(sql, sql.Length, TestMetadata.Create());
+
+        var item = items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Snippet &&
+            item.Label == "FETCH NEXT").Which;
+
+        item.InsertText.Should().Be("FETCH NEXT ? ROWS ONLY");
+        item.SelectionStart.Should().Be("FETCH NEXT ".Length);
+        item.SelectionEnd.Should().Be(item.SelectionStart + 1);
     }
 
     [Fact]

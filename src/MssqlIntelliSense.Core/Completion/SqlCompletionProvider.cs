@@ -131,6 +131,7 @@ public sealed class SqlCompletionProvider
                     "SELECT output alias"));
             }
             ColumnCompletionHelper.AddVisibleColumnCompletions(suggestions, metadata, sql, prefix);
+            OrderByCompletionHelper.AddOrderByCompletions(suggestions, prefix);
             KeywordCompletionHelper.AddKeywordCompletions(suggestions, prefix, isExpressionContext: true);
         }
         else if (isComparisonRhsContext)

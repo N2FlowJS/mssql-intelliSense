@@ -30,6 +30,10 @@ public static class ComparisonRhsCompletionHelper
         {
             AddSnippet(suggestions, "BETWEEN range", "? AND ?", "BETWEEN range values");
         }
+        else if (context == RhsContext.BetweenEnd && SqlCompletionHelper.Matches("BETWEEN end", prefix))
+        {
+            AddSnippet(suggestions, "BETWEEN end", "?", "BETWEEN end value");
+        }
     }
 
     private static void AddSnippet(
@@ -74,6 +78,12 @@ public static class ComparisonRhsCompletionHelper
         {
             previousTokenIndex--;
         }
+        if (previousTokenIndex >= 0 &&
+            relevantTokens[previousTokenIndex].Text.Equals("AND", StringComparison.OrdinalIgnoreCase) &&
+            IsInsideBetween(relevantTokens, previousTokenIndex - 1))
+        {
+            return RhsContext.BetweenEnd;
+        }
 
         for (var i = previousTokenIndex; i >= 0; i--)
         {
@@ -97,11 +107,32 @@ public static class ComparisonRhsCompletionHelper
         return RhsContext.None;
     }
 
+    private static bool IsInsideBetween(IReadOnlyList<TSqlParserToken> tokens, int fromIndex)
+    {
+        for (var i = fromIndex; i >= 0; i--)
+        {
+            var token = tokens[i];
+            if (token.Text.Equals("BETWEEN", StringComparison.OrdinalIgnoreCase))
+                return true;
+            if (token.TokenType == TSqlTokenType.Where ||
+                token.TokenType == TSqlTokenType.Having ||
+                token.TokenType == TSqlTokenType.Join ||
+                token.TokenType == TSqlTokenType.Comma ||
+                token.TokenType == TSqlTokenType.Semicolon)
+            {
+                break;
+            }
+        }
+
+        return false;
+    }
+
     private enum RhsContext
     {
         None,
         Like,
         In,
-        Between
+        Between,
+        BetweenEnd
     }
 }
