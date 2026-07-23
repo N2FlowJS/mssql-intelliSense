@@ -10,6 +10,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.PlatformUI;
 using OpenAI;
 using OpenAI.Chat;
@@ -139,12 +140,10 @@ public partial class ChatAgentControl : UserControl
 
     private async Task SendChatAsync(string message, CancellationToken cancellationToken)
     {
-        await Dispatcher.InvokeAsync(() =>
-        {
-            AddChatMessage("You", message, isUser: true);
-            ChatInputTextBox.Text = string.Empty;
-        });
-        var allowedToolNames = await Dispatcher.InvokeAsync(GetAllowedToolNamesFromUi);
+        await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
+        AddChatMessage("You", message, isUser: true);
+        ChatInputTextBox.Text = string.Empty;
+        var allowedToolNames = GetAllowedToolNamesFromUi();
 
         // Get AI options
         var options = MssqlIntelliSensePackage.GetOptions();
@@ -154,13 +153,13 @@ public partial class ChatAgentControl : UserControl
             return;
         }
 
-        var chatConnection = await Dispatcher.InvokeAsync(ResolveChatConnectionContext);
-        await Dispatcher.InvokeAsync(() => AddChatMessage(
+        var chatConnection = ResolveChatConnectionContext();
+        AddChatMessage(
             "Context",
             string.IsNullOrWhiteSpace(chatConnection.DisplayName)
                 ? "No active SQL connection found. The assistant will answer without cached schema context."
                 : $"Connection: {chatConnection.DisplayName}",
-            isUser: false));
+            isUser: false);
 
         var metadata = await Task.Run(() =>
         {
@@ -211,10 +210,8 @@ public partial class ChatAgentControl : UserControl
         }
 
         Border? assistantMessageBorder = null;
-        await Dispatcher.InvokeAsync(() =>
-        {
-            assistantMessageBorder = AddChatMessage("Assistant", string.Empty, isUser: false, isStreaming: true);
-        });
+        await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
+        assistantMessageBorder = AddChatMessage("Assistant", string.Empty, isUser: false, isStreaming: true);
 
         var reply = await CompleteChatStreamingTextAsync(
             endpoint: options.Endpoint,
@@ -358,10 +355,11 @@ public partial class ChatAgentControl : UserControl
 
             for (var iteration = 0; iteration < 4; iteration++)
             {
-                await Dispatcher.InvokeAsync(() => AddChatMessage(
+                await AddChatMessageOnMainThreadAsync(
                     "Assistant",
                     "Checking available actions...",
-                    isUser: false));
+                    isUser: false,
+                    cancellationToken);
 
                 var plannerJson = await CompleteToolPlannerStreamingAsync(
                     chatClient,
@@ -386,10 +384,11 @@ public partial class ChatAgentControl : UserControl
                         error = "Tool call blocked by chat session action settings.",
                         tool = plannerResult.ToolCall.Name
                     }, JsonOptions);
-                    await Dispatcher.InvokeAsync(() => AddChatMessage(
+                    await AddChatMessageOnMainThreadAsync(
                         "Tool",
                         $"Blocked {plannerResult.ToolCall.Name}\nAction is disabled for this chat.",
-                        isUser: false));
+                        isUser: false,
+                        cancellationToken);
                     toolOutputs.Add($"Tool: {plannerResult.ToolCall.Name}\nArguments: {plannerResult.ToolCall.ArgumentsJson}\nOutput: {blockedOutput}");
                     break;
                 }
@@ -399,10 +398,11 @@ public partial class ChatAgentControl : UserControl
                 if (approved)
                 {
                     output = await ExecuteApprovedToolAsync(plannerResult.ToolCall, metadata ?? DatabaseMetadata.Empty);
-                    await Dispatcher.InvokeAsync(() => AddChatMessage(
+                    await AddChatMessageOnMainThreadAsync(
                         "Tool",
                         $"Executed {plannerResult.ToolCall.Name}\n{SummarizeToolOutput(output)}",
-                        isUser: false));
+                        isUser: false,
+                        cancellationToken);
                 }
                 else
                 {
@@ -411,10 +411,11 @@ public partial class ChatAgentControl : UserControl
                         error = "Tool call rejected by user.",
                         tool = plannerResult.ToolCall.Name
                     }, JsonOptions);
-                    await Dispatcher.InvokeAsync(() => AddChatMessage(
+                    await AddChatMessageOnMainThreadAsync(
                         "Tool",
                         $"Rejected {plannerResult.ToolCall.Name}",
-                        isUser: false));
+                        isUser: false,
+                        cancellationToken);
                 }
 
                 toolOutputs.Add($"Tool: {plannerResult.ToolCall.Name}\nArguments: {plannerResult.ToolCall.ArgumentsJson}\nOutput: {output}");
@@ -1101,8 +1102,9 @@ public partial class ChatAgentControl : UserControl
     {
         try
         {
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
             if (messageBorder == null || Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished) return;
-            await Dispatcher.InvokeAsync(() => UpdateChatMessage(messageBorder, newContent));
+            UpdateChatMessage(messageBorder, newContent);
         }
         catch (Exception ex)
         {
@@ -1114,17 +1116,25 @@ public partial class ChatAgentControl : UserControl
     {
         try
         {
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
             if (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished) return;
-            await Dispatcher.InvokeAsync(() =>
-            {
-                SendChatButton.Content = text;
-                SendChatButton.IsEnabled = isEnabled;
-            });
+            SendChatButton.Content = text;
+            SendChatButton.IsEnabled = isEnabled;
         }
         catch (Exception ex)
         {
             MssqlIntelliSensePackage.Log($"[Chat Agent UI State Error] {ex.Message}");
         }
+    }
+
+    private async Task AddChatMessageOnMainThreadAsync(
+        string sender,
+        string message,
+        bool isUser,
+        CancellationToken cancellationToken)
+    {
+        await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
+        AddChatMessage(sender, message, isUser);
     }
 
     private string BuildSystemPrompt(DatabaseMetadata? metadata, string toolContext)

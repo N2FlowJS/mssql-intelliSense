@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using Microsoft.VisualStudio.Shell;
 using MssqlIntelliSense.Core.Metadata;
 
 namespace MssqlIntelliSense.SsmsHost;
@@ -63,6 +64,7 @@ public partial class ToolLabControl : UserControl
                 _connections.Add(connection);
             }
 
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
             var activeContext = ResolveToolConnectionContext(registerIfMissing: true);
             if (activeContext.Connection != null)
             {
@@ -105,6 +107,7 @@ public partial class ToolLabControl : UserControl
             OutputTextBox.Text = "Running tool...";
             OutputDataGrid.ItemsSource = null;
 
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
             var toolConnection = ResolveToolConnectionContext(registerIfMissing: true);
             var connection = toolConnection.Connection ?? ConnectionsComboBox.SelectedItem as ConnectionInfo;
             if (connection == null)
