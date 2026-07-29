@@ -1,4 +1,4 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 <#
 .SYNOPSIS
     Build, deploy, launch SSMS and auto-attach Visual Studio debugger.
@@ -87,7 +87,7 @@ if (-not $NoDeploy) {
     & powershell -NoProfile -ExecutionPolicy Bypass -File $deployScript `
         -ProjectDir $ProjectDir `
         -TargetDir  $targetDir `
-        $(if (-not $NoKill) { "-Kill" })
+        $(if ($NoKill) { "-NoKill" })
     if ($LASTEXITCODE -ne 0) {
         Write-Error "Deploy failed. Aborting."
         exit 1

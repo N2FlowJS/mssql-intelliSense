@@ -18,7 +18,6 @@ namespace MssqlIntelliSense.SsmsHost;
 
 [PackageRegistration(UseManagedResourcesOnly = true, AllowsBackgroundLoading = true)]
 [InstalledProductRegistration("MSSQL IntelliSense", "T-SQL productivity commands for SSMS", "0.1")]
-[ProvideMenuResource("Menus.ctmenu", 1)]
 [ProvideBindingPath]
 [ProvideAutoLoad(VSConstants.UICONTEXT.ShellInitialized_string, PackageAutoLoadFlags.BackgroundLoad)]
 [ProvideToolWindow(typeof(ChatAgentToolWindowPane),

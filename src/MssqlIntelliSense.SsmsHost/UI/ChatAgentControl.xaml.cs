@@ -597,6 +597,197 @@ public partial class ChatAgentControl : UserControl
         return await tcs.Task;
     }
 
+    private sealed class MessageControlState
+    {
+        public MessageControlState(StackPanel contentPanel, Brush foreground, Brush borderBrush, Brush codeBackground)
+        {
+            ContentPanel = contentPanel;
+            Foreground = foreground;
+            BorderBrush = borderBrush;
+            CodeBackground = codeBackground;
+        }
+
+        public StackPanel ContentPanel { get; }
+        public Brush Foreground { get; }
+        public Brush BorderBrush { get; }
+        public Brush CodeBackground { get; }
+        public string RawText { get; set; } = string.Empty;
+    }
+
+    private static void RenderMarkdownToContainer(
+        StackPanel contentPanel,
+        string markdownText,
+        Brush foreground,
+        Brush borderBrush,
+        Brush codeBackground)
+    {
+        contentPanel.Children.Clear();
+        if (string.IsNullOrWhiteSpace(markdownText))
+        {
+            return;
+        }
+
+        var codeBlockRegex = new System.Text.RegularExpressions.Regex(@"```(?<lang>\w*)\r?\n(?<code>[\s\S]*?)```|```(?<code2>[\s\S]*?)```", System.Text.RegularExpressions.RegexOptions.Compiled);
+        int lastIndex = 0;
+        var matches = codeBlockRegex.Matches(markdownText);
+
+        foreach (System.Text.RegularExpressions.Match match in matches)
+        {
+            if (match.Index > lastIndex)
+            {
+                var textSegment = markdownText.Substring(lastIndex, match.Index - lastIndex);
+                RenderTextParagraphs(contentPanel, textSegment, foreground);
+            }
+
+            string code = match.Groups["code"].Success ? match.Groups["code"].Value : match.Groups["code2"].Value;
+            code = code.TrimEnd('\r', '\n');
+
+            var codeBorder = new Border
+            {
+                Background = codeBackground,
+                BorderBrush = borderBrush,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(4),
+                Padding = new Thickness(8),
+                Margin = new Thickness(0, 4, 0, 6),
+                HorizontalAlignment = HorizontalAlignment.Stretch
+            };
+
+            var codeTextBlock = new TextBlock
+            {
+                Text = code,
+                FontFamily = new FontFamily("Consolas, Courier New, monospace"),
+                FontSize = 11.5,
+                Foreground = foreground,
+                TextWrapping = TextWrapping.Wrap
+            };
+
+            codeBorder.Child = codeTextBlock;
+            contentPanel.Children.Add(codeBorder);
+
+            lastIndex = match.Index + match.Length;
+        }
+
+        if (lastIndex < markdownText.Length)
+        {
+            var textSegment = markdownText.Substring(lastIndex);
+            RenderTextParagraphs(contentPanel, textSegment, foreground);
+        }
+    }
+
+    private static void RenderTextParagraphs(StackPanel container, string text, Brush foreground)
+    {
+        var lines = text.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
+        TextBlock? currentTextBlock = null;
+
+        foreach (var line in lines)
+        {
+            var trimmed = line.Trim();
+            if (string.IsNullOrEmpty(trimmed))
+            {
+                currentTextBlock = null;
+                continue;
+            }
+
+            if (trimmed.StartsWith("# "))
+            {
+                container.Children.Add(new TextBlock
+                {
+                    Text = trimmed.Substring(2).Trim(),
+                    FontSize = 14,
+                    FontWeight = FontWeights.Bold,
+                    Foreground = foreground,
+                    Margin = new Thickness(0, 4, 0, 2),
+                    TextWrapping = TextWrapping.Wrap
+                });
+                currentTextBlock = null;
+            }
+            else if (trimmed.StartsWith("## "))
+            {
+                container.Children.Add(new TextBlock
+                {
+                    Text = trimmed.Substring(3).Trim(),
+                    FontSize = 13,
+                    FontWeight = FontWeights.Bold,
+                    Foreground = foreground,
+                    Margin = new Thickness(0, 3, 0, 2),
+                    TextWrapping = TextWrapping.Wrap
+                });
+                currentTextBlock = null;
+            }
+            else if (trimmed.StartsWith("### "))
+            {
+                container.Children.Add(new TextBlock
+                {
+                    Text = trimmed.Substring(4).Trim(),
+                    FontSize = 12,
+                    FontWeight = FontWeights.SemiBold,
+                    Foreground = foreground,
+                    Margin = new Thickness(0, 2, 0, 1),
+                    TextWrapping = TextWrapping.Wrap
+                });
+                currentTextBlock = null;
+            }
+            else
+            {
+                if (currentTextBlock == null)
+                {
+                    currentTextBlock = new TextBlock
+                    {
+                        TextWrapping = TextWrapping.Wrap,
+                        Foreground = foreground,
+                        Margin = new Thickness(0, 1, 0, 1)
+                    };
+                    container.Children.Add(currentTextBlock);
+                }
+                else
+                {
+                    currentTextBlock.Inlines.Add(new System.Windows.Documents.LineBreak());
+                }
+
+                ParseInlineFormattedText(currentTextBlock, line);
+            }
+        }
+    }
+
+    private static void ParseInlineFormattedText(TextBlock textBlock, string text)
+    {
+        var inlineRegex = new System.Text.RegularExpressions.Regex(@"(\*\*(?<bold>.*?)\*\*)|(`(?<code>.*?)`)", System.Text.RegularExpressions.RegexOptions.Compiled);
+        int lastIndex = 0;
+        var matches = inlineRegex.Matches(text);
+
+        foreach (System.Text.RegularExpressions.Match match in matches)
+        {
+            if (match.Index > lastIndex)
+            {
+                textBlock.Inlines.Add(new System.Windows.Documents.Run(text.Substring(lastIndex, match.Index - lastIndex)));
+            }
+
+            if (match.Groups["bold"].Success)
+            {
+                textBlock.Inlines.Add(new System.Windows.Documents.Run(match.Groups["bold"].Value)
+                {
+                    FontWeight = FontWeights.Bold
+                });
+            }
+            else if (match.Groups["code"].Success)
+            {
+                textBlock.Inlines.Add(new System.Windows.Documents.Run(match.Groups["code"].Value)
+                {
+                    FontFamily = new FontFamily("Consolas, Courier New, monospace"),
+                    Background = new SolidColorBrush(Color.FromArgb(35, 128, 128, 128))
+                });
+            }
+
+            lastIndex = match.Index + match.Length;
+        }
+
+        if (lastIndex < text.Length)
+        {
+            textBlock.Inlines.Add(new System.Windows.Documents.Run(text.Substring(lastIndex)));
+        }
+    }
+
     private void AddToolApprovalCard(OpenAiSqlToolCall toolCall, TaskCompletionSource<bool> completionSource)
     {
         var borderBrush = GetThemeBrush(EnvironmentColors.ToolWindowBorderBrushKey, Color.FromRgb(204, 204, 204));

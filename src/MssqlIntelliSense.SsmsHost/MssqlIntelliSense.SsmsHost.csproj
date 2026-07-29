@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net472</TargetFramework>
     <LangVersion>latest</LangVersion>
@@ -38,10 +38,13 @@
     <PackageReference Include="SQLitePCLRaw.core" Version="3.0.3" GeneratePathProperty="true">
       <IncludeAssemblyInVSIXContainer>true</IncludeAssemblyInVSIXContainer>
     </PackageReference>
-    <PackageReference Include="SQLitePCLRaw.provider.dynamic_cdecl" Version="3.0.3">
+    <PackageReference Include="SQLitePCLRaw.provider.dynamic_cdecl" Version="3.0.3" GeneratePathProperty="true">
       <IncludeAssemblyInVSIXContainer>true</IncludeAssemblyInVSIXContainer>
     </PackageReference>
-    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.3">
+    <PackageReference Include="SQLitePCLRaw.provider.e_sqlite3" Version="3.0.3" GeneratePathProperty="true">
+      <IncludeAssemblyInVSIXContainer>true</IncludeAssemblyInVSIXContainer>
+    </PackageReference>
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.3" GeneratePathProperty="true">
       <IncludeAssemblyInVSIXContainer>true</IncludeAssemblyInVSIXContainer>
     </PackageReference>
     <PackageReference Include="System.Threading.Tasks.Extensions" Version="4.6.3" GeneratePathProperty="true" />
@@ -58,6 +61,39 @@
       <IncludeInVSIX>true</IncludeInVSIX>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <Content Include="$(PkgSQLitePCLRaw_bundle_e_sqlite3)\lib\net461\SQLitePCLRaw.batteries_v2.dll" Condition="Exists('$(PkgSQLitePCLRaw_bundle_e_sqlite3)\lib\net461\SQLitePCLRaw.batteries_v2.dll')">
+      <Link>SQLitePCLRaw.batteries_v2.dll</Link>
+      <IncludeInVSIX>true</IncludeInVSIX>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="$(PkgSQLitePCLRaw_bundle_e_sqlite3)\lib\netstandard2.0\SQLitePCLRaw.batteries_v2.dll" Condition="!Exists('$(PkgSQLitePCLRaw_bundle_e_sqlite3)\lib\net461\SQLitePCLRaw.batteries_v2.dll') And Exists('$(PkgSQLitePCLRaw_bundle_e_sqlite3)\lib\netstandard2.0\SQLitePCLRaw.batteries_v2.dll')">
+      <Link>SQLitePCLRaw.batteries_v2.dll</Link>
+      <IncludeInVSIX>true</IncludeInVSIX>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+
+    <Content Include="$(PkgSQLitePCLRaw_provider_e_sqlite3)\lib\net461\SQLitePCLRaw.provider.e_sqlite3.dll" Condition="Exists('$(PkgSQLitePCLRaw_provider_e_sqlite3)\lib\net461\SQLitePCLRaw.provider.e_sqlite3.dll')">
+      <Link>SQLitePCLRaw.provider.e_sqlite3.dll</Link>
+      <IncludeInVSIX>true</IncludeInVSIX>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="$(PkgSQLitePCLRaw_provider_e_sqlite3)\lib\netstandard2.0\SQLitePCLRaw.provider.e_sqlite3.dll" Condition="!Exists('$(PkgSQLitePCLRaw_provider_e_sqlite3)\lib\net461\SQLitePCLRaw.provider.e_sqlite3.dll') And Exists('$(PkgSQLitePCLRaw_provider_e_sqlite3)\lib\netstandard2.0\SQLitePCLRaw.provider.e_sqlite3.dll')">
+      <Link>SQLitePCLRaw.provider.e_sqlite3.dll</Link>
+      <IncludeInVSIX>true</IncludeInVSIX>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+
+    <Content Include="$(PkgSQLitePCLRaw_provider_dynamic_cdecl)\lib\net461\SQLitePCLRaw.provider.dynamic_cdecl.dll" Condition="Exists('$(PkgSQLitePCLRaw_provider_dynamic_cdecl)\lib\net461\SQLitePCLRaw.provider.dynamic_cdecl.dll')">
+      <Link>SQLitePCLRaw.provider.dynamic_cdecl.dll</Link>
+      <IncludeInVSIX>true</IncludeInVSIX>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="$(PkgSQLitePCLRaw_provider_dynamic_cdecl)\lib\netstandard2.0\SQLitePCLRaw.provider.dynamic_cdecl.dll" Condition="!Exists('$(PkgSQLitePCLRaw_provider_dynamic_cdecl)\lib\net461\SQLitePCLRaw.provider.dynamic_cdecl.dll') And Exists('$(PkgSQLitePCLRaw_provider_dynamic_cdecl)\lib\netstandard2.0\SQLitePCLRaw.provider.dynamic_cdecl.dll')">
+      <Link>SQLitePCLRaw.provider.dynamic_cdecl.dll</Link>
+      <IncludeInVSIX>true</IncludeInVSIX>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+
     <Content Include="$(PkgSystem_Text_Json)\lib\net462\System.Text.Json.dll" Condition="Exists('$(PkgSystem_Text_Json)\lib\net462\System.Text.Json.dll')">
       <Link>System.Text.Json.dll</Link>
       <IncludeInVSIX>true</IncludeInVSIX>
@@ -137,7 +173,6 @@
     <Reference Include="System.ServiceProcess" />
   </ItemGroup>
   <ItemGroup>
-  
     <None Include="source.extension.vsixmanifest">
       <SubType>Designer</SubType>
     </None>
