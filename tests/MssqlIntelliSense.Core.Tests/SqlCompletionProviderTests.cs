@@ -1839,6 +1839,7 @@ public sealed class SqlCompletionProviderTests
         procItem.SelectionEnd.Should().Be(procItem.SelectionStart + 1);
     }
 
+
     [Fact]
     public void GetCompletions_ExecSchemaQualifiedSuggestsProcedureWithParameters()
     {
@@ -1854,5 +1855,37 @@ public sealed class SqlCompletionProviderTests
         procItem.SelectionStart.Should().Be(procItem.InsertText.IndexOf('?', StringComparison.Ordinal));
         procItem.SelectionEnd.Should().Be(procItem.SelectionStart + 1);
     }
-}
 
+    [Fact]
+    public void GetCompletions_SuggestsBuiltInFunctionsWithFunctionKind()
+    {
+        var metadata = TestMetadata.Create();
+
+        var sql = "SELECT Norm";
+        var items = _provider.GetCompletions(sql, sql.Length, metadata);
+
+        var fnItem = items.FirstOrDefault(item => item.Label.Contains("NormalizeEmail"));
+        fnItem.Should().NotBeNull();
+        fnItem!.Kind.Should().Be(SqlCompletionKind.Function);
+        fnItem.InsertText.Should().Be("[NormalizeEmail]()");
+    }
+
+    [Fact]
+    public void GetCompletions_JoinOnSuggestsImplicitColumnMatchWhenNoFk()
+    {
+        var tables = new[]
+        {
+            new TableMetadata("dbo", "Employees", new[] { new ColumnMetadata("EmpId", "int", false, 1), new ColumnMetadata("Name", "nvarchar", true, 2) }, new[] { "EmpId" }),
+            new TableMetadata("dbo", "Salaries", new[] { new ColumnMetadata("EmpId", "int", false, 1), new ColumnMetadata("Amount", "decimal", false, 2) }, new[] { "EmpId" })
+        };
+
+        var metadata = new DatabaseMetadata(tables, Array.Empty<ForeignKeyMetadata>(), Array.Empty<IndexMetadata>(), new[] { "TestDb" }, Array.Empty<LinkedServerInfo>());
+
+        var sql = "SELECT * FROM dbo.Employees e JOIN dbo.Salaries s ON ";
+        var items = _provider.GetCompletions(sql, sql.Length, metadata);
+
+        var joinItem = items.FirstOrDefault(item => item.Label.Contains(" = "));
+        joinItem.Should().NotBeNull();
+        joinItem!.InsertText.Should().Be("[e].[EmpId] = [s].[EmpId]");
+    }
+}

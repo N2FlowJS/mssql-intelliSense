@@ -89,10 +89,7 @@ public static class SqlMetadataToolExecutor
         switch (normalizedTool)
         {
             case ListTablesToolName:
-                var tablesList = safeMetadata.Tables != null
-                    ? safeMetadata.Tables.Select(t => new { database = t.Database, schema = t.Schema, name = t.Name }).ToList()
-                    : (object)Array.Empty<object>();
-                return JsonSerializer.Serialize(new { tablesList }, JsonOptions);
+                return JsonSerializer.Serialize(GetListTablesToolResult(safeMetadata, arguments), JsonOptions);
 
             case TableSchemaToolName:
                 return JsonSerializer.Serialize(GetTableSchemaToolResult(safeMetadata, arguments), JsonOptions);
@@ -116,6 +113,30 @@ public static class SqlMetadataToolExecutor
             default:
                 throw new NotSupportedException($"Tool '{toolName}' is not supported.");
         }
+    }
+
+    public static object GetListTablesToolResult(DatabaseMetadata metadata, JsonElement arguments)
+    {
+        if (metadata?.Tables == null) return new { tablesList = Array.Empty<object>(), totalCount = 0, truncated = false };
+
+        var schemaFilter = GetArgument(arguments, "schemaName", string.Empty);
+        var queryFilter = GetArgument(arguments, "query", string.Empty);
+        var tableNameFilter = GetArgument(arguments, "tableName", string.Empty);
+        var query = !string.IsNullOrWhiteSpace(queryFilter) ? queryFilter : tableNameFilter;
+
+        var source = metadata.Tables.AsEnumerable();
+
+        if (!string.IsNullOrWhiteSpace(query))
+        {
+            source = source.Where(t => Matches(t.Name, query) || Matches(t.Schema + "." + t.Name, query));
+        }
+
+        var allMatching = source.Select(t => new { database = t.Database, schema = t.Schema, name = t.Name }).ToList();
+        var totalCount = allMatching.Count;
+        var truncated = totalCount > 500;
+        var tablesList = truncated ? allMatching.Take(500).ToList() : allMatching;
+
+        return new { tablesList, totalCount, truncated };
     }
 
     public static object GetTableSchemaToolResult(DatabaseMetadata metadata, JsonElement arguments)
@@ -213,15 +234,32 @@ public static class SqlMetadataToolExecutor
         var normalized = NormalizeToolName(toolName);
         return normalized switch
         {
-            ListTablesToolName => metadata.Tables.Select(t => new { t.Database, t.Schema, t.Name }).ToList(),
-            TableSchemaToolName => metadata.FindTable(schemaName, tableName)?.Columns.Select(c => new { c.Ordinal, c.Name, c.DataType, c.IsNullable }).ToList(),
-            TableRelationsToolName => metadata.ForeignKeys.Where(fk => fk.FromTable.Equals(tableName, StringComparison.OrdinalIgnoreCase) || fk.ToTable.Equals(tableName, StringComparison.OrdinalIgnoreCase)).ToList(),
-            TableIndexesToolName => metadata.Indexes.Where(idx => idx.Table.Equals(tableName, StringComparison.OrdinalIgnoreCase)).Select(idx => new { idx.Schema, idx.Table, idx.Name, idx.IsUnique, Columns = string.Join(", ", idx.Columns) }).ToList(),
+            ListTablesToolName => BuildListTablesPreviewRows(metadata, schemaName, query),
+            TableSchemaToolName => metadata.FindTable(schemaName, tableName)?.Columns?.Select(c => new { c.Ordinal, c.Name, c.DataType, c.IsNullable })?.ToList(),
+            TableRelationsToolName => (metadata.ForeignKeys ?? Enumerable.Empty<ForeignKeyMetadata>())
+                .Where(fk => fk.FromTable.Equals(tableName, StringComparison.OrdinalIgnoreCase) || fk.ToTable.Equals(tableName, StringComparison.OrdinalIgnoreCase)).ToList(),
+            TableIndexesToolName => (metadata.Indexes ?? Enumerable.Empty<IndexMetadata>())
+                .Where(idx => idx.Table.Equals(tableName, StringComparison.OrdinalIgnoreCase))
+                .Select(idx => new { idx.Schema, idx.Table, idx.Name, idx.IsUnique, Columns = string.Join(", ", idx.Columns) }).ToList(),
             SearchObjectsToolName or SearchSchemaObjectsToolName => BuildObjectSearchRows(metadata, query),
             FindColumnToolName => BuildColumnSearchRows(metadata, query),
-            ListEndpointsToolName => metadata.Endpoints.OrderBy(ep => ep.Name).Select(ep => new { ep.Name, ep.Type, ep.Protocol, ep.State, ep.Port }).ToList(),
+            ListEndpointsToolName => (metadata.Endpoints ?? Enumerable.Empty<EndpointInfo>())
+                .OrderBy(ep => ep.Name).Select(ep => new { ep.Name, ep.Type, ep.Protocol, ep.State, ep.Port }).ToList(),
             _ => null
         };
+    }
+
+    public static IEnumerable BuildListTablesPreviewRows(DatabaseMetadata metadata, string schemaName, string query)
+    {
+        if (metadata?.Tables == null) return Array.Empty<object>();
+
+        var source = metadata.Tables.AsEnumerable();
+        if (!string.IsNullOrWhiteSpace(query))
+        {
+            source = source.Where(t => Matches(t.Name, query) || Matches(t.Schema + "." + t.Name, query));
+        }
+
+        return source.Select(t => new { t.Database, t.Schema, t.Name }).Take(500).ToList();
     }
 
     public static IEnumerable BuildObjectSearchRows(DatabaseMetadata metadata, string query)

@@ -162,4 +162,42 @@ public sealed class SqlMetadataToolExecutorTests
             approvalReason.Should().NotBeNullOrWhiteSpace();
         }
     }
+
+    [Fact]
+    public async Task ExecuteToolAsync_ListTables_TruncatesWhenOver500Tables()
+    {
+        var tables = new List<TableMetadata>();
+        for (int i = 0; i < 600; i++)
+        {
+            tables.Add(new TableMetadata("dbo", $"Table_{i}", Array.Empty<ColumnMetadata>(), Array.Empty<string>()));
+        }
+
+        var metadata = new DatabaseMetadata(tables, Array.Empty<ForeignKeyMetadata>(), Array.Empty<IndexMetadata>(), new[] { "TestDb" }, Array.Empty<LinkedServerInfo>());
+        using var args = JsonDocument.Parse("{}");
+        var json = await SqlMetadataToolExecutor.ExecuteToolAsync(SqlMetadataToolExecutor.ListTablesToolName, args.RootElement, metadata);
+
+        json.Should().Contain("\"truncated\":true");
+        json.Should().Contain("\"totalCount\":600");
+    }
+
+    [Fact]
+    public void BuildPreviewRows_HandlesNullCollectionsAndCapsAt500()
+    {
+        var emptyMetadata = DatabaseMetadata.Empty;
+        var tableRows = SqlMetadataToolExecutor.BuildPreviewRows(SqlMetadataToolExecutor.ListTablesToolName, emptyMetadata, "dbo", "", "");
+        tableRows.Should().NotBeNull();
+
+        var tables = new List<TableMetadata>();
+        for (int i = 0; i < 600; i++)
+        {
+            tables.Add(new TableMetadata("dbo", $"Table_{i}", Array.Empty<ColumnMetadata>(), Array.Empty<string>()));
+        }
+
+        var largeMetadata = new DatabaseMetadata(tables, Array.Empty<ForeignKeyMetadata>(), Array.Empty<IndexMetadata>(), new[] { "TestDb" }, Array.Empty<LinkedServerInfo>());
+        var preview = SqlMetadataToolExecutor.BuildPreviewRows(SqlMetadataToolExecutor.ListTablesToolName, largeMetadata, "dbo", "", "");
+        preview.Should().NotBeNull();
+        var count = 0;
+        foreach (var _ in preview!) count++;
+        count.Should().Be(500);
+    }
 }

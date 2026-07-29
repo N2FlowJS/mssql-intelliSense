@@ -120,6 +120,12 @@ public partial class ChatAgentControl : UserControl
         ToolMenuPopup.IsOpen = true;
     }
 
+    private void ClearChatButton_Click(object sender, RoutedEventArgs e)
+    {
+        _chatHistory.Clear();
+        ChatMessagesPanel.Children.Clear();
+    }
+
     private void ToolSelectionChanged(object sender, RoutedEventArgs e)
     {
         UpdateToolSelectionSummary();

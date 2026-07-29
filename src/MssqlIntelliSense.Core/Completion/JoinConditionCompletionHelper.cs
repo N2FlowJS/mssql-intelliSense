@@ -42,6 +42,7 @@ public static class JoinConditionCompletionHelper
         string prefix)
     {
         var fkGroups = metadata.ForeignKeys.GroupBy(fk => fk.Name, StringComparer.OrdinalIgnoreCase);
+        var foundAny = false;
 
         foreach (var group in fkGroups)
         {
@@ -55,6 +56,7 @@ public static class JoinConditionCompletionHelper
                 var label = BuildCondition(columns, left.Alias, right.Alias, quoted: false);
                 if (SqlCompletionHelper.Matches(label, prefix))
                 {
+                    foundAny = true;
                     yield return new SqlCompletionItem(
                         label,
                         BuildCondition(columns, left.Alias, right.Alias, quoted: true),
@@ -68,11 +70,33 @@ public static class JoinConditionCompletionHelper
                 var label = BuildCondition(columns, right.Alias, left.Alias, quoted: false);
                 if (SqlCompletionHelper.Matches(label, prefix))
                 {
+                    foundAny = true;
                     yield return new SqlCompletionItem(
                         label,
                         BuildCondition(columns, right.Alias, left.Alias, quoted: true),
                         SqlCompletionKind.Column,
                         $"JOIN condition via {first.Name}");
+                }
+            }
+        }
+
+        if (!foundAny)
+        {
+            foreach (var leftCol in left.Columns)
+            {
+                var matchingRightCol = right.Columns.FirstOrDefault(r =>
+                    r.Name.Equals(leftCol.Name, StringComparison.OrdinalIgnoreCase));
+                if (matchingRightCol != null)
+                {
+                    var label = $"{left.Alias}.{leftCol.Name} = {right.Alias}.{matchingRightCol.Name}";
+                    if (SqlCompletionHelper.Matches(label, prefix))
+                    {
+                        yield return new SqlCompletionItem(
+                            label,
+                            $"{SqlCompletionHelper.Quote(left.Alias)}.{SqlCompletionHelper.Quote(leftCol.Name)} = {SqlCompletionHelper.Quote(right.Alias)}.{SqlCompletionHelper.Quote(matchingRightCol.Name)}",
+                            SqlCompletionKind.Column,
+                            $"Implicit JOIN condition on matching column {leftCol.Name}");
+                    }
                 }
             }
         }

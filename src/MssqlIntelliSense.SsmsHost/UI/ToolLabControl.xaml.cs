@@ -284,13 +284,24 @@ public partial class ToolLabControl : UserControl
             return string.Empty;
         }
 
+        const int maxDisplayLength = 100000;
+
         try
         {
             using var document = JsonDocument.Parse(json);
-            return JsonSerializer.Serialize(document.RootElement, new JsonSerializerOptions { WriteIndented = true });
+            var formatted = JsonSerializer.Serialize(document.RootElement, new JsonSerializerOptions { WriteIndented = true });
+            if (formatted.Length > maxDisplayLength)
+            {
+                return formatted.Substring(0, maxDisplayLength) + Environment.NewLine + $"... [Output truncated for UI performance. Total length: {formatted.Length} characters]";
+            }
+            return formatted;
         }
         catch
         {
+            if (json.Length > maxDisplayLength)
+            {
+                return json.Substring(0, maxDisplayLength) + Environment.NewLine + $"... [Output truncated for UI performance. Total length: {json.Length} characters]";
+            }
             return json;
         }
     }
