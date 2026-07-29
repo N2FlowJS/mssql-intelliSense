@@ -19,6 +19,8 @@ $Solution   = Join-Path $RepoRoot "MssqlIntelliSense.slnx"
 $DistDir    = Join-Path $RepoRoot "dist"
 $ProjectDir = Join-Path $RepoRoot "src\MssqlIntelliSense.SsmsHost"
 
+. (Join-Path $ScriptDir "shared.ps1")
+
 Write-Host "==========================================" -ForegroundColor Cyan
 Write-Host "  MSSQL IntelliSense - Installer Builder" -ForegroundColor Cyan
 Write-Host "==========================================" -ForegroundColor Cyan
@@ -37,10 +39,8 @@ Write-Host "      Build succeeded." -ForegroundColor Green
 Write-Host ""
 Write-Host "[2/4] Reading version manifest..." -ForegroundColor Yellow
 $manifestPath = Join-Path $ProjectDir "source.extension.vsixmanifest"
-$manifestContent = Get-Content $manifestPath -Raw
-if ($manifestContent -match 'Identity\s[^>]*Version="(\d+\.\d+\.\d+)"') {
-    $version = $Matches[1]
-} else {
+$version = Get-VsixVersion -ManifestPath $manifestPath
+if (-not $version) {
     $version = "0.2.73"
 }
 Write-Host "      Version: $version" -ForegroundColor Green
@@ -61,9 +61,9 @@ $ssmsBinSrc  = Join-Path $ProjectDir "bin\$Configuration\net472"
 $debugBinSrc = Join-Path $RepoRoot "src\MssqlIntelliSense.DebugApp\bin\$Configuration\net472"
 
 # Copy extension binaries
-& robocopy $ssmsBinSrc $binDir /E /IS /IT /XF *.vsix /R:1 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null
+Invoke-Robocopy -Source $ssmsBinSrc -Destination $binDir
 if (Test-Path $debugBinSrc) {
-    & robocopy $debugBinSrc $binDir /E /IS /IT /R:1 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null
+    Invoke-Robocopy -Source $debugBinSrc -Destination $binDir -ExcludeFiles @()
 }
 
 # Copy installer scripts

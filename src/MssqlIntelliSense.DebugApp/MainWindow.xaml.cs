@@ -5,6 +5,8 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using Microsoft.Data.SqlClient;
+using MssqlIntelliSense.Core;
 using MssqlIntelliSense.Core.Cache;
 using MssqlIntelliSense.Core.Completion;
 using MssqlIntelliSense.Core.Metadata;
@@ -14,8 +16,12 @@ namespace MssqlIntelliSense.DebugApp;
 
 public partial class MainWindow : Window
 {
+    private static readonly string DebugLogPath = Path.Combine(Path.GetTempPath(), "mssql-intellisense-debugapp.log");
     private readonly SqlCompletionProvider _completionProvider = new();
     private DatabaseMetadata? _currentMetadata;
+    private ConnectionInfo? _savedConnection;
+    private string _savedConnectionString = string.Empty;
+    private string _savedDatabaseName = string.Empty;
     private bool _isInitialized;
 
     public MainWindow()
@@ -29,45 +35,207 @@ public partial class MainWindow : Window
     {
         try
         {
-            var options = MssqlIntelliSensePackage.GetOptions();
-            if (options != null && !string.IsNullOrWhiteSpace(options.ApiKey))
-            {
-                ApiKeyPasswordBox.Password = options.ApiKey;
-            }
-
-            // Default local debug connection string
-            ConnectionStringTextBox.Text = MssqlIntelliSensePackage.DebugActiveConnectionString ?? "Server=localhost;Database=master;Trusted_Connection=True;TrustServerCertificate=True;";
-            DatabaseNameTextBox.Text = MssqlIntelliSensePackage.DebugActiveDatabaseName ?? "master";
-
-            UpdateDebugConnectionContext();
+            DebugLog("MainWindow loaded.");
+            LoadExistingSsmsContext();
             _ = LoadCacheJsonAsync();
             _ = TriggerCompletionAsync();
         }
         catch (Exception ex)
         {
+            DebugLog("Initialization error", ex);
             if (StatusBarText != null) StatusBarText.Content = "Initialization error: " + ex.Message;
+        }
+    }
+
+    private void LoadExistingSsmsContext()
+    {
+        DebugLog("Loading saved SSMS config/cache.");
+        _currentMetadata = null;
+        var settings = MssqlIntelliSenseConfig.GetLlmSettings();
+        DebugLog($"Config loaded. ApiKeyPresent={!string.IsNullOrWhiteSpace(settings.ApiKey)}, Model={settings.Model}, Endpoint={settings.Endpoint}");
+        if (!string.IsNullOrWhiteSpace(settings.ApiKey) && ApiKeyPasswordBox != null)
+        {
+            ApiKeyPasswordBox.Password = settings.ApiKey;
+        }
+
+        MssqlIntelliSensePackage.DebugActiveConnectionString = null;
+        MssqlIntelliSensePackage.DebugActiveDatabaseName = null;
+
+        string? connectionString = null;
+        string? databaseName = null;
+        ConnectionInfo? cachedConnection = null;
+        var source = "saved SSMS cache";
+
+        cachedConnection = MssqlIntelliSenseCacheReader.GetConnections()
+            .OrderByDescending(c => c.SchemaUpdatedAt.HasValue)
+            .ThenByDescending(c => c.SchemaUpdatedAt ?? DateTimeOffset.MinValue)
+            .ThenByDescending(c => c.LastSeenAt ?? DateTimeOffset.MinValue)
+            .FirstOrDefault();
+        DebugLog(cachedConnection == null
+            ? "No saved cached connection found."
+            : $"Cached connection selected. Id={cachedConnection.Id}, Name={cachedConnection.Name}, HasSchema={cachedConnection.SchemaUpdatedAt.HasValue}, Conn={cachedConnection.ConnectionString}");
+
+        if (cachedConnection != null)
+        {
+            connectionString = cachedConnection.ConnectionString;
+            databaseName = ResolveDatabaseName(cachedConnection, connectionString);
+            DebugLog($"Resolved saved database: {databaseName}");
+            source = string.IsNullOrWhiteSpace(cachedConnection.Name)
+                ? "saved SSMS cache"
+                : $"saved SSMS cache: {cachedConnection.Name}";
+        }
+
+        _savedConnection = cachedConnection;
+        _savedConnectionString = connectionString ?? string.Empty;
+        _savedDatabaseName = databaseName ?? string.Empty;
+
+        PopulateSavedDatabaseSelector(cachedConnection, _savedDatabaseName);
+        ApplySavedConnectionToEmbeddedControls();
+        ApplySavedLlmConfigToDebugOptions();
+
+        if (StatusBarText != null)
+        {
+            StatusBarText.Content = string.IsNullOrWhiteSpace(_savedConnectionString)
+                ? "No saved SSMS cache found. Open SSMS and scan schema once."
+                : $"Loaded {source}. Database={_savedDatabaseName}";
+        }
+
+        if (SsmsContextText != null)
+        {
+            SsmsContextText.Text = string.IsNullOrWhiteSpace(_savedConnectionString)
+                ? "No saved SSMS cache loaded"
+                : $"Using {source} / {_savedDatabaseName}";
+        }
+        DebugLog($"Saved context applied. ConnectionPresent={!string.IsNullOrWhiteSpace(_savedConnectionString)}, Database={_savedDatabaseName}");
+    }
+
+    private void ApplySavedConnectionToEmbeddedControls()
+    {
+        if (DebugChatAgentControl != null)
+        {
+            DebugChatAgentControl.SetSelectedConnection(_savedConnection, _savedDatabaseName);
+        }
+
+        if (DebugToolLabControl != null)
+        {
+            DebugToolLabControl.SetSelectedConnection(_savedConnection, _savedDatabaseName);
+        }
+    }
+
+    private void PopulateSavedDatabaseSelector(ConnectionInfo? connection, string selectedDatabase)
+    {
+        if (SavedDatabaseComboBox == null)
+        {
+            return;
+        }
+
+        var databases = Array.Empty<string>();
+        if (connection != null)
+        {
+            try
+            {
+                var metadata = MssqlIntelliSenseCacheReader.GetSchemaDetails(connection.Id).Metadata;
+                databases = metadata.Databases
+                    .Concat(metadata.Tables.Select(t => t.Database))
+                    .Concat(metadata.Views.Select(v => v.Database))
+                    .Where(db => !string.IsNullOrWhiteSpace(db))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(db => db)
+                    .ToArray();
+            }
+            catch (Exception ex)
+            {
+                DebugLog("PopulateSavedDatabaseSelector failed", ex);
+            }
+        }
+
+        SavedDatabaseComboBox.ItemsSource = databases;
+        SavedDatabaseComboBox.IsEnabled = databases.Length > 1;
+
+        if (!string.IsNullOrWhiteSpace(selectedDatabase) &&
+            databases.Any(db => db.Equals(selectedDatabase, StringComparison.OrdinalIgnoreCase)))
+        {
+            SavedDatabaseComboBox.SelectedItem = databases.First(db => db.Equals(selectedDatabase, StringComparison.OrdinalIgnoreCase));
+        }
+        else if (databases.Length > 0)
+        {
+            _savedDatabaseName = databases[0];
+            SavedDatabaseComboBox.SelectedIndex = 0;
+        }
+
+        DebugLog($"Database selector loaded. Count={databases.Length}, Selected={_savedDatabaseName}");
+    }
+
+    private static string ResolveDatabaseName(ConnectionInfo cachedConnection, string? connectionString)
+    {
+        if (!string.IsNullOrWhiteSpace(connectionString))
+        {
+            try
+            {
+                var builder = new SqlConnectionStringBuilder(connectionString);
+                if (!string.IsNullOrWhiteSpace(builder.InitialCatalog))
+                {
+                    return builder.InitialCatalog;
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        try
+        {
+            var metadata = MssqlIntelliSenseCacheReader.GetSchemaDetails(cachedConnection.Id).Metadata;
+            var databaseName = metadata.Databases.FirstOrDefault(db => !string.IsNullOrWhiteSpace(db))
+                ?? metadata.Tables.Select(t => t.Database).FirstOrDefault(db => !string.IsNullOrWhiteSpace(db))
+                ?? metadata.Views.Select(v => v.Database).FirstOrDefault(db => !string.IsNullOrWhiteSpace(db))
+                ?? string.Empty;
+            DebugLog($"ResolveDatabaseName metadata counts. Databases={metadata.Databases.Count}, Tables={metadata.Tables.Count}, Views={metadata.Views.Count}, Database={databaseName}");
+            return databaseName;
+        }
+        catch (Exception ex)
+        {
+            DebugLog("ResolveDatabaseName failed", ex);
+            return string.Empty;
         }
     }
 
     private void UpdateDebugConnectionContext()
     {
-        if (!_isInitialized || ConnectionStringTextBox == null || DatabaseNameTextBox == null || ApiKeyPasswordBox == null) return;
+        if (!_isInitialized) return;
+        ApplySavedLlmConfigToDebugOptions();
 
-        var connStr = ConnectionStringTextBox.Text?.Trim() ?? string.Empty;
-        var dbName = DatabaseNameTextBox.Text?.Trim() ?? string.Empty;
+        MssqlIntelliSensePackage.DebugActiveConnectionString = null;
+        MssqlIntelliSensePackage.DebugActiveDatabaseName = null;
 
-        MssqlIntelliSensePackage.DebugActiveConnectionString = connStr;
-        MssqlIntelliSensePackage.DebugActiveDatabaseName = dbName;
-
-        var options = MssqlIntelliSensePackage.GetOptions();
-        if (options != null)
+        if (StatusBarText != null)
         {
-            options.ApiKey = ApiKeyPasswordBox.Password;
+            StatusBarText.Content = string.IsNullOrWhiteSpace(_savedConnectionString)
+                ? "Saved SSMS cache is empty."
+                : $"Using saved SSMS cache. Database={_savedDatabaseName}";
+        }
+    }
+
+    private void ApplySavedLlmConfigToDebugOptions()
+    {
+        // DebugApp reads saved LLM settings directly from config.json. Avoid creating
+        // the SSMS DialogPage-backed options object outside the SSMS shell.
+    }
+
+    private void UpdateSavedContextText()
+    {
+        if (SsmsContextText != null)
+        {
+            SsmsContextText.Text = string.IsNullOrWhiteSpace(_savedConnectionString)
+                ? "No saved SSMS cache loaded"
+                : $"Using saved SSMS cache: {_savedConnection?.Name ?? "connection"} / {_savedDatabaseName}";
         }
 
         if (StatusBarText != null)
         {
-            StatusBarText.Content = $"Debug connection set: Database={dbName}";
+            StatusBarText.Content = string.IsNullOrWhiteSpace(_savedConnectionString)
+                ? "Saved SSMS cache is empty."
+                : $"Using saved SSMS cache. Database={_savedDatabaseName}";
         }
     }
 
@@ -86,6 +254,28 @@ public partial class MainWindow : Window
         UpdateDebugConnectionContext();
     }
 
+    private async void SavedDatabaseComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!_isInitialized || SavedDatabaseComboBox.SelectedItem is not string databaseName)
+        {
+            return;
+        }
+
+        _savedDatabaseName = databaseName;
+        _currentMetadata = null;
+        ApplySavedConnectionToEmbeddedControls();
+        UpdateSavedContextText();
+        DebugLog($"User selected database: {_savedDatabaseName}");
+        await TriggerCompletionAsync();
+    }
+
+    private async void ReloadSsmsContextButton_Click(object sender, RoutedEventArgs e)
+    {
+        LoadExistingSsmsContext();
+        await LoadCacheJsonAsync();
+        await TriggerCompletionAsync();
+    }
+
     private void SaveSettingsButton_Click(object sender, RoutedEventArgs e)
     {
         UpdateDebugConnectionContext();
@@ -99,7 +289,7 @@ public partial class MainWindow : Window
             RefreshMetadataButton.IsEnabled = false;
             if (StatusBarText != null) StatusBarText.Content = "Scanning schema and updating database cache...";
 
-            var connStr = ConnectionStringTextBox.Text.Trim();
+            var connStr = _savedConnectionString;
             if (string.IsNullOrWhiteSpace(connStr))
             {
                 MessageBox.Show("Please enter a valid connection string.", "Warning", MessageBoxButton.OK, MessageBoxImage.Warning);
@@ -147,22 +337,30 @@ public partial class MainWindow : Window
 
     private async Task TriggerCompletionAsync()
     {
-        if (!_isInitialized || SqlInputTextBox == null || ConnectionStringTextBox == null) return;
+        if (!_isInitialized || SqlInputTextBox == null)
+        {
+            DebugLog("TriggerCompletion skipped: window not initialized or SQL input missing.");
+            return;
+        }
 
         try
         {
             var sql = SqlInputTextBox.Text ?? string.Empty;
             var caretIndex = SqlInputTextBox.SelectionStart;
-            var connStr = ConnectionStringTextBox.Text?.Trim() ?? string.Empty;
+            var connStr = _savedConnectionString;
+            var dbName = _savedDatabaseName;
+            DebugLog($"TriggerCompletion. ConnPresent={!string.IsNullOrWhiteSpace(connStr)}, Database={dbName}, SqlLength={sql.Length}, Caret={caretIndex}");
 
             if (_currentMetadata == null && !string.IsNullOrWhiteSpace(connStr))
             {
-                _currentMetadata = await Task.Run(() => MssqlIntelliSenseCacheReader.GetMetadataByConnectionString(connStr));
+                _currentMetadata = await Task.Run(() => MssqlIntelliSenseCacheReader.GetMetadataByConnectionStringAndDatabase(connStr, dbName));
+                DebugLog($"Metadata loaded for completion. IsEmpty={ReferenceEquals(_currentMetadata, DatabaseMetadata.Empty)}, Tables={_currentMetadata.Tables.Count}, Views={_currentMetadata.Views.Count}");
             }
 
-            if (_currentMetadata == null)
+            if (_currentMetadata == null || ReferenceEquals(_currentMetadata, DatabaseMetadata.Empty))
             {
                 if (StatusBarText != null) StatusBarText.Content = "Completion: No metadata loaded. Scan schema first.";
+                DebugLog("TriggerCompletion stopped: no metadata loaded.");
                 return;
             }
 
@@ -181,6 +379,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
+            DebugLog("Completion error", ex);
             if (StatusBarText != null) StatusBarText.Content = "Completion error: " + ex.Message;
         }
     }
@@ -236,6 +435,23 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             if (CacheJsonViewerTextBox != null) CacheJsonViewerTextBox.Text = "Failed to read cache file: " + ex.Message;
+        }
+    }
+
+    private static void DebugLog(string message, Exception? exception = null)
+    {
+        try
+        {
+            var line = $"[{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss.fff zzz}] {message}";
+            if (exception != null)
+            {
+                line += Environment.NewLine + exception;
+            }
+
+            File.AppendAllText(DebugLogPath, line + Environment.NewLine);
+        }
+        catch
+        {
         }
     }
 }

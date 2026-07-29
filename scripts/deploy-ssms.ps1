@@ -1,3 +1,29 @@
+#Requires -Version 5.1
+<#
+.SYNOPSIS
+    Deploy MSSQL IntelliSense extension binaries to SSMS.
+
+.DESCRIPTION
+    Copies extension binaries to all detected SSMS extension directories,
+    removes legacy files, and clears ComponentModelCache.
+
+.PARAMETER ProjectDir
+    Path to the project directory. Defaults to src\MssqlIntelliSense.SsmsHost.
+
+.PARAMETER TargetDir
+    Path to build output binaries. Defaults to bin\Debug\net472 under ProjectDir.
+
+.PARAMETER NoKill
+    Skip killing existing SSMS processes before deploying.
+
+.PARAMETER Launch
+    Launch SSMS after deployment.
+
+.EXAMPLE
+    .\scripts\deploy-ssms.ps1
+    .\scripts\deploy-ssms.ps1 -Launch
+    .\scripts\deploy-ssms.ps1 -NoKill
+#>
 param (
     [string]$ProjectDir,
     [string]$TargetDir,
@@ -5,9 +31,14 @@ param (
     [switch]$Launch
 )
 
+$ErrorActionPreference = "Stop"
+$ScriptDir = Split-Path $MyInvocation.MyCommand.Path
+
+. (Join-Path $ScriptDir "shared.ps1")
+
 # Set defaults if not specified
 if ([string]::IsNullOrEmpty($ProjectDir)) {
-    $ProjectDir = Resolve-Path (Join-Path $PSScriptRoot "..\src\MssqlIntelliSense.SsmsHost")
+    $ProjectDir = Resolve-Path (Join-Path $ScriptDir "..\src\MssqlIntelliSense.SsmsHost")
 }
 if ([string]::IsNullOrEmpty($TargetDir)) {
     $TargetDir = Resolve-Path (Join-Path $ProjectDir "bin\Debug\net472")
@@ -18,34 +49,30 @@ Write-Host "Project directory: $ProjectDir"
 Write-Host "Target directory:  $TargetDir"
 
 # Kill SSMS processes by default to release assembly DLL locks
-if (-not $NoKill) {
-    Write-Host "Closing running SSMS processes..." -ForegroundColor Yellow
-    $ssmsProcesses = Get-Process -Name "Ssms" -ErrorAction SilentlyContinue
-    if ($ssmsProcesses) {
-        $ssmsProcesses | Stop-Process -Force
-        Start-Sleep -Seconds 2
-    } else {
-        Write-Host "No SSMS processes running." -ForegroundColor Gray
-    }
+Write-Host ""
+Write-Host "[1/3] Closing running SSMS processes..." -ForegroundColor Yellow
+$stopped = Stop-SsmsProcesses -Skip:$NoKill
+if ($stopped) {
+    Write-Host "      SSMS closed." -ForegroundColor Green
+} else {
+    Write-Host "      No SSMS processes running." -ForegroundColor Gray
 }
 
 # Locate SSMS AppData directories
-$ssmsRoot = Join-Path $env:LOCALAPPDATA "Microsoft\SSMS"
-$ssmsDirs = @()
-if (Test-Path $ssmsRoot) {
-    $ssmsDirs = Get-ChildItem $ssmsRoot -Directory | Where-Object { $_.Name -match "^22\." -or $_.Name -match "^20\." }
-    if ($ssmsDirs.Count -eq 0) {
-        $ssmsDirs = Get-ChildItem $ssmsRoot -Directory
-    }
-}
+Write-Host ""
+Write-Host "[2/3] Locating SSMS extension directories..." -ForegroundColor Yellow
+$ssmsDirs = Get-SsmsDirectories
 
 if ($ssmsDirs.Count -eq 0) {
-    Write-Error "Could not locate SSMS AppData directory at $ssmsRoot."
+    Write-Error "Could not locate SSMS AppData directory at $(Join-Path $env:LOCALAPPDATA 'Microsoft\SSMS')."
     exit 1
 }
 
 # Deploy unpacked extension files to SSMS Extensions folder
+Write-Host ""
+Write-Host "[3/3] Deploying extension binaries..." -ForegroundColor Yellow
 $deployed = $false
+
 foreach ($ssmsDir in $ssmsDirs) {
     $extRoot = Join-Path $ssmsDir.FullName "Extensions"
     $destDir = Join-Path $extRoot "MssqlIntelliSense.SsmsHost"
@@ -59,7 +86,7 @@ foreach ($ssmsDir in $ssmsDirs) {
              (Test-Path (Join-Path $_.FullName "SqlPrompt.SsmsHost.pkgdef")))
         }
         foreach ($legacy in $legacyFolders) {
-            Write-Host "Removing legacy folder: $($legacy.FullName)" -ForegroundColor Yellow
+            Write-Host "      Removing legacy folder: $($legacy.FullName)" -ForegroundColor Yellow
             Remove-Item -Path $legacy.FullName -Recurse -Force -ErrorAction SilentlyContinue
         }
 
@@ -72,26 +99,20 @@ foreach ($ssmsDir in $ssmsDirs) {
     }
 
     foreach ($targetDir in $targetDirs) {
-        Write-Host "Deploying extension to: $targetDir" -ForegroundColor Yellow
+        Write-Host "      Deploying to: $targetDir" -ForegroundColor Yellow
         try {
             if (-not (Test-Path $targetDir)) {
                 New-Item -ItemType Directory -Path $targetDir -Force | Out-Null
             }
 
-            Get-ChildItem -Path $targetDir -Recurse -File -ErrorAction SilentlyContinue | Where-Object {
-                $_.Name -match 'SQLite|Sqlite|SourceGear|e_sqlite'
-            } | Remove-Item -Force -ErrorAction SilentlyContinue
+            Remove-LegacySqliteFiles -Path $targetDir
+            Invoke-Robocopy -Source $TargetDir -Destination $targetDir
 
-            # Copy build output files (excluding the .vsix archive itself)
-            & robocopy $TargetDir $targetDir /E /IS /IT /XF *.vsix /R:1 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null
-            if ($LASTEXITCODE -gt 7) {
-                throw "robocopy failed with exit code $LASTEXITCODE"
-            }
-            Write-Host "  Successfully deployed extension binaries." -ForegroundColor Green
+            Write-Host "      Successfully deployed extension binaries." -ForegroundColor Green
             $deployed = $true
         }
         catch {
-            Write-Warning "Failed to deploy to $targetDir`: $_"
+            Write-Warning "      Failed to deploy to $targetDir`: $_"
         }
     }
 
@@ -100,10 +121,9 @@ foreach ($ssmsDir in $ssmsDirs) {
     New-Item -ItemType File -Path $configChangedFile -Force | Out-Null
 
     # Clear ComponentModelCache to force SSMS to rebuild MEF & Package cache clean
-    $cacheDir = Join-Path $ssmsDir.FullName "ComponentModelCache"
-    if (Test-Path $cacheDir) {
-        Write-Host "  Clearing ComponentModelCache..." -ForegroundColor Gray
-        Remove-Item -Path $cacheDir -Recurse -Force -ErrorAction SilentlyContinue
+    $cleared = Clear-ComponentModelCache -SsmsDir $ssmsDir.FullName
+    if ($cleared) {
+        Write-Host "      Cleared ComponentModelCache." -ForegroundColor Gray
     }
 }
 
@@ -112,17 +132,13 @@ if (-not $deployed) {
     exit 1
 }
 
+Write-Host ""
 Write-Host "SSMS Extension deployment completed successfully!" -ForegroundColor Green
 
 # Launch SSMS if requested
 if ($Launch) {
-    $ssmsPaths = @(
-        "C:\Program Files\Microsoft SQL Server Management Studio 22\Release\Common7\IDE\Ssms.exe",
-        "C:\Program Files\Microsoft SQL Server Management Studio 22\Common7\IDE\Ssms.exe",
-        "C:\Program Files (x86)\Microsoft SQL Server Management Studio 20\Common7\IDE\Ssms.exe",
-        "C:\Program Files (x86)\Microsoft SQL Server Management Studio 19\Common7\IDE\Ssms.exe"
-    )
-    $ssmsExe = $ssmsPaths | Where-Object { Test-Path $_ } | Select-Object -First 1
+    Write-Host ""
+    $ssmsExe = Get-SsmsExecutable
     if ($ssmsExe) {
         Write-Host "Launching SSMS: $ssmsExe" -ForegroundColor Green
         Start-Process $ssmsExe

@@ -4,12 +4,39 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:ssms="clr-namespace:MssqlIntelliSense.SsmsHost;assembly=MssqlIntelliSense.SsmsHost"
+        xmlns:vsui="clr-namespace:Microsoft.VisualStudio.PlatformUI;assembly=Microsoft.VisualStudio.Shell.15.0"
         mc:Ignorable="d"
         Title="MSSQL IntelliSense - Standalone UI Debugger" Height="800" Width="1200"
         WindowStartupLocation="CenterScreen"
-        Background="#1E1E1E" Foreground="#D4D4D4">
+        Background="#1B1B1C" Foreground="#E6E6E6">
 
     <Window.Resources>
+        <SolidColorBrush x:Key="AppBackgroundBrush" Color="#1B1B1C" />
+        <SolidColorBrush x:Key="AppPanelBrush" Color="#242426" />
+        <SolidColorBrush x:Key="AppPanelAltBrush" Color="#2B2B2E" />
+        <SolidColorBrush x:Key="AppInputBrush" Color="#1F1F22" />
+        <SolidColorBrush x:Key="AppBorderBrush" Color="#3D3D42" />
+        <SolidColorBrush x:Key="AppTextBrush" Color="#E6E6E6" />
+        <SolidColorBrush x:Key="AppMutedTextBrush" Color="#A8A8AD" />
+        <SolidColorBrush x:Key="AppAccentBrush" Color="#2D7D9A" />
+        <SolidColorBrush x:Key="AppAccentHoverBrush" Color="#358DB0" />
+        <SolidColorBrush x:Key="AppButtonBrush" Color="#343438" />
+        <SolidColorBrush x:Key="AppButtonHoverBrush" Color="#424247" />
+
+        <!-- Fallbacks for SSMS/VS-themed controls when hosted in this standalone app. -->
+        <SolidColorBrush x:Key="{x:Static vsui:EnvironmentColors.ToolWindowBackgroundBrushKey}" Color="#1B1B1C" />
+        <SolidColorBrush x:Key="{x:Static vsui:EnvironmentColors.ToolWindowTextBrushKey}" Color="#E6E6E6" />
+        <SolidColorBrush x:Key="{x:Static vsui:EnvironmentColors.ToolWindowBorderBrushKey}" Color="#3D3D42" />
+        <SolidColorBrush x:Key="{x:Static vsui:EnvironmentColors.ToolWindowCodeBlockBackgroundBrushKey}" Color="#242426" />
+        <SolidColorBrush x:Key="{x:Static vsui:EnvironmentColors.PanelTextBrushKey}" Color="#A8A8AD" />
+        <SolidColorBrush x:Key="{x:Static vsui:EnvironmentColors.ComboBoxBackgroundBrushKey}" Color="#1F1F22" />
+        <SolidColorBrush x:Key="{x:Static vsui:EnvironmentColors.ComboBoxTextBrushKey}" Color="#E6E6E6" />
+        <SolidColorBrush x:Key="{x:Static vsui:EnvironmentColors.ComboBoxBorderBrushKey}" Color="#3D3D42" />
+        <SolidColorBrush x:Key="{x:Static vsui:EnvironmentColors.SystemHighlightBrushKey}" Color="#2D7D9A" />
+        <SolidColorBrush x:Key="{x:Static vsui:EnvironmentColors.SystemHighlightTextBrushKey}" Color="#FFFFFF" />
+        <SolidColorBrush x:Key="{x:Static vsui:EnvironmentColors.SystemButtonFaceBrushKey}" Color="#343438" />
+        <SolidColorBrush x:Key="{x:Static vsui:EnvironmentColors.SystemButtonTextBrushKey}" Color="#E6E6E6" />
+
         <!-- Thin ScrollBar Styles -->
         <SolidColorBrush x:Key="ThinScrollBarThumbBrush" Color="#808080" Opacity="0.45" />
         <SolidColorBrush x:Key="ThinScrollBarThumbHoverBrush" Color="#808080" Opacity="0.8" />
@@ -71,6 +98,233 @@
                 </Setter.Value>
             </Setter>
         </Style>
+
+        <Style TargetType="{x:Type Button}">
+            <Setter Property="Background" Value="{StaticResource AppButtonBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource AppTextBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource AppBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="10,4" />
+            <Setter Property="MinHeight" Value="26" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type Button}">
+                        <Border x:Name="border"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="3">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"
+                                              Margin="{TemplateBinding Padding}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="{StaticResource AppButtonHoverBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="{StaticResource AppAccentBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.55" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="PrimaryButtonStyle" TargetType="{x:Type Button}" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Background" Value="{StaticResource AppAccentBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource AppAccentBrush}" />
+            <Setter Property="Foreground" Value="White" />
+        </Style>
+
+        <Style TargetType="{x:Type TextBox}">
+            <Setter Property="Background" Value="{StaticResource AppInputBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource AppTextBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource AppBorderBrush}" />
+            <Setter Property="CaretBrush" Value="{StaticResource AppTextBrush}" />
+            <Setter Property="SelectionBrush" Value="{StaticResource AppAccentBrush}" />
+        </Style>
+
+        <Style TargetType="{x:Type PasswordBox}">
+            <Setter Property="Background" Value="{StaticResource AppInputBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource AppTextBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource AppBorderBrush}" />
+        </Style>
+
+        <Style TargetType="{x:Type ComboBox}">
+            <Setter Property="Background" Value="{StaticResource AppInputBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource AppTextBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource AppBorderBrush}" />
+            <Setter Property="MinHeight" Value="26" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type ComboBox}">
+                        <Grid>
+                            <ToggleButton x:Name="toggleButton"
+                                          Background="{TemplateBinding Background}"
+                                          BorderBrush="{TemplateBinding BorderBrush}"
+                                          BorderThickness="1"
+                                          Foreground="{TemplateBinding Foreground}"
+                                          Focusable="False"
+                                          IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
+                                <ToggleButton.Template>
+                                    <ControlTemplate TargetType="{x:Type ToggleButton}">
+                                        <Border x:Name="comboBorder"
+                                                Background="{TemplateBinding Background}"
+                                                BorderBrush="{TemplateBinding BorderBrush}"
+                                                BorderThickness="{TemplateBinding BorderThickness}"
+                                                CornerRadius="3" />
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="comboBorder" Property="Background" Value="{StaticResource AppPanelAltBrush}" />
+                                            </Trigger>
+                                            <Trigger Property="IsChecked" Value="True">
+                                                <Setter TargetName="comboBorder" Property="BorderBrush" Value="{StaticResource AppAccentBrush}" />
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </ToggleButton.Template>
+                            </ToggleButton>
+                            <ContentPresenter Margin="8,2,28,2"
+                                              HorizontalAlignment="Left"
+                                              VerticalAlignment="Center"
+                                              IsHitTestVisible="False"
+                                              Content="{TemplateBinding SelectionBoxItem}"
+                                              ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                              ContentStringFormat="{TemplateBinding SelectionBoxItemStringFormat}" />
+                            <TextBlock Text="v"
+                                       HorizontalAlignment="Right"
+                                       VerticalAlignment="Center"
+                                       IsHitTestVisible="False"
+                                       Margin="0,0,9,1"
+                                       Foreground="{StaticResource AppMutedTextBrush}" />
+                            <Popup x:Name="PART_Popup"
+                                   AllowsTransparency="True"
+                                   Focusable="False"
+                                   IsOpen="{TemplateBinding IsDropDownOpen}"
+                                   Placement="Bottom"
+                                   PopupAnimation="Fade">
+                                <Border Background="{StaticResource AppPanelBrush}"
+                                        BorderBrush="{StaticResource AppBorderBrush}"
+                                        BorderThickness="1"
+                                        MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}">
+                                    <ScrollViewer MaxHeight="260">
+                                        <ItemsPresenter />
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="toggleButton" Property="Background" Value="{StaticResource AppPanelAltBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.55" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="{x:Type ComboBoxItem}">
+            <Setter Property="Background" Value="{StaticResource AppPanelBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource AppTextBrush}" />
+            <Setter Property="Padding" Value="8,4" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type ComboBoxItem}">
+                        <Border x:Name="itemBorder"
+                                Background="{TemplateBinding Background}"
+                                Padding="{TemplateBinding Padding}"
+                                TextElement.Foreground="{TemplateBinding Foreground}">
+                            <ContentPresenter />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter TargetName="itemBorder" Property="Background" Value="{StaticResource AppAccentBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="itemBorder" Property="Background" Value="{StaticResource AppPanelAltBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="{x:Type TabControl}">
+            <Setter Property="Background" Value="{StaticResource AppBackgroundBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource AppBorderBrush}" />
+        </Style>
+
+        <Style TargetType="{x:Type TabItem}">
+            <Setter Property="Foreground" Value="{StaticResource AppMutedTextBrush}" />
+            <Setter Property="Padding" Value="14,7" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type TabItem}">
+                        <Border x:Name="tabBorder"
+                                Background="#202023"
+                                BorderBrush="{StaticResource AppBorderBrush}"
+                                BorderThickness="1,1,1,0"
+                                CornerRadius="3,3,0,0"
+                                Margin="0,0,3,0"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter ContentSource="Header"
+                                              HorizontalAlignment="Center"
+                                              VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="tabBorder" Property="Background" Value="{StaticResource AppPanelBrush}" />
+                                <Setter Property="Foreground" Value="{StaticResource AppTextBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="tabBorder" Property="Background" Value="{StaticResource AppPanelAltBrush}" />
+                                <Setter Property="Foreground" Value="{StaticResource AppTextBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="{x:Type DataGrid}">
+            <Setter Property="Background" Value="{StaticResource AppInputBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource AppTextBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource AppBorderBrush}" />
+            <Setter Property="RowBackground" Value="{StaticResource AppPanelBrush}" />
+            <Setter Property="AlternatingRowBackground" Value="{StaticResource AppPanelAltBrush}" />
+            <Setter Property="GridLinesVisibility" Value="Horizontal" />
+            <Setter Property="HorizontalGridLinesBrush" Value="{StaticResource AppBorderBrush}" />
+            <Setter Property="HeadersVisibility" Value="Column" />
+        </Style>
+
+        <Style TargetType="{x:Type DataGridColumnHeader}">
+            <Setter Property="Background" Value="{StaticResource AppPanelAltBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource AppTextBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource AppBorderBrush}" />
+            <Setter Property="BorderThickness" Value="0,0,1,1" />
+            <Setter Property="Padding" Value="8,5" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+
+        <Style TargetType="{x:Type DataGridRow}">
+            <Setter Property="Background" Value="{StaticResource AppPanelBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource AppTextBrush}" />
+        </Style>
+
+        <Style TargetType="{x:Type DataGridCell}">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="{StaticResource AppTextBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource AppBorderBrush}" />
+            <Setter Property="Padding" Value="6,3" />
+        </Style>
     </Window.Resources>
 
     <Grid Margin="10">
@@ -80,71 +334,70 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <!-- Top Header & Connection Bar -->
-        <Border Grid.Row="0" Background="#252526" BorderBrush="#3F3F46" BorderThickness="1" CornerRadius="5" Padding="10" Margin="0,0,0,10">
+        <!-- Top Header -->
+        <Border Grid.Row="0" Background="{StaticResource AppPanelBrush}" BorderBrush="{StaticResource AppBorderBrush}" BorderThickness="1" CornerRadius="4" Padding="12" Margin="0,0,0,10">
             <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
-                <!-- Row 0: App Title & Quick Status -->
-                <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="🛠 MSSQL IntelliSense Debugger" FontWeight="Bold" FontSize="15" Foreground="#569CD6" />
-                    <TextBlock Text=" [Standalone UI Runner]" Foreground="#858585" FontSize="12" VerticalAlignment="Center" Margin="8,0,0,0" />
+                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="MSSQL IntelliSense Debugger" FontWeight="SemiBold" FontSize="15" Foreground="{StaticResource AppTextBrush}" />
+                    <TextBlock x:Name="SsmsContextText"
+                               Text="Loading saved SSMS config..."
+                               Foreground="{StaticResource AppMutedTextBrush}"
+                               FontSize="12"
+                               VerticalAlignment="Center"
+                               Margin="12,0,0,0" />
                 </StackPanel>
 
-                <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Button x:Name="SaveSettingsButton" Content="💾 Save Settings" Click="SaveSettingsButton_Click" Padding="10,4" Margin="0,0,6,0" Background="#0E639C" Foreground="White" BorderThickness="0" />
-                    <Button x:Name="RefreshMetadataButton" Content="🔄 Scan Schema" Click="RefreshMetadataButton_Click" Padding="10,4" Background="#3A3D41" Foreground="White" BorderThickness="0" />
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0,8,0">
+                    <TextBlock Text="Database"
+                               Foreground="{StaticResource AppMutedTextBrush}"
+                               FontSize="12"
+                               VerticalAlignment="Center"
+                               Margin="0,0,6,0" />
+                    <ComboBox x:Name="SavedDatabaseComboBox"
+                              Width="190"
+                              SelectionChanged="SavedDatabaseComboBox_SelectionChanged" />
                 </StackPanel>
 
-                <!-- Row 1: Connection & AI Config Controls -->
-                <Grid Grid.Row="1" Grid.ColumnSpan="2" Margin="0,10,0,0">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="140" />
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="220" />
-                    </Grid.ColumnDefinitions>
-
-                    <TextBlock Grid.Column="0" Text="Conn Str:" VerticalAlignment="Center" Margin="0,0,6,0" Foreground="#CCCCCC" FontSize="11" />
-                    <TextBox Grid.Column="1" x:Name="ConnectionStringTextBox" Padding="6,4" Background="#333337" Foreground="#F1F1F1" BorderBrush="#555555" TextChanged="ConnectionStringTextBox_TextChanged" FontSize="11" />
-
-                    <TextBlock Grid.Column="2" Text="Database:" VerticalAlignment="Center" Margin="10,0,6,0" Foreground="#CCCCCC" FontSize="11" />
-                    <TextBox Grid.Column="3" x:Name="DatabaseNameTextBox" Padding="6,4" Background="#333337" Foreground="#F1F1F1" BorderBrush="#555555" TextChanged="DatabaseNameTextBox_TextChanged" FontSize="11" />
-
-                    <TextBlock Grid.Column="4" Text="Gemini Key:" VerticalAlignment="Center" Margin="10,0,6,0" Foreground="#CCCCCC" FontSize="11" />
-                    <PasswordBox Grid.Column="5" x:Name="ApiKeyPasswordBox" Padding="6,4" Background="#333337" Foreground="#F1F1F1" BorderBrush="#555555" PasswordChanged="ApiKeyPasswordBox_PasswordChanged" FontSize="11" />
-                </Grid>
+                <Button Grid.Column="2"
+                        x:Name="ReloadSsmsContextButton"
+                        Content="Reload Saved Config"
+                        Click="ReloadSsmsContextButton_Click" />
             </Grid>
         </Border>
 
+        <Grid Visibility="Collapsed">
+            <TextBox x:Name="ConnectionStringTextBox" TextChanged="ConnectionStringTextBox_TextChanged" />
+            <TextBox x:Name="DatabaseNameTextBox" TextChanged="DatabaseNameTextBox_TextChanged" />
+            <PasswordBox x:Name="ApiKeyPasswordBox" PasswordChanged="ApiKeyPasswordBox_PasswordChanged" />
+            <Button x:Name="SaveSettingsButton" Click="SaveSettingsButton_Click" />
+            <Button x:Name="RefreshMetadataButton" Click="RefreshMetadataButton_Click" />
+        </Grid>
+
         <!-- Main Tab Control -->
-        <TabControl Grid.Row="1" Background="#1E1E1E" BorderBrush="#3F3F46">
+        <TabControl Grid.Row="1">
             <!-- Tab 1: AI Agent Chat -->
-            <TabItem Header="🤖 SQL AI Agent Chat" Foreground="#D4D4D4" FontSize="12" Padding="12,6">
-                <Border Background="#252526" Padding="4">
+            <TabItem Header="SQL AI Agent Chat">
+                <Border Background="{StaticResource AppPanelBrush}" Padding="4">
                     <ssms:ChatAgentControl x:Name="DebugChatAgentControl" />
                 </Border>
             </TabItem>
 
             <!-- Tab 2: AI Tool Lab -->
-            <TabItem Header="🧪 AI Tool Lab" Foreground="#D4D4D4" FontSize="12" Padding="12,6">
-                <Border Background="#252526" Padding="4">
+            <TabItem Header="AI Tool Lab">
+                <Border Background="{StaticResource AppPanelBrush}" Padding="4">
                     <ssms:ToolLabControl x:Name="DebugToolLabControl" />
                 </Border>
             </TabItem>
 
             <!-- Tab 3: SQL Completion Engine Tester -->
-            <TabItem Header="⚡ Completion Engine Tester" Foreground="#D4D4D4" FontSize="12" Padding="12,6">
-                <Border Background="#252526" Padding="8">
+            <TabItem Header="Completion Engine Tester">
+                <Border Background="{StaticResource AppPanelBrush}" Padding="8">
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
@@ -160,14 +413,14 @@
                             </Grid.RowDefinitions>
 
                             <DockPanel Grid.Row="0" Margin="0,0,0,6">
-                                <TextBlock Text="SQL Query Input:" FontWeight="SemiBold" Foreground="#4EC9B0" VerticalAlignment="Center" />
-                                <Button x:Name="RunCompletionButton" Content="⚡ Trigger Completion" Click="RunCompletionButton_Click" DockPanel.Dock="Right" Padding="8,3" Background="#0E639C" Foreground="White" BorderThickness="0" />
+                                <TextBlock Text="SQL Query Input" FontWeight="SemiBold" Foreground="{StaticResource AppTextBrush}" VerticalAlignment="Center" />
+                                <Button x:Name="RunCompletionButton" Content="Trigger Completion" Click="RunCompletionButton_Click" DockPanel.Dock="Right" Style="{StaticResource PrimaryButtonStyle}" />
                             </DockPanel>
 
-                            <TextBox Grid.Row="1" x:Name="SqlInputTextBox" AcceptsReturn="True" AcceptsTab="True" FontFamily="Consolas" FontSize="13" Background="#1E1E1E" Foreground="#D4D4D4" BorderBrush="#3F3F46" Padding="8" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" TextChanged="SqlInputTextBox_TextChanged" SelectionChanged="SqlInputTextBox_SelectionChanged" Text="SELECT * FROM dbo.Users u JOIN " />
+                            <TextBox Grid.Row="1" x:Name="SqlInputTextBox" AcceptsReturn="True" AcceptsTab="True" FontFamily="Consolas" FontSize="13" Padding="8" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" TextChanged="SqlInputTextBox_TextChanged" SelectionChanged="SqlInputTextBox_SelectionChanged" Text="SELECT * FROM dbo.Users u JOIN " />
                         </Grid>
 
-                        <GridSplitter Grid.Column="1" HorizontalAlignment="Stretch" Background="#3F3F46" />
+                        <GridSplitter Grid.Column="1" HorizontalAlignment="Stretch" Background="{StaticResource AppBorderBrush}" />
 
                         <!-- Right: Suggestions & DDL Preview -->
                         <Grid Grid.Column="2" Margin="6,0,0,0">
@@ -178,9 +431,9 @@
                                 <RowDefinition Height="*" />
                             </Grid.RowDefinitions>
 
-                            <TextBlock Grid.Row="0" Text="Completion Suggestions Output:" FontWeight="SemiBold" Foreground="#CE9178" Margin="0,0,0,6" />
+                            <TextBlock Grid.Row="0" Text="Completion Suggestions Output" FontWeight="SemiBold" Foreground="{StaticResource AppTextBrush}" Margin="0,0,0,6" />
 
-                            <DataGrid Grid.Row="1" x:Name="CompletionResultsDataGrid" AutoGenerateColumns="False" IsReadOnly="True" Background="#1E1E1E" Foreground="#D4D4D4" BorderBrush="#3F3F46" RowBackground="#252526" AlternatingRowBackground="#2D2D30" GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="#333337" SelectionChanged="CompletionResultsDataGrid_SelectionChanged">
+                            <DataGrid Grid.Row="1" x:Name="CompletionResultsDataGrid" AutoGenerateColumns="False" IsReadOnly="True" SelectionChanged="CompletionResultsDataGrid_SelectionChanged">
                                 <DataGrid.Columns>
                                     <DataGridTextColumn Header="Kind" Binding="{Binding Kind}" Width="70" />
                                     <DataGridTextColumn Header="Label" Binding="{Binding Label}" Width="160" />
@@ -188,17 +441,17 @@
                                 </DataGrid.Columns>
                             </DataGrid>
 
-                            <TextBlock Grid.Row="2" Text="DDL / Description Tooltip Preview:" FontWeight="SemiBold" Foreground="#DCDCAA" Margin="0,8,0,4" />
+                            <TextBlock Grid.Row="2" Text="DDL / Description Tooltip Preview" FontWeight="SemiBold" Foreground="{StaticResource AppTextBrush}" Margin="0,8,0,4" />
 
-                            <TextBox Grid.Row="3" x:Name="CompletionDescriptionPreview" IsReadOnly="True" AcceptsReturn="True" FontFamily="Consolas" FontSize="11.5" Background="#1E1E1E" Foreground="#9CDCFE" BorderBrush="#3F3F46" Padding="6" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" />
+                            <TextBox Grid.Row="3" x:Name="CompletionDescriptionPreview" IsReadOnly="True" AcceptsReturn="True" FontFamily="Consolas" FontSize="11.5" Padding="6" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" />
                         </Grid>
                     </Grid>
                 </Border>
             </TabItem>
 
             <!-- Tab 4: Metadata Cache & JSON Inspector -->
-            <TabItem Header="🗄️ Metadata Cache Inspector" Foreground="#D4D4D4" FontSize="12" Padding="12,6">
-                <Border Background="#252526" Padding="8">
+            <TabItem Header="Metadata Cache Inspector">
+                <Border Background="{StaticResource AppPanelBrush}" Padding="8">
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
@@ -206,18 +459,18 @@
                         </Grid.RowDefinitions>
 
                         <DockPanel Grid.Row="0" Margin="0,0,0,6">
-                            <TextBlock x:Name="CachePathStatusText" Text="Cache File Path: Loading..." Foreground="#858585" VerticalAlignment="Center" />
-                            <Button x:Name="LoadCacheJsonButton" Content="📂 Reload Cache JSON" Click="LoadCacheJsonButton_Click" DockPanel.Dock="Right" Padding="8,3" Background="#3A3D41" Foreground="White" BorderThickness="0" />
+                            <TextBlock x:Name="CachePathStatusText" Text="Cache File Path: Loading..." Foreground="{StaticResource AppMutedTextBrush}" VerticalAlignment="Center" />
+                            <Button x:Name="LoadCacheJsonButton" Content="Reload Cache JSON" Click="LoadCacheJsonButton_Click" DockPanel.Dock="Right" />
                         </DockPanel>
 
-                        <TextBox Grid.Row="1" x:Name="CacheJsonViewerTextBox" IsReadOnly="True" AcceptsReturn="True" FontFamily="Consolas" FontSize="11.5" Background="#1E1E1E" Foreground="#CE9178" BorderBrush="#3F3F46" Padding="8" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" />
+                        <TextBox Grid.Row="1" x:Name="CacheJsonViewerTextBox" IsReadOnly="True" AcceptsReturn="True" FontFamily="Consolas" FontSize="11.5" Padding="8" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" />
                     </Grid>
                 </Border>
             </TabItem>
         </TabControl>
 
         <!-- Status Bar -->
-        <StatusBar Grid.Row="2" Background="#007ACC" Foreground="White" Margin="0,6,0,0">
+        <StatusBar Grid.Row="2" Background="{StaticResource AppAccentBrush}" Foreground="White" Margin="0,6,0,0">
             <StatusBarItem x:Name="StatusBarText" Content="Ready. Connected to debug mode." />
         </StatusBar>
     </Grid>

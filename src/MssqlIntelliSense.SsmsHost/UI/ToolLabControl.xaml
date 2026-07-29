@@ -90,14 +90,19 @@
                            Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.PanelTextBrushKey}}"
                            Margin="0,0,6,0" />
                 <ComboBox x:Name="ConnectionsComboBox"
-                          DisplayMemberPath="Name"
                           SelectedValuePath="Id"
                           Width="220"
                           MinHeight="24"
                           Margin="0,0,6,0"
                           Background="{DynamicResource {x:Static vsui:EnvironmentColors.ComboBoxBackgroundBrushKey}}"
                           Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.ComboBoxTextBrushKey}}"
-                          BorderBrush="{DynamicResource {x:Static vsui:EnvironmentColors.ComboBoxBorderBrushKey}}" />
+                          BorderBrush="{DynamicResource {x:Static vsui:EnvironmentColors.ComboBoxBorderBrushKey}}">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding Name}" />
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
                 <Button x:Name="RefreshConnectionsButton"
                         Content="Refresh"
                         Click="RefreshConnectionsButton_Click"

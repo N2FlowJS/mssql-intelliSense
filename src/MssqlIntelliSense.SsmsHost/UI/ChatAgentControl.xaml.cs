@@ -54,6 +54,7 @@ public partial class ChatAgentControl : UserControl
 
     private readonly List<ChatTurn> _chatHistory = new();
     private ConnectionInfo? _selectedConnection;
+    private string? _selectedDatabase;
     private CancellationTokenSource? _activeSendCancellation;
 
     public ChatAgentControl()
@@ -62,9 +63,10 @@ public partial class ChatAgentControl : UserControl
         UpdateToolSelectionSummary();
     }
 
-    public void SetSelectedConnection(ConnectionInfo? connection)
+    public void SetSelectedConnection(ConnectionInfo? connection, string? databaseName = null)
     {
         _selectedConnection = connection;
+        _selectedDatabase = databaseName;
     }
 
     private void SendChatButton_Click(object sender, RoutedEventArgs e)
@@ -151,9 +153,9 @@ public partial class ChatAgentControl : UserControl
         ChatInputTextBox.Text = string.Empty;
         var allowedToolNames = GetAllowedToolNamesFromUi();
 
-        // Get AI options
-        var options = MssqlIntelliSensePackage.GetOptions();
-        if (options == null || string.IsNullOrWhiteSpace(options.ApiKey))
+        // Get AI options from SSMS options inside SSMS, or saved config.json in DebugApp.
+        var options = await MssqlIntelliSensePackage.FetchLlmSettingsStaticAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(options.ApiKey))
         {
             SafeAddChatError("Please configure your API key in Settings first.");
             return;
@@ -270,6 +272,7 @@ public partial class ChatAgentControl : UserControl
             {
                 Connection = _selectedConnection,
                 ActiveConnectionString = _selectedConnection.ConnectionString ?? string.Empty,
+                ActiveDatabase = _selectedDatabase,
                 DisplayName = _selectedConnection.Name,
                 FromActiveWindow = false
             };

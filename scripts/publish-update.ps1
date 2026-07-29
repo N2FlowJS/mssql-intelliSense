@@ -32,6 +32,8 @@ $ProjectDir  = Join-Path $RepoRoot "src\MssqlIntelliSense.SsmsHost"
 $ProjectFile = Join-Path $ProjectDir "MssqlIntelliSense.SsmsHost.csproj"
 $VersionJson = Join-Path $RepoRoot "version.json"
 
+. (Join-Path $ScriptDir "shared.ps1")
+
 if ([string]::IsNullOrEmpty($ServerDir)) {
     $ServerDir = Join-Path $RepoRoot "server-data"
 }
@@ -56,10 +58,8 @@ Write-Host "      Build OK" -ForegroundColor Green
 Write-Host ""
 Write-Host "[2/4] Reading version from manifest..." -ForegroundColor Yellow
 $manifestPath = Join-Path $ProjectDir "source.extension.vsixmanifest"
-$manifestContent = Get-Content $manifestPath -Raw
-if ($manifestContent -match 'Identity\s[^>]*Version="(\d+\.\d+\.\d+)"') {
-    $newVersion = $Matches[1]
-} else {
+$newVersion = Get-VsixVersion -ManifestPath $manifestPath
+if (-not $newVersion) {
     Write-Error "Could not parse version from vsixmanifest."
     exit 1
 }

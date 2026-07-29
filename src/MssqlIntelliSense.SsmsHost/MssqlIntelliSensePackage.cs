@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.ComponentModel.Design;
 using System.IO;
 using System.Linq;
@@ -57,7 +57,7 @@ public sealed class MssqlIntelliSensePackage : AsyncPackage
 
     public const string PackageGuidString = "16f11772-cdb0-42ca-a596-d755543518ac";
     private static readonly Guid CommandSet = new("63a8fcd9-601f-427d-a253-d4942b4ff2aa");
-    public static readonly Version CurrentVersion = new("0.2.82");
+    public static readonly Version CurrentVersion = new("0.2.84");
     public static string VersionString => CurrentVersion.ToString();
 
     private readonly List<CommandBarEvents> _commandBarEvents = new();
@@ -790,6 +790,12 @@ public sealed class MssqlIntelliSensePackage : AsyncPackage
     internal static async Task<(string ApiKey, string Model, string Endpoint)> FetchLlmSettingsStaticAsync(CancellationToken cancellationToken)
     {
         await Task.CompletedTask;
+        if (Instance == null)
+        {
+            var settings = MssqlIntelliSense.Core.MssqlIntelliSenseConfig.GetLlmSettings();
+            return (settings.ApiKey, settings.Model, settings.Endpoint);
+        }
+
         var options = GetOptions();
         if (options != null)
         {
@@ -1146,6 +1152,8 @@ public sealed class MssqlIntelliSensePackage : AsyncPackage
         }
     }
 }
+
+
 
 
 

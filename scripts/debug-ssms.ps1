@@ -6,7 +6,6 @@
 .DESCRIPTION
     1. Build MssqlIntelliSense.SsmsHost (Debug)
     2. Deploy extension files to SSMS LocalAppData
-    2.5. Build & restart GraphQL Server (MssqlIntelliSense.GraphqlServer)
     3. Launch SSMS
     4. Auto-attach Visual Studio debugger to the new SSMS process
 
@@ -22,9 +21,6 @@
 .PARAMETER NoDeploy
     Skip deploy step.
 
-.PARAMETER NoGraphQL
-    Skip building and restarting the GraphQL Server.
-
 .PARAMETER NoAttach
     Skip auto-attach debugger step (just launch SSMS).
 
@@ -34,7 +30,6 @@
 .EXAMPLE
     .\scripts\debug-ssms.ps1
     .\scripts\debug-ssms.ps1 -NoBuild
-    .\scripts\debug-ssms.ps1 -NoGraphQL
     .\scripts\debug-ssms.ps1 -NoAttach
 #>
 param (
@@ -52,7 +47,7 @@ $RepoRoot    = Resolve-Path (Join-Path $ScriptDir "..")
 $ProjectDir  = Join-Path $RepoRoot "src\MssqlIntelliSense.SsmsHost"
 $ProjectFile = Join-Path $ProjectDir "MssqlIntelliSense.SsmsHost.csproj"
 
-# No GraphQL project properties
+. (Join-Path $ScriptDir "shared.ps1")
 
 Write-Host ""
 Write-Host "==========================================" -ForegroundColor Cyan
@@ -60,11 +55,9 @@ Write-Host "  MssqlIntelliSense SSMS Debug Launcher" -ForegroundColor Cyan
 Write-Host "==========================================" -ForegroundColor Cyan
 Write-Host ""
 
-# Pre-build checks (GraphQL server shutdown removed)
-
 # ── 1. BUILD SSMS EXTENSION ───────────────────────────────────────────────────
 if (-not $NoBuild) {
-    Write-Host "[1/5] Building SSMS extension ($Configuration)..." -ForegroundColor Yellow
+    Write-Host "[1/4] Building SSMS extension ($Configuration)..." -ForegroundColor Yellow
     & dotnet build $ProjectFile `
         --configuration $Configuration `
         --verbosity minimal `
@@ -75,13 +68,13 @@ if (-not $NoBuild) {
     }
     Write-Host "      Build OK" -ForegroundColor Green
 } else {
-    Write-Host "[1/5] Build skipped (-NoBuild)" -ForegroundColor Gray
+    Write-Host "[1/4] Build skipped (-NoBuild)" -ForegroundColor Gray
 }
 
 # ── 2. DEPLOY ─────────────────────────────────────────────────────────────────
 if (-not $NoDeploy) {
     Write-Host ""
-    Write-Host "[2/5] Deploying extension to SSMS..." -ForegroundColor Yellow
+    Write-Host "[2/4] Deploying extension to SSMS..." -ForegroundColor Yellow
     $deployScript = Join-Path $ScriptDir "deploy-ssms.ps1"
     $targetDir    = Join-Path $ProjectDir "bin\$Configuration\net472"
     & powershell -NoProfile -ExecutionPolicy Bypass -File $deployScript `
@@ -94,23 +87,14 @@ if (-not $NoDeploy) {
     }
     Write-Host "      Deploy OK" -ForegroundColor Green
 } else {
-    Write-Host "[2/5] Deploy skipped (-NoDeploy)" -ForegroundColor Gray
+    Write-Host "[2/4] Deploy skipped (-NoDeploy)" -ForegroundColor Gray
 }
-
-# GraphQL Server build & restart steps removed
 
 # ── 3. LAUNCH SSMS ────────────────────────────────────────────────────────────
 Write-Host ""
-Write-Host "[4/5] Launching SSMS..." -ForegroundColor Yellow
+Write-Host "[3/4] Launching SSMS..." -ForegroundColor Yellow
 
-$ssmsPaths = @(
-    "C:\Program Files\Microsoft SQL Server Management Studio 22\Release\Common7\IDE\Ssms.exe",
-    "C:\Program Files\Microsoft SQL Server Management Studio 22\Common7\IDE\Ssms.exe",
-    "C:\Program Files (x86)\Microsoft SQL Server Management Studio 20\Common7\IDE\Ssms.exe",
-    "C:\Program Files (x86)\Microsoft SQL Server Management Studio 19\Common7\IDE\Ssms.exe"
-)
-
-$ssmsExe = $ssmsPaths | Where-Object { Test-Path $_ } | Select-Object -First 1
+$ssmsExe = Get-SsmsExecutable
 if (-not $ssmsExe) {
     Write-Warning "Cannot find Ssms.exe. Please launch SSMS manually."
     exit 0
@@ -124,7 +108,7 @@ Write-Host "      SSMS launched!" -ForegroundColor Green
 # ── 4. AUTO-ATTACH VS DEBUGGER ────────────────────────────────────────────────
 if (-not $NoAttach) {
     Write-Host ""
-    Write-Host "[5/5] Auto-attaching Visual Studio debugger..." -ForegroundColor Yellow
+    Write-Host "[4/4] Auto-attaching Visual Studio debugger..." -ForegroundColor Yellow
     Write-Host "      Waiting ${AttachWaitSec}s for SSMS to initialize..." -ForegroundColor Gray
     Start-Sleep -Seconds $AttachWaitSec
 
@@ -243,7 +227,7 @@ public class VisualStudioAttacher {
     }
 } else {
     Write-Host ""
-    Write-Host "[5/5] Attach skipped (-NoAttach)" -ForegroundColor Gray
+    Write-Host "[4/4] Attach skipped (-NoAttach)" -ForegroundColor Gray
     Write-Host "  To attach manually:" -ForegroundColor White
     Write-Host "    Debug > Attach to Process > Ssms.exe (PID $($ssmsProc.Id))" -ForegroundColor White
 }

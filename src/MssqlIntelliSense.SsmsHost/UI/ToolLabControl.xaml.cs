@@ -24,6 +24,8 @@ public partial class ToolLabControl : UserControl
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private readonly ObservableCollection<ConnectionInfo> _connections = new();
+    private ConnectionInfo? _selectedConnection;
+    private string? _selectedDatabase;
 
     private sealed class ToolConnectionContext
     {
@@ -38,6 +40,24 @@ public partial class ToolLabControl : UserControl
         InitializeComponent();
         ConnectionsComboBox.ItemsSource = _connections;
         _ = RefreshConnectionsAsync();
+    }
+
+    public void SetSelectedConnection(ConnectionInfo? connection, string? databaseName = null)
+    {
+        _selectedConnection = connection;
+        _selectedDatabase = databaseName;
+
+        if (connection != null)
+        {
+            var existing = _connections.FirstOrDefault(c => c.Id == connection.Id);
+            if (existing == null)
+            {
+                _connections.Add(connection);
+                existing = connection;
+            }
+
+            ConnectionsComboBox.SelectedItem = existing;
+        }
     }
 
     private void RefreshConnectionsButton_Click(object sender, RoutedEventArgs e)
@@ -77,6 +97,10 @@ public partial class ToolLabControl : UserControl
                 }
 
                 ConnectionsComboBox.SelectedItem = activeItem;
+            }
+            else if (_selectedConnection != null)
+            {
+                SetSelectedConnection(_selectedConnection, _selectedDatabase);
             }
             else if (_connections.Count > 0 && ConnectionsComboBox.SelectedItem == null)
             {
@@ -210,12 +234,24 @@ public partial class ToolLabControl : UserControl
             };
         }
 
+        if (_selectedConnection != null)
+        {
+            return new ToolConnectionContext
+            {
+                Connection = _selectedConnection,
+                ActiveConnectionString = _selectedConnection.ConnectionString,
+                ActiveDatabase = _selectedDatabase,
+                DisplayName = BuildConnectionDisplayName(_selectedConnection.ConnectionString, _selectedDatabase)
+            };
+        }
+
         if (ConnectionsComboBox.SelectedItem is ConnectionInfo selected)
         {
             return new ToolConnectionContext
             {
                 Connection = selected,
                 ActiveConnectionString = selected.ConnectionString,
+                ActiveDatabase = _selectedDatabase,
                 DisplayName = selected.Name
             };
         }
