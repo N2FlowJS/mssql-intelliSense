@@ -1,4 +1,4 @@
-﻿using MssqlIntelliSense.Core.Completion;
+using MssqlIntelliSense.Core.Completion;
 using MssqlIntelliSense.Core.Metadata;
 
 namespace MssqlIntelliSense.Core.Completion.Candidates;
@@ -23,4 +23,5 @@ public sealed class SynonymCandidate : DbObjectBase
     public override string RawName => _synonym.Name;
     public string Schema => _synonym.Schema;
     public string TargetObject => _synonym.TargetObject;
+    internal SynonymMetadata Source => _synonym;
 }

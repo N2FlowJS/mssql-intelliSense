@@ -31,7 +31,7 @@ public static class TableCompletionHelper
                         table.Name,
                         SqlCompletionHelper.Quote(table.Name),
                         SqlCompletionKind.Table,
-                        $"Table {table.Schema}.{table.Name}"));
+                        SqlDefinitionFormatter.FormatTableDefinition(table)));
                 }
 
                 // Views
@@ -43,7 +43,7 @@ public static class TableCompletionHelper
                         view.Name,
                         SqlCompletionHelper.Quote(view.Name),
                         SqlCompletionKind.View,
-                        $"View {view.Schema}.{view.Name}"));
+                        SqlDefinitionFormatter.FormatViewDefinition(view)));
                 }
 
                 // Synonyms
@@ -55,7 +55,7 @@ public static class TableCompletionHelper
                         syn.Name,
                         SqlCompletionHelper.Quote(syn.Name),
                         SqlCompletionKind.Synonym,
-                        $"Synonym {syn.Schema}.{syn.Name} -> {syn.TargetObject}"));
+                        SqlDefinitionFormatter.FormatSynonymDefinition(syn)));
                 }
 
                 // Table-Valued Functions (TF / IF)
@@ -85,7 +85,7 @@ public static class TableCompletionHelper
                         fn.Name,
                         insertText,
                         SqlCompletionKind.Function,
-                        $"Table Function {fn.Schema}.{fn.Name}",
+                        SqlDefinitionFormatter.FormatFunctionDefinition(fn),
                         caretOffset));
                 }
 
@@ -173,14 +173,14 @@ public static class TableCompletionHelper
         foreach (var table in metadata.Tables.Where(t => SqlCompletionHelper.Matches(t.Name, token.Prefix)))
         {
             AddTableWithContext(suggestions, table.Schema, table.Name, SqlCompletionKind.Table,
-                $"Table {table.Schema}.{table.Name}", table.Columns, token);
+                SqlDefinitionFormatter.FormatTableDefinition(table), table.Columns, token);
         }
 
         // Views
         foreach (var view in metadata.Views.Where(v => SqlCompletionHelper.Matches(v.Name, token.Prefix)))
         {
             AddTableWithContext(suggestions, view.Schema, view.Name, SqlCompletionKind.View,
-                $"View {view.Schema}.{view.Name}", view.Columns, token);
+                SqlDefinitionFormatter.FormatViewDefinition(view), view.Columns, token);
         }
 
         // Synonyms
@@ -190,14 +190,14 @@ public static class TableCompletionHelper
                 $"{syn.Schema}.{syn.Name}",
                 $"{SqlCompletionHelper.Quote(syn.Schema)}.{SqlCompletionHelper.Quote(syn.Name)}",
                 SqlCompletionKind.Synonym,
-                $"Synonym {syn.Schema}.{syn.Name}"));
+                SqlDefinitionFormatter.FormatSynonymDefinition(syn)));
         }
 
         // Table functions
         foreach (var fn in metadata.Functions.Where(f => (f.FunctionType == "TF" || f.FunctionType == "IF") && SqlCompletionHelper.Matches(f.Name, token.Prefix)))
         {
             AddTableWithContext(suggestions, fn.Schema, fn.Name, SqlCompletionKind.Function,
-                $"Table Function {fn.Schema}.{fn.Name}", null, token, fn.Parameters);
+                SqlDefinitionFormatter.FormatFunctionDefinition(fn), null, token, fn.Parameters);
         }
     }
 
@@ -226,7 +226,7 @@ public static class TableCompletionHelper
             foreach (var path in paths)
             {
                 var finalTable = path[^1].ToTable;
-                if (!SqlCompletionHelper.Matches(finalTable.Name, token.Prefix) && 
+                if (!SqlCompletionHelper.Matches(finalTable.Name, token.Prefix) &&
                     !SqlCompletionHelper.Matches(finalTable.Schema, token.Prefix))
                 {
                     continue;
@@ -283,20 +283,16 @@ public static class TableCompletionHelper
                     lastConditionStr = string.Join(" AND ", conditions);
                 }
 
-                var viaPath = string.Join(" -> ", path.Take(path.Count - 1).Select(s => s.ToTable.Name));
-                var label = string.IsNullOrEmpty(viaPath)
+                var fullJoinText = string.Join(" ", joinClauses);
+                var label = path.Count == 1
                     ? $"{finalTable.Schema}.{finalTable.Name} ON {lastConditionStr}"
-                    : $"{finalTable.Schema}.{finalTable.Name} (via {viaPath}) ON {lastConditionStr}";
-
-                var insertText = string.Join(" ", joinClauses);
-                var fkChain = string.Join(" -> ", path.Select(s => s.ForeignKeyName));
-                var description = $"JOIN {finalTable.Schema}.{finalTable.Name} via {fkChain}";
+                    : $"{finalTable.Schema}.{finalTable.Name} (via {path[^2].ToTable.Name}) ON {lastConditionStr}";
 
                 suggestions.Add(new SqlCompletionItem(
                     label,
-                    insertText,
+                    fullJoinText,
                     SqlCompletionKind.Table,
-                    description));
+                    $"JOIN Path: {string.Join(" -> ", path.Select(p => p.ToTable.Name))}"));
             }
         }
     }

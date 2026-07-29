@@ -404,7 +404,7 @@ public sealed class SqlCompletionProvider
                         t.Name,
                         SqlCompletionHelper.Quote(t.Name),
                         SqlCompletionKind.Table,
-                        $"Table {schema}.{t.Name}",
+                        SqlDefinitionFormatter.FormatTableDefinition(t.Source),
                         token);
                     break;
                 case ViewCandidate v:
@@ -413,7 +413,7 @@ public sealed class SqlCompletionProvider
                         v.Name,
                         SqlCompletionHelper.Quote(v.Name),
                         SqlCompletionKind.View,
-                        $"View {schema}.{v.Name}",
+                        SqlDefinitionFormatter.FormatViewDefinition(v.Source),
                         token);
                     break;
                 case FunctionCandidate fn when fn.FunctionType is "TF" or "IF":
@@ -440,9 +440,10 @@ public sealed class SqlCompletionProvider
                             caretOffset = quoted.Length + 1;
                         }
 
+                        var fnDesc = SqlDefinitionFormatter.FormatFunctionDefinition(fn.Source);
                         suggestions.Add(new SqlCompletionItem(
                             fn.Name, insertText, SqlCompletionKind.Function,
-                            $"Table Function {schema}.{fn.Name}",
+                            fnDesc,
                             caretOffset,
                             selectionStart,
                             selectionEnd));
@@ -451,7 +452,7 @@ public sealed class SqlCompletionProvider
                             $"{fn.Name} AS alias",
                             insertText,
                             SqlCompletionKind.Function,
-                            $"Table Function {schema}.{fn.Name} alias",
+                            fnDesc,
                             token,
                             fn.Name,
                             caretOffset,
@@ -462,7 +463,7 @@ public sealed class SqlCompletionProvider
                 case SynonymCandidate syn:
                     suggestions.Add(new SqlCompletionItem(
                         syn.Name, SqlCompletionHelper.Quote(syn.Name), SqlCompletionKind.Synonym,
-                        $"Synonym {schema}.{syn.Name} -> {syn.TargetObject}"));
+                        SqlDefinitionFormatter.FormatSynonymDefinition(syn.Source)));
                     break;
             }
         }
@@ -548,6 +549,7 @@ public sealed class SqlCompletionProvider
         ProcedureCandidate proc, string insertText, bool isExecContext, string? label = null)
     {
         label ??= $"{proc.Schema}.{proc.Name}";
+        var description = SqlDefinitionFormatter.FormatProcedureDefinition(proc.Source);
         if (isExecContext && proc.Parameters.Count > 0)
         {
             var paramList = string.Join(", ", proc.Parameters.Select(SqlCompletionHelper.FormatProcedureArgument));
@@ -558,13 +560,12 @@ public sealed class SqlCompletionProvider
                 label,
                 bodyInsertText,
                 SqlCompletionKind.Procedure,
-                $"Stored Procedure {proc.Schema}.{proc.Name}",
+                description,
                 caretOffset,
                 placeholderStart,
                 placeholderStart + 1);
         }
-        return new SqlCompletionItem(label, insertText, SqlCompletionKind.Procedure,
-            $"Stored Procedure {proc.Schema}.{proc.Name}");
+        return new SqlCompletionItem(label, insertText, SqlCompletionKind.Procedure, description);
     }
 
     // ── Candidate-based scalar function completions ────────────────────────
@@ -738,11 +739,12 @@ public sealed class SqlCompletionProvider
                 }
 
                 var label = includeSchema ? $"{schema}.{t.Name}" : t.Name;
+                var tableDesc = SqlDefinitionFormatter.FormatTableDefinition(t.Source);
                 suggestions.Add(new SqlCompletionItem(
                     label,
                     insertText,
                     SqlCompletionKind.Table,
-                    $"Table {schema}.{t.Name}",
+                    tableDesc,
                     caretOffset,
                     selectionStart,
                     selectionEnd));
@@ -751,7 +753,7 @@ public sealed class SqlCompletionProvider
                     $"{label} AS alias",
                     insertText,
                     SqlCompletionKind.Table,
-                    $"Table {schema}.{t.Name} alias",
+                    tableDesc,
                     token,
                     t.Name,
                     caretOffset,
@@ -766,14 +768,15 @@ public sealed class SqlCompletionProvider
                     ? $"{SqlCompletionHelper.Quote(schema)}.{SqlCompletionHelper.Quote(v.Name)}"
                     : SqlCompletionHelper.Quote(v.Name);
                 var label = includeSchema ? $"{schema}.{v.Name}" : v.Name;
+                var viewDesc = SqlDefinitionFormatter.FormatViewDefinition(v.Source);
                 suggestions.Add(new SqlCompletionItem(
-                    label, qualifiedName, SqlCompletionKind.View, $"View {schema}.{v.Name}"));
+                    label, qualifiedName, SqlCompletionKind.View, viewDesc));
                 AddFromJoinAliasCompletion(
                     suggestions,
                     $"{label} AS alias",
                     qualifiedName,
                     SqlCompletionKind.View,
-                    $"View {schema}.{v.Name} alias",
+                    viewDesc,
                     token,
                     v.Name);
                 break;
@@ -807,11 +810,12 @@ public sealed class SqlCompletionProvider
                 }
 
                 var label = includeSchema ? $"{schema}.{fn.Name}" : fn.Name;
+                var fnDesc = SqlDefinitionFormatter.FormatFunctionDefinition(fn.Source);
                 suggestions.Add(new SqlCompletionItem(
                     label,
                     insertText,
                     SqlCompletionKind.Function,
-                    $"Table Function {schema}.{fn.Name}",
+                    fnDesc,
                     caretOffset,
                     selectionStart,
                     selectionEnd));
@@ -820,7 +824,7 @@ public sealed class SqlCompletionProvider
                     $"{label} AS alias",
                     insertText,
                     SqlCompletionKind.Function,
-                    $"Table Function {schema}.{fn.Name} alias",
+                    fnDesc,
                     token,
                     fn.Name,
                     caretOffset,
@@ -837,7 +841,7 @@ public sealed class SqlCompletionProvider
                 var label = includeSchema ? $"{schema}.{syn.Name}" : syn.Name;
                 suggestions.Add(new SqlCompletionItem(
                     label, qualifiedName, SqlCompletionKind.Synonym,
-                    $"Synonym {schema}.{syn.Name} -> {syn.TargetObject}"));
+                    SqlDefinitionFormatter.FormatSynonymDefinition(syn.Source)));
                 break;
             }
         }

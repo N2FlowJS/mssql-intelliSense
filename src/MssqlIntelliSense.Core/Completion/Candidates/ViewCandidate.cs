@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+using System;
+using System.Collections.Generic;
 using System.Linq;
 using MssqlIntelliSense.Core.Completion;
 using MssqlIntelliSense.Core.Metadata;
@@ -27,6 +28,7 @@ public sealed class ViewCandidate : DbObjectBase
     public override string RawName => _view.Name;
     public IReadOnlyList<ColumnMetadata> Columns => _view.Columns;
     public string Schema => _view.Schema;
+    internal ViewMetadata Source => _view;
 
     public ColumnCandidate? FindColumn(string name)
     {

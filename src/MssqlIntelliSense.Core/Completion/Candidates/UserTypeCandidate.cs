@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Linq;
 using MssqlIntelliSense.Core.Completion;
 using MssqlIntelliSense.Core.Metadata;
@@ -27,6 +27,7 @@ public sealed class UserTypeCandidate : DbObjectBase
     public string BaseType => _type.BaseType;
     public IReadOnlyList<ColumnMetadata> Columns => _type.Columns;
     public bool IsTableType => _type.IsTableType;
+    internal UserTypeMetadata Source => _type;
 
     public ColumnCandidate? FindColumn(string name)
     {

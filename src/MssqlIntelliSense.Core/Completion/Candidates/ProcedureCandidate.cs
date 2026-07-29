@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Linq;
 using MssqlIntelliSense.Core.Completion;
 using MssqlIntelliSense.Core.Metadata;
@@ -27,6 +27,7 @@ public sealed class ProcedureCandidate : DbObjectBase
     public IReadOnlyList<FunctionParameterMetadata> Parameters => _procedure.Parameters;
     public string Schema => _procedure.Schema;
     public string ObjectTypeName => _procedure.ObjectType;
+    internal ProcedureMetadata Source => _procedure;
 
     public string GetExecParameterList() =>
         Parameters.Count > 0

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using MssqlIntelliSense.Core.Metadata;
@@ -7,46 +7,46 @@ namespace MssqlIntelliSense.Core.Completion;
 
 public static class ProcedureCompletionHelper
 {
-public static void AddProcedureCompletions(
-    List<SqlCompletionItem> suggestions,
-    DatabaseMetadata metadata,
-    CompletionToken token,
-    bool isExecContext = false)
-{
-    if (token.Qualifiers.Count > 0)
+    public static void AddProcedureCompletions(
+        List<SqlCompletionItem> suggestions,
+        DatabaseMetadata metadata,
+        CompletionToken token,
+        bool isExecContext = false)
     {
-        var lastQualifier = token.Qualifiers[^1];
-
-        var isSchema = SqlCompletionHelper.IsSchemaName(metadata, lastQualifier);
-
-        if (isSchema)
+        if (token.Qualifiers.Count > 0)
         {
-            // Procedures
-            foreach (var proc in metadata.Procedures.Where(p =>
-                         p.Schema.Equals(lastQualifier, StringComparison.OrdinalIgnoreCase) &&
-                         SqlCompletionHelper.Matches(p.Name, token.Prefix)))
+            var lastQualifier = token.Qualifiers[^1];
+
+            var isSchema = SqlCompletionHelper.IsSchemaName(metadata, lastQualifier);
+
+            if (isSchema)
             {
-                suggestions.Add(CreateProcedureItem(proc, SqlCompletionHelper.Quote(proc.Name), isExecContext, label: proc.Name));
+                // Procedures
+                foreach (var proc in metadata.Procedures.Where(p =>
+                             p.Schema.Equals(lastQualifier, StringComparison.OrdinalIgnoreCase) &&
+                             SqlCompletionHelper.Matches(p.Name, token.Prefix)))
+                {
+                    suggestions.Add(CreateProcedureItem(proc, SqlCompletionHelper.Quote(proc.Name), isExecContext, label: proc.Name));
+                }
+
+                // Synonyms (might point to procedures)
+                foreach (var syn in metadata.Synonyms.Where(s =>
+                             s.Schema.Equals(lastQualifier, StringComparison.OrdinalIgnoreCase) &&
+                             SqlCompletionHelper.Matches(s.Name, token.Prefix)))
+                {
+                    suggestions.Add(new SqlCompletionItem(
+                        syn.Name,
+                        SqlCompletionHelper.Quote(syn.Name),
+                        SqlCompletionKind.Synonym,
+                        SqlDefinitionFormatter.FormatSynonymDefinition(syn)));
+                }
+
+                return;
             }
 
-            // Synonyms (might point to procedures)
-            foreach (var syn in metadata.Synonyms.Where(s =>
-                         s.Schema.Equals(lastQualifier, StringComparison.OrdinalIgnoreCase) &&
-                         SqlCompletionHelper.Matches(s.Name, token.Prefix)))
+            var isDatabase = SqlCompletionHelper.IsDatabaseName(metadata, lastQualifier);
+            if (isDatabase)
             {
-                suggestions.Add(new SqlCompletionItem(
-                    syn.Name,
-                    SqlCompletionHelper.Quote(syn.Name),
-                    SqlCompletionKind.Synonym,
-                    $"Synonym {syn.Schema}.{syn.Name} -> {syn.TargetObject}"));
-            }
-
-            return;
-        }
-
-        var isDatabase = SqlCompletionHelper.IsDatabaseName(metadata, lastQualifier);
-        if (isDatabase)
-        {
                 var schemas = metadata.Tables.Select(t => t.Schema)
                     .Concat(metadata.Views.Select(v => v.Schema))
                     .Concat(metadata.Procedures.Select(p => p.Schema))
@@ -133,13 +133,14 @@ public static void AddProcedureCompletions(
                 $"{syn.Schema}.{syn.Name}",
                 $"{SqlCompletionHelper.Quote(syn.Schema)}.{SqlCompletionHelper.Quote(syn.Name)}",
                 SqlCompletionKind.Synonym,
-                $"Synonym {syn.Schema}.{syn.Name}"));
+                SqlDefinitionFormatter.FormatSynonymDefinition(syn)));
         }
     }
 
     private static SqlCompletionItem CreateProcedureItem(ProcedureMetadata proc, string insertText, bool isExecContext, string? label = null)
     {
         label ??= $"{proc.Schema}.{proc.Name}";
+        var description = SqlDefinitionFormatter.FormatProcedureDefinition(proc);
         if (isExecContext && proc.Parameters.Count > 0)
         {
             var paramList = string.Join(", ", proc.Parameters.Select(SqlCompletionHelper.FormatProcedureArgument));
@@ -150,7 +151,7 @@ public static void AddProcedureCompletions(
                 label,
                 bodyInsertText,
                 SqlCompletionKind.Procedure,
-                $"Stored Procedure {proc.Schema}.{proc.Name}",
+                description,
                 caretOffset,
                 placeholderStart,
                 placeholderStart + 1);
@@ -160,6 +161,6 @@ public static void AddProcedureCompletions(
             label,
             insertText,
             SqlCompletionKind.Procedure,
-            $"Stored Procedure {proc.Schema}.{proc.Name}");
+            description);
     }
 }

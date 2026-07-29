@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Linq;
 using MssqlIntelliSense.Core.Completion;
 using MssqlIntelliSense.Core.Metadata;
@@ -34,4 +34,5 @@ public sealed class FunctionCandidate : DbObjectBase
     public string Schema => _function.Schema;
     public string FunctionType => _function.FunctionType;
     public string ReturnType => _function.ReturnType;
+    internal FunctionMetadata Source => _function;
 }
