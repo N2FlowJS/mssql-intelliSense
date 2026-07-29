@@ -83,7 +83,7 @@
         <!-- Header Bar -->
         <DockPanel Grid.Row="0" Margin="0,0,0,8">
             <!-- Connection Selector (Right aligned) -->
-            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+            <StackPanel x:Name="ConnectionSelectorPanel" DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
                 <TextBlock Text="Connection:"
                            VerticalAlignment="Center"
                            FontSize="11"

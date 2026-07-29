@@ -26,6 +26,20 @@ public partial class ToolLabControl : UserControl
     private readonly ObservableCollection<ConnectionInfo> _connections = new();
     private ConnectionInfo? _selectedConnection;
     private string? _selectedDatabase;
+    private bool _showConnectionSelector = true;
+
+    public bool ShowConnectionSelector
+    {
+        get => _showConnectionSelector;
+        set
+        {
+            _showConnectionSelector = value;
+            if (ConnectionSelectorPanel != null)
+            {
+                ConnectionSelectorPanel.Visibility = value ? Visibility.Visible : Visibility.Collapsed;
+            }
+        }
+    }
 
     private sealed class ToolConnectionContext
     {

@@ -354,6 +354,21 @@
                 </StackPanel>
 
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0,8,0">
+                    <TextBlock Text="Connection"
+                               Foreground="{StaticResource AppMutedTextBrush}"
+                               FontSize="12"
+                               VerticalAlignment="Center"
+                               Margin="0,0,6,0" />
+                    <ComboBox x:Name="SavedConnectionComboBox"
+                              Width="210"
+                              Margin="0,0,12,0"
+                              SelectionChanged="SavedConnectionComboBox_SelectionChanged">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding Name}" />
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
                     <TextBlock Text="Database"
                                Foreground="{StaticResource AppMutedTextBrush}"
                                FontSize="12"
@@ -391,7 +406,7 @@
             <!-- Tab 2: AI Tool Lab -->
             <TabItem Header="AI Tool Lab">
                 <Border Background="{StaticResource AppPanelBrush}" Padding="4">
-                    <ssms:ToolLabControl x:Name="DebugToolLabControl" />
+                    <ssms:ToolLabControl x:Name="DebugToolLabControl" ShowConnectionSelector="False" />
                 </Border>
             </TabItem>
 

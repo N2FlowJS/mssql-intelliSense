@@ -23,6 +23,7 @@ public partial class MainWindow : Window
     private string _savedConnectionString = string.Empty;
     private string _savedDatabaseName = string.Empty;
     private bool _isInitialized;
+    private bool _isLoadingSavedContext;
 
     public MainWindow()
     {
@@ -66,11 +67,12 @@ public partial class MainWindow : Window
         ConnectionInfo? cachedConnection = null;
         var source = "saved SSMS cache";
 
-        cachedConnection = MssqlIntelliSenseCacheReader.GetConnections()
+        var cachedConnections = MssqlIntelliSenseCacheReader.GetConnections()
             .OrderByDescending(c => c.SchemaUpdatedAt.HasValue)
             .ThenByDescending(c => c.SchemaUpdatedAt ?? DateTimeOffset.MinValue)
             .ThenByDescending(c => c.LastSeenAt ?? DateTimeOffset.MinValue)
-            .FirstOrDefault();
+            .ToArray();
+        cachedConnection = cachedConnections.FirstOrDefault();
         DebugLog(cachedConnection == null
             ? "No saved cached connection found."
             : $"Cached connection selected. Id={cachedConnection.Id}, Name={cachedConnection.Name}, HasSchema={cachedConnection.SchemaUpdatedAt.HasValue}, Conn={cachedConnection.ConnectionString}");
@@ -89,6 +91,7 @@ public partial class MainWindow : Window
         _savedConnectionString = connectionString ?? string.Empty;
         _savedDatabaseName = databaseName ?? string.Empty;
 
+        PopulateSavedConnectionSelector(cachedConnections, cachedConnection);
         PopulateSavedDatabaseSelector(cachedConnection, _savedDatabaseName);
         ApplySavedConnectionToEmbeddedControls();
         ApplySavedLlmConfigToDebugOptions();
@@ -107,6 +110,39 @@ public partial class MainWindow : Window
                 : $"Using {source} / {_savedDatabaseName}";
         }
         DebugLog($"Saved context applied. ConnectionPresent={!string.IsNullOrWhiteSpace(_savedConnectionString)}, Database={_savedDatabaseName}");
+    }
+
+    private void PopulateSavedConnectionSelector(ConnectionInfo[] connections, ConnectionInfo? selectedConnection)
+    {
+        if (SavedConnectionComboBox == null)
+        {
+            return;
+        }
+
+        _isLoadingSavedContext = true;
+        try
+        {
+            SavedConnectionComboBox.ItemsSource = connections
+                .OrderBy(c => c.Name)
+                .ThenBy(c => c.Id)
+                .ToArray();
+            SavedConnectionComboBox.IsEnabled = connections.Length > 1;
+
+            if (selectedConnection != null)
+            {
+                SavedConnectionComboBox.SelectedItem = connections.FirstOrDefault(c => c.Id == selectedConnection.Id);
+            }
+            else
+            {
+                SavedConnectionComboBox.SelectedIndex = -1;
+            }
+        }
+        finally
+        {
+            _isLoadingSavedContext = false;
+        }
+
+        DebugLog($"Connection selector loaded. Count={connections.Length}, Selected={selectedConnection?.Name}");
     }
 
     private void ApplySavedConnectionToEmbeddedControls()
@@ -149,18 +185,32 @@ public partial class MainWindow : Window
             }
         }
 
-        SavedDatabaseComboBox.ItemsSource = databases;
-        SavedDatabaseComboBox.IsEnabled = databases.Length > 1;
+        _isLoadingSavedContext = true;
+        try
+        {
+            SavedDatabaseComboBox.ItemsSource = databases;
+            SavedDatabaseComboBox.IsEnabled = databases.Length > 1;
 
-        if (!string.IsNullOrWhiteSpace(selectedDatabase) &&
-            databases.Any(db => db.Equals(selectedDatabase, StringComparison.OrdinalIgnoreCase)))
-        {
-            SavedDatabaseComboBox.SelectedItem = databases.First(db => db.Equals(selectedDatabase, StringComparison.OrdinalIgnoreCase));
+            if (!string.IsNullOrWhiteSpace(selectedDatabase) &&
+                databases.Any(db => db.Equals(selectedDatabase, StringComparison.OrdinalIgnoreCase)))
+            {
+                _savedDatabaseName = databases.First(db => db.Equals(selectedDatabase, StringComparison.OrdinalIgnoreCase));
+                SavedDatabaseComboBox.SelectedItem = _savedDatabaseName;
+            }
+            else if (databases.Length > 0)
+            {
+                _savedDatabaseName = databases[0];
+                SavedDatabaseComboBox.SelectedIndex = 0;
+            }
+            else
+            {
+                _savedDatabaseName = string.Empty;
+                SavedDatabaseComboBox.SelectedIndex = -1;
+            }
         }
-        else if (databases.Length > 0)
+        finally
         {
-            _savedDatabaseName = databases[0];
-            SavedDatabaseComboBox.SelectedIndex = 0;
+            _isLoadingSavedContext = false;
         }
 
         DebugLog($"Database selector loaded. Count={databases.Length}, Selected={_savedDatabaseName}");
@@ -235,7 +285,7 @@ public partial class MainWindow : Window
         {
             StatusBarText.Content = string.IsNullOrWhiteSpace(_savedConnectionString)
                 ? "Saved SSMS cache is empty."
-                : $"Using saved SSMS cache. Database={_savedDatabaseName}";
+                : $"Using saved SSMS cache. Connection={_savedConnection?.Name ?? "connection"}, Database={_savedDatabaseName}";
         }
     }
 
@@ -256,7 +306,7 @@ public partial class MainWindow : Window
 
     private async void SavedDatabaseComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (!_isInitialized || SavedDatabaseComboBox.SelectedItem is not string databaseName)
+        if (!_isInitialized || _isLoadingSavedContext || SavedDatabaseComboBox.SelectedItem is not string databaseName)
         {
             return;
         }
@@ -266,6 +316,25 @@ public partial class MainWindow : Window
         ApplySavedConnectionToEmbeddedControls();
         UpdateSavedContextText();
         DebugLog($"User selected database: {_savedDatabaseName}");
+        await TriggerCompletionAsync();
+    }
+
+    private async void SavedConnectionComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!_isInitialized || _isLoadingSavedContext || SavedConnectionComboBox.SelectedItem is not ConnectionInfo connection)
+        {
+            return;
+        }
+
+        _savedConnection = connection;
+        _savedConnectionString = connection.ConnectionString;
+        _savedDatabaseName = ResolveDatabaseName(connection, connection.ConnectionString);
+        _currentMetadata = null;
+        PopulateSavedDatabaseSelector(connection, _savedDatabaseName);
+        ApplySavedConnectionToEmbeddedControls();
+        UpdateSavedContextText();
+        DebugLog($"User selected connection: Id={connection.Id}, Name={connection.Name}, Database={_savedDatabaseName}");
+        await LoadCacheJsonAsync();
         await TriggerCompletionAsync();
     }
 
