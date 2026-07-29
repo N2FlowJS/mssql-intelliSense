@@ -4,14 +4,22 @@ namespace MssqlIntelliSense.Core.Metadata;
 
 public sealed class SqlServerMetadataProvider : IMetadataProvider
 {
+    private const int DefaultCommandTimeoutSeconds = 5;
     private readonly string _connectionString;
+    private readonly int _commandTimeoutSeconds;
 
-    public SqlServerMetadataProvider(string connectionString)
+    public SqlServerMetadataProvider(string connectionString, int commandTimeoutSeconds = DefaultCommandTimeoutSeconds)
     {
         if (string.IsNullOrWhiteSpace(connectionString))
             throw new ArgumentException("Value cannot be null or whitespace.", nameof(connectionString));
+        if (commandTimeoutSeconds <= 0)
+            throw new ArgumentOutOfRangeException(nameof(commandTimeoutSeconds), "Command timeout must be greater than zero.");
+
         _connectionString = connectionString;
+        _commandTimeoutSeconds = commandTimeoutSeconds;
     }
+
+    public int CommandTimeoutSeconds => _commandTimeoutSeconds;
 
     public async Task<DatabaseMetadata> GetMetadataAsync(CancellationToken cancellationToken = default)
     {
@@ -55,9 +63,8 @@ public sealed class SqlServerMetadataProvider : IMetadataProvider
                 progress?.Report("Đang tải danh sách cơ sở dữ liệu...");
                 try
                 {
-                    using (var command = connection.CreateCommand())
+                    using (var command = CreateCommand(connection, "SELECT name FROM sys.databases WHERE database_id > 4 AND state = 0 ORDER BY name;"))
                     {
-                        command.CommandText = "SELECT name FROM sys.databases WHERE database_id > 4 AND state = 0 ORDER BY name;";
                         using (var reader = await command.ExecuteReaderAsync(cancellationToken))
                             while (await reader.ReadAsync(cancellationToken))
                                 databases.Add(reader.GetString(0));
@@ -98,9 +105,8 @@ public sealed class SqlServerMetadataProvider : IMetadataProvider
                 var tableRows = new List<(string Schema, string Table, string Column, string Type, bool Nullable, int Ordinal, bool PrimaryKey)>();
                 try
                 {
-                    using (var command = connection.CreateCommand())
+                    using (var command = CreateCommand(connection, TablesSql))
                     {
-                        command.CommandText = TablesSql;
                         using (var reader = await command.ExecuteReaderAsync(cancellationToken))
                             while (await reader.ReadAsync(cancellationToken))
                                 tableRows.Add((reader.GetString(0), reader.GetString(1), reader.GetString(2),
@@ -130,9 +136,8 @@ public sealed class SqlServerMetadataProvider : IMetadataProvider
                 progress?.Report($"[CSDL: {dbName}] Đang quét Khóa ngoại (Foreign Keys)...");
                 try
                 {
-                    using (var command = connection.CreateCommand())
+                    using (var command = CreateCommand(connection, ForeignKeysSql))
                     {
-                        command.CommandText = ForeignKeysSql;
                         using (var reader = await command.ExecuteReaderAsync(cancellationToken))
                             while (await reader.ReadAsync(cancellationToken))
                                 foreignKeys.Add(new ForeignKeyMetadata(
@@ -155,9 +160,8 @@ public sealed class SqlServerMetadataProvider : IMetadataProvider
                 var indexRows = new List<(string Schema, string Table, string Name, bool Unique, string Column, int Ordinal)>();
                 try
                 {
-                    using (var command = connection.CreateCommand())
+                    using (var command = CreateCommand(connection, IndexesSql))
                     {
-                        command.CommandText = IndexesSql;
                         using (var reader = await command.ExecuteReaderAsync(cancellationToken))
                             while (await reader.ReadAsync(cancellationToken))
                                 indexRows.Add((reader.GetString(0), reader.GetString(1), reader.GetString(2),
@@ -185,9 +189,8 @@ public sealed class SqlServerMetadataProvider : IMetadataProvider
                 var procRows = new List<(string Schema, string Name, string Type, string? ParamName, string? ParamType, bool IsOutput, int ParamOrdinal)>();
                 try
                 {
-                    using (var command = connection.CreateCommand())
+                    using (var command = CreateCommand(connection, ProceduresSql))
                     {
-                        command.CommandText = ProceduresSql;
                         using (var reader = await command.ExecuteReaderAsync(cancellationToken))
                             while (await reader.ReadAsync(cancellationToken))
                                 procRows.Add((
@@ -227,9 +230,8 @@ public sealed class SqlServerMetadataProvider : IMetadataProvider
                 var viewRows = new List<(string Schema, string View, string Column, string Type, bool Nullable, int Ordinal, bool IsIndexed)>();
                 try
                 {
-                    using (var command = connection.CreateCommand())
+                    using (var command = CreateCommand(connection, ViewsSql))
                     {
-                        command.CommandText = ViewsSql;
                         using (var reader = await command.ExecuteReaderAsync(cancellationToken))
                             while (await reader.ReadAsync(cancellationToken))
                                 viewRows.Add((reader.GetString(0), reader.GetString(1), reader.GetString(2),
@@ -254,9 +256,8 @@ public sealed class SqlServerMetadataProvider : IMetadataProvider
                 var fnRows = new List<(string Schema, string Name, string FnType, string ReturnType, string ParamName, string ParamType, bool IsOutput, int ParamOrdinal)>();
                 try
                 {
-                    using (var command = connection.CreateCommand())
+                    using (var command = CreateCommand(connection, FunctionsSql))
                     {
-                        command.CommandText = FunctionsSql;
                         using (var reader = await command.ExecuteReaderAsync(cancellationToken))
                             while (await reader.ReadAsync(cancellationToken))
                                 fnRows.Add((reader.GetString(0), reader.GetString(1), reader.GetString(2),
@@ -293,9 +294,8 @@ public sealed class SqlServerMetadataProvider : IMetadataProvider
                 progress?.Report($"[CSDL: {dbName}] Đang quét các Trigger...");
                 try
                 {
-                    using (var command = connection.CreateCommand())
+                    using (var command = CreateCommand(connection, TriggersSql))
                     {
-                        command.CommandText = TriggersSql;
                         using (var reader = await command.ExecuteReaderAsync(cancellationToken))
                             while (await reader.ReadAsync(cancellationToken))
                                 triggers.Add(new TriggerMetadata(
@@ -324,9 +324,8 @@ public sealed class SqlServerMetadataProvider : IMetadataProvider
                 var udtRows = new List<(string Schema, string Name, string BaseType, bool Nullable, bool IsTable, string ColName, string ColType, bool ColNullable, int ColOrdinal)>();
                 try
                 {
-                    using (var command = connection.CreateCommand())
+                    using (var command = CreateCommand(connection, UserTypesSql))
                     {
-                        command.CommandText = UserTypesSql;
                         using (var reader = await command.ExecuteReaderAsync(cancellationToken))
                             while (await reader.ReadAsync(cancellationToken))
                                 udtRows.Add((
@@ -367,9 +366,8 @@ public sealed class SqlServerMetadataProvider : IMetadataProvider
                 progress?.Report($"[CSDL: {dbName}] Đang quét các Từ đồng nghĩa (Synonyms)...");
                 try
                 {
-                    using (var command = connection.CreateCommand())
+                    using (var command = CreateCommand(connection, SynonymsSql))
                     {
-                        command.CommandText = SynonymsSql;
                         using (var reader = await command.ExecuteReaderAsync(cancellationToken))
                             while (await reader.ReadAsync(cancellationToken))
                                 synonyms.Add(new SynonymMetadata(
@@ -386,9 +384,8 @@ public sealed class SqlServerMetadataProvider : IMetadataProvider
                 progress?.Report($"[CSDL: {dbName}] Đang quét Users...");
                 try
                 {
-                    using (var command = connection.CreateCommand())
+                    using (var command = CreateCommand(connection, UsersSql))
                     {
-                        command.CommandText = UsersSql;
                         using (var reader = await command.ExecuteReaderAsync(cancellationToken))
                             while (await reader.ReadAsync(cancellationToken))
                                 users.Add(new UserMetadata(
@@ -415,9 +412,8 @@ public sealed class SqlServerMetadataProvider : IMetadataProvider
             progress?.Report("Đang quét các máy chủ liên kết (Linked Servers)...");
             try
             {
-                using (var command = connection.CreateCommand())
+                using (var command = CreateCommand(connection, LinkedServersSql))
                 {
-                    command.CommandText = LinkedServersSql;
                     using (var reader = await command.ExecuteReaderAsync(cancellationToken))
                         while (await reader.ReadAsync(cancellationToken))
                         {
@@ -439,9 +435,8 @@ public sealed class SqlServerMetadataProvider : IMetadataProvider
             progress?.Report("Đang quét Endpoints...");
             try
             {
-                using (var command = connection.CreateCommand())
+                using (var command = CreateCommand(connection, EndpointsSql))
                 {
-                    command.CommandText = EndpointsSql;
                     using (var reader = await command.ExecuteReaderAsync(cancellationToken))
                         while (await reader.ReadAsync(cancellationToken))
                         {
@@ -479,6 +474,14 @@ public sealed class SqlServerMetadataProvider : IMetadataProvider
                 Endpoints  = endpoints.ToArray()
             };
         }
+    }
+
+    private SqlCommand CreateCommand(SqlConnection connection, string commandText)
+    {
+        var command = connection.CreateCommand();
+        command.CommandText = commandText;
+        command.CommandTimeout = _commandTimeoutSeconds;
+        return command;
     }
 
     // ─────────────────────────────────── SQL Queries ─────────────────────────

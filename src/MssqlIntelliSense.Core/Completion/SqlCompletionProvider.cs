@@ -173,6 +173,12 @@ public sealed class SqlCompletionProvider
         }
         else if (isOutputContext)
         {
+            OutputCompletionHelper.AddOutputCompletions(
+                suggestions,
+                metadata,
+                sql,
+                caretPosition,
+                prefix);
             foreach (var pseudo in new[] { "INSERTED", "DELETED" }.Where(p => SqlCompletionHelper.Matches(p, prefix)))
             {
                 suggestions.Add(new SqlCompletionItem(

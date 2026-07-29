@@ -74,7 +74,10 @@ public static class KeywordCompletionHelper
         {
             ["CASE"] = "CASE WHEN ? THEN ? ELSE ? END",
             ["EXISTS"] = "EXISTS (SELECT 1 FROM ?)",
-            ["NOT EXISTS"] = "NOT EXISTS (SELECT 1 FROM ?)"
+            ["NOT EXISTS"] = "NOT EXISTS (SELECT 1 FROM ?)",
+            ["TOP"] = "TOP (?)",
+            ["WHEN MATCHED"] = "WHEN MATCHED THEN UPDATE SET ?",
+            ["WHEN NOT MATCHED"] = "WHEN NOT MATCHED THEN INSERT (?) VALUES (?)"
         };
 
     private static readonly string[] CustomKeywords =
@@ -87,6 +90,7 @@ public static class KeywordCompletionHelper
         "NVARCHAR", "UNIQUEIDENTIFIER", "XML",
         "CROSS APPLY", "OUTER APPLY",
         "NOT EXISTS",
+        "WHEN MATCHED", "WHEN NOT MATCHED",
         "THROW", "TRY", "CATCH",
         "RECOMPILE", "MAXDOP", "OFFSET", "FETCH", "OPTION"
     ];

@@ -920,6 +920,22 @@ public sealed class SqlCompletionProviderTests
     }
 
     [Fact]
+    public void GetCompletions_TopKeywordGetsCountSkeleton()
+    {
+        var sql = "SELECT TO";
+        var items = _provider.GetCompletions(sql, sql.Length, TestMetadata.Create());
+
+        var item = items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Keyword &&
+            item.Label == "TOP").Which;
+
+        item.InsertText.Should().Be("TOP (?)");
+        item.CaretOffset.Should().Be("TOP (".Length);
+        item.SelectionStart.Should().Be(item.CaretOffset);
+        item.SelectionEnd.Should().Be(item.CaretOffset + 1);
+    }
+
+    [Fact]
     public void GetCompletions_AggregateKeywordsGetArgumentSkeletons()
     {
         var sql = "SU";
@@ -1529,6 +1545,38 @@ public sealed class SqlCompletionProviderTests
     }
 
     [Fact]
+    public void GetCompletions_MergeSuggestsWhenMatchedSkeleton()
+    {
+        var sql = "MERGE INTO dbo.Users AS t USING sales.Orders AS s ON t.Id = s.UserId WH";
+        var items = _provider.GetCompletions(sql, sql.Length, TestMetadata.Create());
+
+        var item = items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Keyword &&
+            item.Label == "WHEN MATCHED").Which;
+
+        item.InsertText.Should().Be("WHEN MATCHED THEN UPDATE SET ?");
+        item.CaretOffset.Should().Be("WHEN MATCHED THEN UPDATE SET ".Length);
+        item.SelectionStart.Should().Be(item.CaretOffset);
+        item.SelectionEnd.Should().Be(item.CaretOffset + 1);
+    }
+
+    [Fact]
+    public void GetCompletions_MergeSuggestsWhenNotMatchedSkeleton()
+    {
+        var sql = "MERGE INTO dbo.Users AS t USING sales.Orders AS s ON t.Id = s.UserId WH";
+        var items = _provider.GetCompletions(sql, sql.Length, TestMetadata.Create());
+
+        var item = items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Keyword &&
+            item.Label == "WHEN NOT MATCHED").Which;
+
+        item.InsertText.Should().Be("WHEN NOT MATCHED THEN INSERT (?) VALUES (?)");
+        item.CaretOffset.Should().Be("WHEN NOT MATCHED THEN INSERT (".Length);
+        item.SelectionStart.Should().Be(item.CaretOffset);
+        item.SelectionEnd.Should().Be(item.CaretOffset + 1);
+    }
+
+    [Fact]
     public void GetCompletions_OutputContextSuggestsInsertedAndDeleted()
     {
         var metadata = TestMetadata.Create();
@@ -1538,6 +1586,58 @@ public sealed class SqlCompletionProviderTests
 
         items.Should().Contain(item => item.InsertText == "INSERTED" && item.Kind == SqlCompletionKind.Keyword);
         items.Should().Contain(item => item.InsertText == "DELETED" && item.Kind == SqlCompletionKind.Keyword);
+    }
+
+    [Fact]
+    public void GetCompletions_InsertOutputSuggestsInsertedColumnListSkeleton()
+    {
+        var metadata = TestMetadata.Create();
+
+        var sql = "INSERT INTO dbo.Users (Name) OUTPUT ";
+        var items = _provider.GetCompletions(sql, sql.Length, metadata);
+
+        items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Snippet &&
+            item.Label == "OUTPUT INSERTED columns" &&
+            item.InsertText == "INSERTED.[Id], INSERTED.[Name]");
+        items.Should().NotContain(item =>
+            item.Kind == SqlCompletionKind.Snippet &&
+            item.Label == "OUTPUT DELETED columns");
+    }
+
+    [Fact]
+    public void GetCompletions_DeleteOutputSuggestsDeletedColumnListSkeleton()
+    {
+        var metadata = TestMetadata.Create();
+
+        var sql = "DELETE FROM sales.Orders OUTPUT ";
+        var items = _provider.GetCompletions(sql, sql.Length, metadata);
+
+        items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Snippet &&
+            item.Label == "OUTPUT DELETED columns" &&
+            item.InsertText == "DELETED.[Id], DELETED.[UserId], DELETED.[Total]");
+        items.Should().NotContain(item =>
+            item.Kind == SqlCompletionKind.Snippet &&
+            item.Label == "OUTPUT INSERTED columns");
+    }
+
+    [Fact]
+    public void GetCompletions_UpdateOutputSuggestsInsertedAndDeletedColumnListSkeletons()
+    {
+        var metadata = TestMetadata.Create();
+
+        var sql = "UPDATE sales.Orders SET Total = 1 OUTPUT ";
+        var items = _provider.GetCompletions(sql, sql.Length, metadata);
+
+        items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Snippet &&
+            item.Label == "OUTPUT INSERTED columns" &&
+            item.InsertText == "INSERTED.[Id], INSERTED.[UserId], INSERTED.[Total]");
+        items.Should().ContainSingle(item =>
+            item.Kind == SqlCompletionKind.Snippet &&
+            item.Label == "OUTPUT DELETED columns" &&
+            item.InsertText == "DELETED.[Id], DELETED.[UserId], DELETED.[Total]");
     }
 
     [Fact]
