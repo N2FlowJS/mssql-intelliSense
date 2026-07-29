@@ -72,7 +72,46 @@ public sealed class SqlMetadataToolExecutorTests
 
         var json = await SqlMetadataToolExecutor.ExecuteToolAsync(SqlMetadataToolExecutor.ListEndpointsToolName, args.RootElement, metadata);
 
-        json.Should().Contain("endpoints");
+        json.Should().Contain("endpoints").And.Contain("TSQL Default TCP");
+    }
+
+    [Fact]
+    public async Task ExecuteToolAsync_GetTableIndexes_ReturnsIndexes()
+    {
+        var metadata = TestMetadata.Create();
+        using var args = JsonDocument.Parse("{\"tableName\":\"Users\"}");
+
+        var json = await SqlMetadataToolExecutor.ExecuteToolAsync(SqlMetadataToolExecutor.TableIndexesToolName, args.RootElement, metadata);
+
+        json.Should().Contain("IX_Users_Email").And.Contain("Email");
+    }
+
+    [Fact]
+    public async Task ExecuteToolAsync_AllAgentTools_RunAgainstCachedMetadata()
+    {
+        var metadata = TestMetadata.Create();
+        var argumentsByTool = new Dictionary<string, string>
+        {
+            [SqlMetadataToolExecutor.ListTablesToolName] = "{}",
+            [SqlMetadataToolExecutor.TableSchemaToolName] = "{\"schemaName\":\"dbo\",\"tableName\":\"Users\"}",
+            [SqlMetadataToolExecutor.TableRelationsToolName] = "{\"tableName\":\"Orders\"}",
+            [SqlMetadataToolExecutor.TableIndexesToolName] = "{\"tableName\":\"Users\"}",
+            [SqlMetadataToolExecutor.SearchObjectsToolName] = "{\"query\":\"User\"}",
+            [SqlMetadataToolExecutor.SearchSchemaObjectsToolName] = "{\"query\":\"User\"}",
+            [SqlMetadataToolExecutor.FindColumnToolName] = "{\"query\":\"Email\"}",
+            [SqlMetadataToolExecutor.ListEndpointsToolName] = "{}"
+        };
+
+        foreach (var toolName in SqlMetadataToolExecutor.AllToolNames)
+        {
+            using var args = JsonDocument.Parse(argumentsByTool[toolName]);
+            var json = await SqlMetadataToolExecutor.ExecuteToolAsync(toolName, args.RootElement, metadata);
+
+            json.Should().NotBeNullOrWhiteSpace(toolName);
+            json.Should().NotContain("\"error\"", toolName);
+            SqlMetadataToolExecutor.BuildPreviewRows(toolName, metadata, "dbo", "Users", "Email")
+                .Should().NotBeNull(toolName);
+        }
     }
 
     [Fact]

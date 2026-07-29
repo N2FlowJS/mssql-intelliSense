@@ -1,5 +1,6 @@
 using FluentAssertions;
 using MssqlIntelliSense.Core.Metadata;
+using System.Text.Json;
 
 namespace MssqlIntelliSense.Core.Tests;
 
@@ -54,6 +55,37 @@ public class JsonCacheTests : IDisposable
 
         MssqlIntelliSenseCacheWriter.DeleteConnection(connectionId);
         MssqlIntelliSenseCacheReader.GetConnections().Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task JsonCache_RoundTrippedMetadata_SupportsAllAgentTools()
+    {
+        MssqlIntelliSenseCacheWriter.InitializeDatabase();
+        var connectionId = MssqlIntelliSenseCacheWriter.RegisterConnection(
+            "Server=.;Database=TestDb;Integrated Security=True;TrustServerCertificate=True",
+            "local");
+        MssqlIntelliSenseCacheWriter.SaveSchemaCache(connectionId, TestMetadata.Create());
+
+        var metadata = MssqlIntelliSenseCacheReader.GetSchemaDetails(connectionId).Metadata;
+        var argumentsByTool = new Dictionary<string, string>
+        {
+            [MssqlIntelliSense.Core.Ai.SqlMetadataToolExecutor.ListTablesToolName] = "{}",
+            [MssqlIntelliSense.Core.Ai.SqlMetadataToolExecutor.TableSchemaToolName] = "{\"schemaName\":\"dbo\",\"tableName\":\"Users\"}",
+            [MssqlIntelliSense.Core.Ai.SqlMetadataToolExecutor.TableRelationsToolName] = "{\"tableName\":\"Orders\"}",
+            [MssqlIntelliSense.Core.Ai.SqlMetadataToolExecutor.TableIndexesToolName] = "{\"tableName\":\"Users\"}",
+            [MssqlIntelliSense.Core.Ai.SqlMetadataToolExecutor.SearchObjectsToolName] = "{\"query\":\"User\"}",
+            [MssqlIntelliSense.Core.Ai.SqlMetadataToolExecutor.SearchSchemaObjectsToolName] = "{\"query\":\"User\"}",
+            [MssqlIntelliSense.Core.Ai.SqlMetadataToolExecutor.FindColumnToolName] = "{\"query\":\"Email\"}",
+            [MssqlIntelliSense.Core.Ai.SqlMetadataToolExecutor.ListEndpointsToolName] = "{}"
+        };
+
+        foreach (var toolName in MssqlIntelliSense.Core.Ai.SqlMetadataToolExecutor.AllToolNames)
+        {
+            using var args = JsonDocument.Parse(argumentsByTool[toolName]);
+            var output = await MssqlIntelliSense.Core.Ai.SqlMetadataToolExecutor.ExecuteToolAsync(toolName, args.RootElement, metadata);
+
+            output.Should().NotContain("\"error\"", toolName);
+        }
     }
 
     public void Dispose()

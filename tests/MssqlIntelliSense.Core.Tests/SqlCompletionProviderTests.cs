@@ -144,9 +144,10 @@ public sealed class SqlCompletionProviderTests
         var caret = sql.IndexOf("u.", StringComparison.Ordinal) + 2;
         var items = _provider.GetCompletions(sql, caret, TestMetadata.Create());
 
-        items.Should().HaveCount(2);
+        items.Should().HaveCount(3);
         items.Should().Contain(item => item.InsertText == "[Id]" && item.Kind == SqlCompletionKind.Column);
         items.Should().Contain(item => item.InsertText == "[Name]" && item.Kind == SqlCompletionKind.Column);
+        items.Should().Contain(item => item.InsertText == "[Email]" && item.Kind == SqlCompletionKind.Column);
     }
 
     [Fact]
@@ -1599,7 +1600,7 @@ public sealed class SqlCompletionProviderTests
         items.Should().ContainSingle(item =>
             item.Kind == SqlCompletionKind.Snippet &&
             item.Label == "OUTPUT INSERTED columns" &&
-            item.InsertText == "INSERTED.[Id], INSERTED.[Name]");
+            item.InsertText == "INSERTED.[Id], INSERTED.[Name], INSERTED.[Email]");
         items.Should().NotContain(item =>
             item.Kind == SqlCompletionKind.Snippet &&
             item.Label == "OUTPUT DELETED columns");
