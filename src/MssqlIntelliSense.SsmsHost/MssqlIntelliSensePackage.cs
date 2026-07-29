@@ -72,35 +72,42 @@ public sealed class MssqlIntelliSensePackage : AsyncPackage
 
     protected override async Task InitializeAsync(CancellationToken cancellationToken, IProgress<ServiceProgressData> progress)
     {
-        Instance = this;
-        InstallPackagedRuntimeResolver();
-        await JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
-        Log($"Initializing MSSQL IntelliSense package (v{VersionString})...");
-        if (await GetServiceAsync(typeof(IMenuCommandService)) is not OleMenuCommandService commands) return;
-
-        foreach (var (id, name) in RegisteredCommands)
+        try
         {
-            Register(commands, id, name);
+            Instance = this;
+            InstallPackagedRuntimeResolver();
+            await JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
+            Log($"Initializing MSSQL IntelliSense package (v{VersionString})...");
+            if (await GetServiceAsync(typeof(IMenuCommandService)) is not OleMenuCommandService commands) return;
+
+            foreach (var (id, name) in RegisteredCommands)
+            {
+                Register(commands, id, name);
+            }
+
+            RegisterRefreshSchemaCommand(commands);
+
+            // Ensure the custom menu bar is created via DTE
+            await EnsureMenuBarAsync(commands, cancellationToken);
+
+            // Run self-healing cleanup of old conflicting directories asynchronously
+            _ = Task.Run(() => CleanOldInstallations(), cancellationToken);
+
+            // Initialize JSON cache on startup
+            _ = Task.Run(() => MssqlIntelliSense.Core.Metadata.MssqlIntelliSenseCacheWriter.InitializeDatabase(), cancellationToken);
+
+            // Start in-process connection scanning loop to register active connections
+            _ = Task.Run(() => StartConnectionSyncLoopAsync(DisposalToken), cancellationToken);
+
+            Log("MSSQL IntelliSense package initialization completed.");
+
+            var options = (MssqlIntelliSenseOptions)GetDialogPage(typeof(MssqlIntelliSenseOptions));
         }
-
-        RegisterRefreshSchemaCommand(commands);
-
-        // Ensure the custom menu bar is created via DTE
-        await EnsureMenuBarAsync(commands, cancellationToken);
-
-        // Run self-healing cleanup of old conflicting directories asynchronously
-        _ = Task.Run(() => CleanOldInstallations(), cancellationToken);
-
-        // Initialize JSON cache on startup
-        _ = Task.Run(() => MssqlIntelliSense.Core.Metadata.MssqlIntelliSenseCacheWriter.InitializeDatabase(), cancellationToken);
-
-        // Start in-process connection scanning loop to register active connections
-        _ = Task.Run(() => StartConnectionSyncLoopAsync(DisposalToken), cancellationToken);
-
-        Log("MSSQL IntelliSense package initialization completed.");
-
-        var options = (MssqlIntelliSenseOptions)GetDialogPage(typeof(MssqlIntelliSenseOptions));
-     
+        catch (Exception ex)
+        {
+            Log($"MSSQL IntelliSense package initialization failed: {ex}");
+            throw;
+        }
     }
 
     private static void InstallPackagedRuntimeResolver()
