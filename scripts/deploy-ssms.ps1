@@ -83,7 +83,7 @@ foreach ($ssmsDir in $ssmsDirs) {
             } | Remove-Item -Force -ErrorAction SilentlyContinue
 
             # Copy build output files (excluding the .vsix archive itself)
-            & robocopy $TargetDir $targetDir /E /XF *.vsix /NFL /NDL /NJH /NJS /NP | Out-Null
+            & robocopy $TargetDir $targetDir /E /IS /IT /XF *.vsix /R:1 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null
             if ($LASTEXITCODE -gt 7) {
                 throw "robocopy failed with exit code $LASTEXITCODE"
             }
