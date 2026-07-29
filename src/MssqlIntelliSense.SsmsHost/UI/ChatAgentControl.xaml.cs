@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -23,13 +23,13 @@ namespace MssqlIntelliSense.SsmsHost;
 public partial class ChatAgentControl : UserControl
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
-    private const string ListTablesToolName = "list_tables";
-    private const string TableSchemaToolName = "get_table_schema";
-    private const string TableRelationsToolName = "get_table_relations";
-    private const string TableIndexesToolName = "get_table_indexes";
-    private const string SearchObjectsToolName = "search_objects";
-    private const string FindColumnToolName = "find_column";
-    private const string ListEndpointsToolName = "list_endpoints";
+    private const string ListTablesToolName = SqlMetadataToolExecutor.ListTablesToolName;
+    private const string TableSchemaToolName = SqlMetadataToolExecutor.TableSchemaToolName;
+    private const string TableRelationsToolName = SqlMetadataToolExecutor.TableRelationsToolName;
+    private const string TableIndexesToolName = SqlMetadataToolExecutor.TableIndexesToolName;
+    private const string SearchObjectsToolName = SqlMetadataToolExecutor.SearchObjectsToolName;
+    private const string FindColumnToolName = SqlMetadataToolExecutor.FindColumnToolName;
+    private const string ListEndpointsToolName = SqlMetadataToolExecutor.ListEndpointsToolName;
 
     private sealed class ChatTurn
     {
@@ -529,7 +529,7 @@ public partial class ChatAgentControl : UserControl
         systemPrompt.AppendLine("Allowed tools for this chat session:");
         foreach (var toolName in allowedToolNames)
         {
-            systemPrompt.AppendLine("- " + GetToolPlannerDescription(toolName));
+            systemPrompt.AppendLine("- " + SqlMetadataToolExecutor.GetToolPlannerDescription(toolName));
         }
         systemPrompt.AppendLine("Do not request tools that are not listed above.");
 
@@ -581,7 +581,7 @@ public partial class ChatAgentControl : UserControl
             var argumentsJson = toolElement.TryGetProperty("arguments", out var argumentsElement)
                 ? argumentsElement.GetRawText()
                 : "{}";
-            toolCall = new OpenAiSqlToolCall(name, argumentsJson, GetToolDescription(name));
+            toolCall = new OpenAiSqlToolCall(name, argumentsJson, SqlMetadataToolExecutor.GetToolDescription(name));
         }
 
         return new ToolPlannerResult(status, toolCall);
@@ -640,7 +640,7 @@ public partial class ChatAgentControl : UserControl
         });
         container.Children.Add(new TextBlock
         {
-            Text = GetToolApprovalReason(toolCall.Name),
+            Text = SqlMetadataToolExecutor.GetToolApprovalReason(toolCall.Name),
             Foreground = textBrush,
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 0, 0, 6)
@@ -707,226 +707,11 @@ public partial class ChatAgentControl : UserControl
         };
     }
 
-    private static string PrettyPrintJson(string json)
+    private static async Task<string> ExecuteApprovedToolAsync(OpenAiSqlToolCall toolCall, DatabaseMetadata metadata)
     {
-        if (string.IsNullOrWhiteSpace(json))
-        {
-            return string.Empty;
-        }
-
-        try
-        {
-            using var document = JsonDocument.Parse(json);
-            return JsonSerializer.Serialize(document.RootElement, new JsonSerializerOptions
-            {
-                WriteIndented = true
-            });
-        }
-        catch
-        {
-            return json;
-        }
-    }
-
-    private async Task<string> ExecuteApprovedToolAsync(OpenAiSqlToolCall toolCall, DatabaseMetadata metadata)
-    {
-        await Task.Yield();
-
         using var document = JsonDocument.Parse(string.IsNullOrWhiteSpace(toolCall.ArgumentsJson) ? "{}" : toolCall.ArgumentsJson);
-        var arguments = document.RootElement;
-
-        return toolCall.Name switch
-        {
-            "list_tables" => JsonSerializer.Serialize(new
-            {
-                tablesList = metadata.Tables.Select(t => new { database = t.Database, schema = t.Schema, name = t.Name }).ToList()
-            }, JsonOptions),
-        "get_table_schema" => JsonSerializer.Serialize(GetTableSchemaToolResult(metadata, arguments), JsonOptions),
-        "get_table_relations" => JsonSerializer.Serialize(GetTableRelationsToolResult(metadata, arguments), JsonOptions),
-        "get_table_indexes" => JsonSerializer.Serialize(GetTableIndexesToolResult(metadata, arguments), JsonOptions),
-        "search_objects" => JsonSerializer.Serialize(GetSearchObjectsToolResult(metadata, arguments), JsonOptions),
-        "find_column" => JsonSerializer.Serialize(GetFindColumnToolResult(metadata, arguments), JsonOptions),
-        "list_endpoints" => JsonSerializer.Serialize(GetListEndpointsToolResult(metadata), JsonOptions),
-        _ => JsonSerializer.Serialize(new { error = $"Tool '{toolCall.Name}' is not supported." }, JsonOptions)
-    };
+        return await SqlMetadataToolExecutor.ExecuteToolAsync(toolCall.Name, document.RootElement, metadata);
     }
-
-    private static object GetTableSchemaToolResult(DatabaseMetadata metadata, JsonElement arguments)
-    {
-        var schemaName = GetArgument(arguments, "schemaName", "dbo");
-        var tableName = GetArgument(arguments, "tableName", string.Empty);
-        var table = metadata.FindTable(schemaName, tableName);
-        if (table == null)
-        {
-            return new { error = "Table not found.", schemaName, tableName };
-        }
-
-        return new
-        {
-            tableSchema = new
-            {
-                database = table.Database,
-                schema = table.Schema,
-                name = table.Name,
-                columns = table.Columns.Select(c => new
-                {
-                    name = c.Name,
-                    dataType = c.DataType,
-                    isNullable = c.IsNullable,
-                    ordinal = c.Ordinal
-                }).ToList(),
-                primaryKeyColumns = table.PrimaryKeyColumns
-            }
-        };
-    }
-
-    private static object GetTableRelationsToolResult(DatabaseMetadata metadata, JsonElement arguments)
-    {
-        var tableName = GetArgument(arguments, "tableName", string.Empty);
-        return metadata.ForeignKeys.Where(fk =>
-                fk.FromTable.Equals(tableName, StringComparison.OrdinalIgnoreCase) ||
-                fk.ToTable.Equals(tableName, StringComparison.OrdinalIgnoreCase))
-            .Select(fk => new
-            {
-                name = fk.Name,
-                fromSchema = fk.FromSchema,
-                fromTable = fk.FromTable,
-                fromColumn = fk.FromColumn,
-                toSchema = fk.ToSchema,
-                toTable = fk.ToTable,
-                toColumn = fk.ToColumn
-            }).ToList();
-    }
-
-    private static object GetTableIndexesToolResult(DatabaseMetadata metadata, JsonElement arguments)
-    {
-        var tableName = GetArgument(arguments, "tableName", string.Empty);
-        return metadata.Indexes.Where(idx => idx.Table.Equals(tableName, StringComparison.OrdinalIgnoreCase))
-            .Select(idx => new
-            {
-                schema = idx.Schema,
-                table = idx.Table,
-                name = idx.Name,
-                isUnique = idx.IsUnique,
-                columns = idx.Columns
-            }).ToList();
-    }
-
-    private static object GetSearchObjectsToolResult(DatabaseMetadata metadata, JsonElement arguments)
-    {
-        var query = GetArgument(arguments, "query", GetArgument(arguments, "tableName", string.Empty));
-        var matches = metadata.Tables.Select(t => new { kind = "table", database = t.Database, schema = t.Schema, name = t.Name })
-            .Concat(metadata.Views.Select(v => new { kind = "view", database = v.Database, schema = v.Schema, name = v.Name }))
-            .Concat(metadata.Procedures.Select(p => new { kind = "procedure", database = p.Database, schema = p.Schema, name = p.Name }))
-            .Concat(metadata.Functions.Select(f => new { kind = "function", database = f.Database, schema = f.Schema, name = f.Name }))
-            .Where(o => Matches(o.name, query) || Matches(o.schema + "." + o.name, query))
-            .OrderBy(o => o.kind)
-            .ThenBy(o => o.schema)
-            .ThenBy(o => o.name)
-            .Take(100)
-            .ToList();
-
-        return new { query, matches };
-    }
-
-    private static object GetFindColumnToolResult(DatabaseMetadata metadata, JsonElement arguments)
-    {
-        var query = GetArgument(arguments, "query", GetArgument(arguments, "columnName", string.Empty));
-        var tableColumns = metadata.Tables.SelectMany(t => t.Columns.Select(c => new
-        {
-            kind = "table",
-            database = t.Database,
-            schema = t.Schema,
-            objectName = t.Name,
-            column = c.Name,
-            dataType = c.DataType,
-            isNullable = c.IsNullable
-        }));
-        var viewColumns = metadata.Views.SelectMany(v => v.Columns.Select(c => new
-        {
-            kind = "view",
-            database = v.Database,
-            schema = v.Schema,
-            objectName = v.Name,
-            column = c.Name,
-            dataType = c.DataType,
-            isNullable = c.IsNullable
-        }));
-
-        return new
-        {
-            query,
-            matches = tableColumns.Concat(viewColumns)
-                .Where(c => Matches(c.column, query))
-                .OrderBy(c => c.schema)
-                .ThenBy(c => c.objectName)
-                .ThenBy(c => c.column)
-                .Take(150)
-                .ToList()
-        };
-    }
-
-    private static object GetListEndpointsToolResult(DatabaseMetadata metadata)
-    {
-        return new
-        {
-            endpoints = metadata.Endpoints
-                .OrderBy(ep => ep.Name)
-                .Select(ep => new { ep.Name, ep.Type, ep.Protocol, ep.State, ep.Port })
-                .ToList()
-        };
-    }
-
-    private static bool Matches(string value, string query)
-    {
-        return string.IsNullOrWhiteSpace(query) ||
-               value.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0;
-    }
-
-    private static string GetArgument(JsonElement arguments, string name, string fallback)
-    {
-        return arguments.ValueKind == JsonValueKind.Object &&
-               arguments.TryGetProperty(name, out var property) &&
-               property.ValueKind == JsonValueKind.String
-            ? property.GetString() ?? fallback
-            : fallback;
-    }
-
-    private static string GetToolDescription(string toolName) => toolName switch
-    {
-        ListTablesToolName => "Liệt kê danh sách table trong schema cache của connection/database đang chọn.",
-        TableSchemaToolName => "Đọc column, kiểu dữ liệu và primary key của một table.",
-        TableRelationsToolName => "Đọc foreign key/relationship liên quan đến table.",
-        TableIndexesToolName => "Đọc index metadata liên quan đến table.",
-        SearchObjectsToolName => "Tìm table/view/procedure/function theo tên trong schema cache.",
-        FindColumnToolName => "Tìm column theo tên trong table/view đã cache.",
-        ListEndpointsToolName => "Liệt kê SQL Server endpoints thuộc Server Objects.",
-        _ => "Tool metadata request."
-    };
-
-    private static string GetToolPlannerDescription(string toolName) => toolName switch
-    {
-        ListTablesToolName => "list_tables: list available tables.",
-        TableSchemaToolName => "get_table_schema: get columns and primary key for one table. Arguments: schemaName, tableName.",
-        TableRelationsToolName => "get_table_relations: get foreign keys for one table. Arguments: tableName.",
-        TableIndexesToolName => "get_table_indexes: get indexes for one table. Arguments: tableName.",
-        SearchObjectsToolName => "search_objects: search tables, views, procedures and functions by partial name. Arguments: query.",
-        FindColumnToolName => "find_column: search table/view columns by partial column name. Arguments: query.",
-        ListEndpointsToolName => "list_endpoints: list SQL Server endpoints under Server Objects.",
-        _ => toolName + ": enabled tool."
-    };
-
-    private static string GetToolApprovalReason(string toolName) => toolName switch
-    {
-        ListTablesToolName => "Reads cached table names only.",
-        TableSchemaToolName => "Reads cached columns, data types and primary key information for one table.",
-        TableRelationsToolName => "Reads cached foreign-key relationships for one table.",
-        TableIndexesToolName => "Reads cached index metadata for one table.",
-        SearchObjectsToolName => "Searches cached object names across tables, views, procedures and functions.",
-        FindColumnToolName => "Searches cached table/view column names.",
-        ListEndpointsToolName => "Reads cached SQL Server endpoint metadata under Server Objects.",
-        _ => "Reads cached metadata for this chat session."
-    };
 
     private static string SummarizeToolOutput(string output)
     {
@@ -1216,7 +1001,7 @@ public partial class ChatAgentControl : UserControl
                         required = new[] { "name", "arguments" },
                         properties = new
                         {
-                            name = new { type = "string", @enum = new[] { "list_tables", "get_table_schema", "get_table_relations", "get_table_indexes", "search_objects", "find_column", "list_endpoints" } },
+                            name = new { type = "string", @enum = SqlMetadataToolExecutor.AllToolNames },
                             arguments = new
                             {
                                 type = "object",

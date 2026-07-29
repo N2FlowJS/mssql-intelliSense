@@ -63,7 +63,7 @@ public sealed class SqlServerMetadataProvider : IMetadataProvider
                 progress?.Report("Đang tải danh sách cơ sở dữ liệu...");
                 try
                 {
-                    using (var command = CreateCommand(connection, "SELECT name FROM sys.databases WHERE database_id > 4 AND state = 0 ORDER BY name;"))
+                    using (var command = CreateCommand(connection, DatabaseDiscoverySql))
                     {
                         using (var reader = await command.ExecuteReaderAsync(cancellationToken))
                             while (await reader.ReadAsync(cancellationToken))
@@ -91,10 +91,8 @@ public sealed class SqlServerMetadataProvider : IMetadataProvider
             foreach (var dbName in databases)
             {
                 progress?.Report($"[CSDL: {dbName}] Bắt đầu quét schema...");
-                try { connection.ChangeDatabase(dbName); }
-                catch (Exception ex)
+                if (!await TryChangeDatabaseAsync(connection, dbName, cancellationToken))
                 {
-                    System.Console.WriteLine($"[Metadata Scan Warning] Could not access database {dbName}: {ex.Message}");
                     continue;
                 }
 
@@ -404,7 +402,8 @@ public sealed class SqlServerMetadataProvider : IMetadataProvider
             }
 
             // Restore original database
-            try { connection.ChangeDatabase(originalDatabase); } catch { }
+            if (!string.IsNullOrWhiteSpace(originalDatabase))
+                await TryChangeDatabaseAsync(connection, originalDatabase, cancellationToken, reportWarning: false);
 
             // ── 3. Linked Servers (instance-level) ─────────────────────────
             if (scope.HasFlag(MetadataScanScope.LinkedServers))
@@ -484,7 +483,46 @@ public sealed class SqlServerMetadataProvider : IMetadataProvider
         return command;
     }
 
+    private async Task<bool> TryChangeDatabaseAsync(
+        SqlConnection connection,
+        string databaseName,
+        CancellationToken cancellationToken,
+        bool reportWarning = true)
+    {
+        try
+        {
+            using var command = CreateCommand(connection, $"USE {QuoteSqlIdentifier(databaseName)};");
+            await command.ExecuteNonQueryAsync(cancellationToken);
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (reportWarning)
+        {
+            System.Console.WriteLine($"[Metadata Scan Warning] Could not access database {databaseName}: {ex.Message}");
+            return false;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static string QuoteSqlIdentifier(string value) =>
+        $"[{value.Replace("]", "]]", StringComparison.Ordinal)}]";
+
     // ─────────────────────────────────── SQL Queries ─────────────────────────
+
+    private const string DatabaseDiscoverySql = """
+        SELECT name
+        FROM sys.databases
+        WHERE database_id > 4
+          AND state = 0
+          AND HAS_DBACCESS(name) = 1
+        ORDER BY name;
+        """;
 
     private const string TablesSql = """
         SELECT s.name, o.name, c.name, ty.name, c.is_nullable, c.column_id,

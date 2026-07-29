@@ -32,4 +32,30 @@ public sealed class SqlServerMetadataProviderTests
         command.CommandText.Should().Be("SELECT 1");
         command.CommandTimeout.Should().Be(3);
     }
+
+    [Fact]
+    public void QuoteSqlIdentifier_EscapesClosingBracket()
+    {
+        var method = typeof(SqlServerMetadataProvider).GetMethod(
+            "QuoteSqlIdentifier",
+            BindingFlags.Static | BindingFlags.NonPublic);
+
+        method.Should().NotBeNull();
+        var quoted = (string)method!.Invoke(null, ["Tenant]Db"])!;
+
+        quoted.Should().Be("[Tenant]]Db]");
+    }
+
+    [Fact]
+    public void DatabaseDiscoverySql_FiltersDatabasesWithoutAccess()
+    {
+        var field = typeof(SqlServerMetadataProvider).GetField(
+            "DatabaseDiscoverySql",
+            BindingFlags.Static | BindingFlags.NonPublic);
+
+        field.Should().NotBeNull();
+        var sql = (string)field!.GetValue(null)!;
+
+        sql.Should().Contain("HAS_DBACCESS(name) = 1");
+    }
 }

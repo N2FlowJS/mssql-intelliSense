@@ -105,7 +105,7 @@ public class OpenAiSqlAgent : IAiSqlAssistant
                     var approval = new OpenAiSqlToolCall(
                         toolName,
                         arguments.ValueKind == JsonValueKind.Undefined ? "{}" : arguments.GetRawText(),
-                        GetToolDescription(toolName));
+                        SqlMetadataToolExecutor.GetToolDescription(toolName));
 
                     var approved = await _options.ToolApprovalHandler(approval, cancellationToken);
                     if (!approved)
@@ -118,7 +118,8 @@ public class OpenAiSqlAgent : IAiSqlAssistant
                     }
                     else
                     {
-                        toolOutput = await ExecuteToolAsync(toolName, arguments, metadata);
+                        toolOutput = await SqlMetadataToolExecutor.ExecuteToolAsync(
+                            toolName, arguments, metadata, CallGraphQLToolAsync);
                     }
                 }
                 catch (Exception ex)
@@ -140,196 +141,6 @@ public class OpenAiSqlAgent : IAiSqlAssistant
         }
 
         throw new OpenAiSqlAgentException("Agent reached maximum iterations without completing.");
-    }
-
-    private static string GetToolDescription(string toolName) => toolName switch
-    {
-        "list_tables" => "Liệt kê danh sách table từ schema cache hoặc GraphQL metadata.",
-        "get_table_schema" => "Đọc column, kiểu dữ liệu và primary key của một table.",
-        "get_table_relations" => "Đọc foreign key/relationship liên quan đến table.",
-        "get_table_indexes" => "Đọc index metadata liên quan đến table.",
-        "search_schema_objects" => "Tìm kiếm các đối tượng trong schema (bảng, view, procedure, function) bằng từ khóa hoặc mô tả.",
-        _ => "Tool metadata request."
-    };
-
-    private async Task<string> ExecuteToolAsync(string toolName, JsonElement arguments, DatabaseMetadata metadata)
-    {
-        if (metadata != null && metadata.Tables != null && metadata.Tables.Count > 0)
-        {
-            switch (toolName)
-            {
-                case "list_tables":
-                    return JsonSerializer.Serialize(new
-                    {
-                        tablesList = metadata.Tables.Select(t => new { schema = t.Schema, name = t.Name }).ToList()
-                    });
-
-                case "get_table_schema":
-                    string schemaName = arguments.ValueKind == JsonValueKind.Object && arguments.TryGetProperty("schemaName", out var sProp) ? sProp.GetString() ?? "dbo" : "dbo";
-                    string tableName = arguments.ValueKind == JsonValueKind.Object && arguments.TryGetProperty("tableName", out var tProp) ? tProp.GetString() ?? "" : "";
-                    var table = metadata.FindTable(schemaName, tableName);
-                    if (table == null) return "{\"error\":\"Table not found.\"}";
-                    return JsonSerializer.Serialize(new
-                    {
-                        tableSchema = new
-                        {
-                            schema = table.Schema,
-                            name = table.Name,
-                            columns = table.Columns.Select(c => new { name = c.Name, dataType = c.DataType, isNullable = c.IsNullable, ordinal = c.Ordinal }).ToList(),
-                            primaryKeyColumns = table.PrimaryKeyColumns
-                        }
-                    });
-
-                case "get_table_relations":
-                    string relTable = arguments.ValueKind == JsonValueKind.Object && arguments.TryGetProperty("tableName", out var rProp) ? rProp.GetString() ?? "" : "";
-                    var relations = metadata.ForeignKeys.Where(fk =>
-                        fk.FromTable.Equals(relTable, StringComparison.OrdinalIgnoreCase) ||
-                        fk.ToTable.Equals(relTable, StringComparison.OrdinalIgnoreCase))
-                        .Select(fk => new
-                        {
-                            name = fk.Name,
-                            fromSchema = fk.FromSchema,
-                            fromTable = fk.FromTable,
-                            fromColumn = fk.FromColumn,
-                            toSchema = fk.ToSchema,
-                            toTable = fk.ToTable,
-                            toColumn = fk.ToColumn
-                        }).ToList();
-                    return JsonSerializer.Serialize(relations);
-
-                case "get_table_indexes":
-                    string idxTable = arguments.ValueKind == JsonValueKind.Object && arguments.TryGetProperty("tableName", out var iProp) ? iProp.GetString() ?? "" : "";
-                    var indexes = metadata.Indexes.Where(idx =>
-                        idx.Table.Equals(idxTable, StringComparison.OrdinalIgnoreCase))
-                        .Select(idx => new
-                        {
-                            schema = idx.Schema,
-                            table = idx.Table,
-                            name = idx.Name,
-                            isUnique = idx.IsUnique,
-                            columns = idx.Columns
-                        }).ToList();
-                    return JsonSerializer.Serialize(indexes);
-
-                case "search_schema_objects":
-                    string searchQuery = arguments.ValueKind == JsonValueKind.Object && arguments.TryGetProperty("query", out var qProp) ? qProp.GetString() ?? "" : "";
-                    return SearchSchemaObjects(searchQuery, metadata);
-            }
-        }
-
-        switch (toolName)
-        {
-            case "list_tables":
-                return await CallGraphQLToolAsync("query { tablesList { schema name } }");
-
-            case "get_table_schema":
-                string schemaName = arguments.ValueKind == JsonValueKind.Object && arguments.TryGetProperty("schemaName", out var sProp) ? sProp.GetString() ?? "dbo" : "dbo";
-                string tableName = arguments.ValueKind == JsonValueKind.Object && arguments.TryGetProperty("tableName", out var tProp) ? tProp.GetString() ?? "" : "";
-                return await CallGraphQLToolAsync(
-                    "query($schema: String!, $name: String!) { tableSchema(schema: $schema, name: $name) { schema name columns { name dataType isNullable ordinal } primaryKeyColumns } }",
-                    new { schema = schemaName, name = tableName }
-                );
-
-            case "get_table_relations":
-                string relTable = arguments.ValueKind == JsonValueKind.Object && arguments.TryGetProperty("tableName", out var rProp) ? rProp.GetString() ?? "" : "";
-                return await CallGraphQLToolAsync(
-                    "query($tableName: String!) { tableRelations(tableName: $tableName) { name fromSchema fromTable fromColumn toSchema toTable toColumn } }",
-                    new { tableName = relTable }
-                );
-
-            case "get_table_indexes":
-                string idxTable2 = arguments.ValueKind == JsonValueKind.Object && arguments.TryGetProperty("tableName", out var iProp2) ? iProp2.GetString() ?? "" : "";
-                return await CallGraphQLToolAsync(
-                    "query($tableName: String!) { tableIndexes(tableName: $tableName) { schema table name isUnique columns } }",
-                    new { tableName = idxTable2 }
-                );
-
-            case "search_schema_objects":
-                return "{\"results\":[],\"error\":\"Search is only supported when database metadata is cached locally.\"}";
-
-            default:
-                throw new NotSupportedException($"Tool '{toolName}' is not supported.");
-        }
-    }
-
-    private string SearchSchemaObjects(string query, DatabaseMetadata metadata)
-    {
-        if (string.IsNullOrWhiteSpace(query))
-        {
-            return "{\"error\":\"Query cannot be empty.\"}";
-        }
-
-        var terms = query.Split(new[] { ' ', ',', ';' }, StringSplitOptions.RemoveEmptyEntries)
-                         .Select(t => t.Trim().ToLowerInvariant())
-                         .ToList();
-
-        if (terms.Count == 0)
-        {
-            return "{\"error\":\"Query cannot be empty.\"}";
-        }
-
-        var results = new List<object>();
-
-        // Search tables
-        if (metadata.Tables != null)
-        {
-            foreach (var t in metadata.Tables)
-            {
-                if (terms.Any(term => t.Name.ToLowerInvariant().Contains(term) ||
-                                      t.Description.ToLowerInvariant().Contains(term) ||
-                                      t.Keywords.ToLowerInvariant().Contains(term)))
-                {
-                    results.Add(new { type = "table", schema = t.Schema, name = t.Name, description = t.Description });
-                }
-            }
-        }
-
-        // Search views
-        if (metadata.Views != null)
-        {
-            foreach (var v in metadata.Views)
-            {
-                if (terms.Any(term => v.Name.ToLowerInvariant().Contains(term) ||
-                                      v.Description.ToLowerInvariant().Contains(term) ||
-                                      v.Keywords.ToLowerInvariant().Contains(term)))
-                {
-                    results.Add(new { type = "view", schema = v.Schema, name = v.Name, description = v.Description });
-                }
-            }
-        }
-
-        // Search procedures
-        if (metadata.Procedures != null)
-        {
-            foreach (var p in metadata.Procedures)
-            {
-                if (terms.Any(term => p.Name.ToLowerInvariant().Contains(term) ||
-                                      p.Description.ToLowerInvariant().Contains(term) ||
-                                      p.Keywords.ToLowerInvariant().Contains(term)))
-                {
-                    results.Add(new { type = "procedure", schema = p.Schema, name = p.Name, description = p.Description });
-                }
-            }
-        }
-
-        // Search functions
-        if (metadata.Functions != null)
-        {
-            foreach (var f in metadata.Functions)
-            {
-                if (terms.Any(term => f.Name.ToLowerInvariant().Contains(term) ||
-                                      f.Description.ToLowerInvariant().Contains(term) ||
-                                      f.Keywords.ToLowerInvariant().Contains(term)))
-                {
-                    results.Add(new { type = "function", schema = f.Schema, name = f.Name, description = f.Description });
-                }
-            }
-        }
-
-        // Limit results to top 20 to avoid exceeding token limit
-        var limitedResults = results.Take(20).ToList();
-
-        return JsonSerializer.Serialize(new { results = limitedResults });
     }
 
     protected virtual async Task<string> CallGraphQLToolAsync(string query, object? variables = null)
@@ -364,7 +175,7 @@ public class OpenAiSqlAgent : IAiSqlAssistant
                 type = "object",
                 properties = new
                 {
-                    name = new { type = "string", @enum = new[] { "list_tables", "get_table_schema", "get_table_relations", "get_table_indexes", "search_schema_objects" } },
+                    name = new { type = "string", @enum = SqlMetadataToolExecutor.AllToolNames },
                     arguments = new
                     {
                         type = "object",
@@ -372,7 +183,8 @@ public class OpenAiSqlAgent : IAiSqlAssistant
                         {
                             schemaName = new { type = "string" },
                             tableName = new { type = "string" },
-                            query = new { type = "string" }
+                            query = new { type = "string" },
+                            columnName = new { type = "string" }
                         }
                     }
                 }
