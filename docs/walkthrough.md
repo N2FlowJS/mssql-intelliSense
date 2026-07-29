@@ -22,7 +22,7 @@ The first time, the sidebar is empty because no connections have been cached yet
 Click **Refresh Schema** in the MSSQL IntelliSense menu. The extension will:
 1. Detect active connection from SSMS
 2. Scan full schema (tables, columns, views, procedures, functions, triggers, indexes, foreign keys, user types, synonyms, users)
-3. Save to SQLite cache at `%APPDATA%\MssqlIntelliSense\MssqlIntelliSense.db`
+3. Save to JSON cache at `%APPDATA%\MssqlIntelliSense\cache.json`
 4. Display tree view in sidebar
 
 **Option 2: Via CLI**
@@ -155,7 +155,7 @@ END
 
 ```
 ┌─────────────────┐      ┌──────────────────┐      ┌─────────────────────┐
-│ SSMS Query      │      │ Schema Explorer  │      │ SQLite Cache        │
+│ SSMS Query      │      │ Schema Explorer  │      │ JSON Cache          │
 │ Active Window  │ ──── │ Refresh Schema   │ ──── │ MssqlIntelliSense   │
 │                 │      │                  │      │ .db                 │
 └─────────────────┘      └──────────────────┘      └─────────────────────┘

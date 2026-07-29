@@ -384,7 +384,7 @@ internal sealed class SqlCompletionSource : ICompletionSource
 
         // Parse active database from the connection string (InitialCatalog).
         // We cache full metadata per server/auth (cacheKey strips InitialCatalog)
-        // so that switching databases doesn't force a SQLite re-read.
+        // so that switching databases doesn't force a JSON cache re-read.
         string activeDatabase = string.Empty;
         string cacheKey = connectionString!;
         try
@@ -444,8 +444,6 @@ internal sealed class SqlCompletionSource : ICompletionSource
         {
             try
             {
-                try { SQLitePCL.Batteries_V2.Init(); } catch { }
-
                 var fullMetadata = MssqlIntelliSenseCacheReader.GetMetadataByConnectionString(connectionString);
                 lock (CacheLock)
                 {
@@ -454,7 +452,7 @@ internal sealed class SqlCompletionSource : ICompletionSource
             }
             catch (Exception ex)
             {
-                MssqlIntelliSensePackage.Log($"[Autocomplete SQLite Error] {ex.Message}");
+                MssqlIntelliSensePackage.Log($"[Autocomplete Cache Error] {ex.Message}");
             }
             finally
             {

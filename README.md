@@ -42,7 +42,7 @@ A lightweight, testable T-SQL productivity engine for SQL Server. The project co
 ### Metadata Management
 
 - **Schema Scanning**: Connects to SQL Server and scans full schema (tables, columns, views, procedures, functions, triggers, indexes, foreign keys, user types, synonyms, users, linked servers, endpoints)
-- **SQLite Caching**: Stores scanned metadata in local SQLite database
+- **JSON Caching**: Stores scanned metadata in a local JSON cache file
 - **Multi-database Support**: Scans multiple databases on the same instance
 - **Incremental Refresh**: Partial schema updates
 
@@ -78,7 +78,7 @@ src/
 ├── MssqlIntelliSense.Core/          # Core library
 │   ├── Ai/                          # OpenAI agent
 │   ├── Analysis/                     # Dangerous SQL analyzer
-│   ├── Cache/                       # SQLite caching (EF Core)
+│   ├── Cache/                       # JSON metadata cache
 │   ├── Completion/                   # IntelliSense completion providers
 │   │   └── Candidates/              # Completion item models
 │   ├── Formatting/                   # SQL formatter
@@ -288,9 +288,9 @@ Server
     └── Endpoints
 ```
 
-All metadata is serialized and stored in SQLite database at:
+All metadata is serialized and stored in a JSON cache file at:
 ```
-%APPDATA%\MssqlIntelliSense\MssqlIntelliSense.db
+%APPDATA%\MssqlIntelliSense\cache.json
 ```
 
 ---

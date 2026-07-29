@@ -49,6 +49,7 @@ $deployed = $false
 foreach ($ssmsDir in $ssmsDirs) {
     $extRoot = Join-Path $ssmsDir.FullName "Extensions"
     $destDir = Join-Path $extRoot "MssqlIntelliSense.SsmsHost"
+    $targetDirs = @($destDir)
 
     # Clean up legacy VSIXInstaller folders if present to avoid conflicts
     if (Test-Path $extRoot) {
@@ -61,32 +62,48 @@ foreach ($ssmsDir in $ssmsDirs) {
             Write-Host "Removing legacy folder: $($legacy.FullName)" -ForegroundColor Yellow
             Remove-Item -Path $legacy.FullName -Recurse -Force -ErrorAction SilentlyContinue
         }
+
+        $installedFolders = Get-ChildItem -Path $extRoot -Directory | Where-Object {
+            (Test-Path (Join-Path $_.FullName "MssqlIntelliSense.SsmsHost.dll")) -or
+            (Test-Path (Join-Path $_.FullName "MssqlIntelliSense.SsmsHost.pkgdef"))
+        } | Select-Object -ExpandProperty FullName
+
+        $targetDirs = @($targetDirs + $installedFolders) | Select-Object -Unique
     }
 
-    Write-Host "Deploying extension to: $destDir" -ForegroundColor Yellow
-    try {
-        if (-not (Test-Path $destDir)) {
-            New-Item -ItemType Directory -Path $destDir -Force | Out-Null
+    foreach ($targetDir in $targetDirs) {
+        Write-Host "Deploying extension to: $targetDir" -ForegroundColor Yellow
+        try {
+            if (-not (Test-Path $targetDir)) {
+                New-Item -ItemType Directory -Path $targetDir -Force | Out-Null
+            }
+
+            Get-ChildItem -Path $targetDir -Recurse -File -ErrorAction SilentlyContinue | Where-Object {
+                $_.Name -match 'SQLite|Sqlite|SourceGear|e_sqlite'
+            } | Remove-Item -Force -ErrorAction SilentlyContinue
+
+            # Copy build output files (excluding the .vsix archive itself)
+            & robocopy $TargetDir $targetDir /E /XF *.vsix /NFL /NDL /NJH /NJS /NP | Out-Null
+            if ($LASTEXITCODE -gt 7) {
+                throw "robocopy failed with exit code $LASTEXITCODE"
+            }
+            Write-Host "  Successfully deployed extension binaries." -ForegroundColor Green
+            $deployed = $true
         }
-
-        # Copy build output files (excluding the .vsix archive itself)
-        Copy-Item -Path (Join-Path $TargetDir "*") -Destination $destDir -Recurse -Force -Exclude "*.vsix"
-        Write-Host "  Successfully deployed extension binaries." -ForegroundColor Green
-        $deployed = $true
-
-        # Touch extensions.configurationchanged to notify SSMS extension engine
-        $configChangedFile = Join-Path $extRoot "extensions.configurationchanged"
-        New-Item -ItemType File -Path $configChangedFile -Force | Out-Null
-
-        # Clear ComponentModelCache to force SSMS to rebuild MEF & Package cache clean
-        $cacheDir = Join-Path $ssmsDir.FullName "ComponentModelCache"
-        if (Test-Path $cacheDir) {
-            Write-Host "  Clearing ComponentModelCache..." -ForegroundColor Gray
-            Remove-Item -Path $cacheDir -Recurse -Force -ErrorAction SilentlyContinue
+        catch {
+            Write-Warning "Failed to deploy to $targetDir`: $_"
         }
     }
-    catch {
-        Write-Warning "Failed to deploy to $destDir`: $_"
+
+    # Touch extensions.configurationchanged to notify SSMS extension engine
+    $configChangedFile = Join-Path $extRoot "extensions.configurationchanged"
+    New-Item -ItemType File -Path $configChangedFile -Force | Out-Null
+
+    # Clear ComponentModelCache to force SSMS to rebuild MEF & Package cache clean
+    $cacheDir = Join-Path $ssmsDir.FullName "ComponentModelCache"
+    if (Test-Path $cacheDir) {
+        Write-Host "  Clearing ComponentModelCache..." -ForegroundColor Gray
+        Remove-Item -Path $cacheDir -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
 

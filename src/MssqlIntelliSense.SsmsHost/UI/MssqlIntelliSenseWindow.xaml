@@ -309,8 +309,8 @@
                                     <ColumnDefinition Width="150" />
                                     <ColumnDefinition Width="*" />
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0" Text="Đường dẫn Database:" Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.PanelTextBrushKey}}" FontSize="11" />
-                                <TextBlock Grid.Column="1" x:Name="AboutDbPathText" Text="C:\Users\...\MssqlIntelliSense.db" Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowTextBrushKey}}" FontSize="11" TextWrapping="Wrap" />
+                                <TextBlock Grid.Column="0" Text="Đường dẫn cache:" Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.PanelTextBrushKey}}" FontSize="11" />
+                                <TextBlock Grid.Column="1" x:Name="AboutDbPathText" Text="C:\Users\...\cache.json" Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowTextBrushKey}}" FontSize="11" TextWrapping="Wrap" />
                             </Grid>
 
                             <Grid Margin="0,0,0,10">
@@ -341,7 +341,7 @@
                             </Grid>
 
                             <Border BorderBrush="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowBorderBrushKey}}" BorderThickness="0,1,0,0" Padding="0,10,0,0">
-                                <TextBlock Text="Bảo mật: Dữ liệu cấu trúc chỉ được lưu trữ cục bộ trong tệp SQLite trên máy tính của bạn và chỉ các đoạn prompt chỉ định mới được gửi đến nhà cung cấp AI do bạn cấu hình." 
+                                <TextBlock Text="Bảo mật: Dữ liệu cấu trúc chỉ được lưu trữ cục bộ trong tệp JSON trên máy tính của bạn và chỉ các đoạn prompt chỉ định mới được gửi đến nhà cung cấp AI do bạn cấu hình." 
                                            Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.PanelTextBrushKey}}" FontSize="10.5" TextWrapping="Wrap" LineHeight="15" />
                             </Border>
                         </StackPanel>

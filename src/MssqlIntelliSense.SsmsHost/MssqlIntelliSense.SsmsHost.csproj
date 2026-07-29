@@ -11,7 +11,6 @@
     <CopyBuildOutputToOutputDirectory>true</CopyBuildOutputToOutputDirectory>
     <CreateVsixContainer>true</CreateVsixContainer>
     <VSSDKBuildToolsAutoSetup>true</VSSDKBuildToolsAutoSetup>
-    <!-- SSMS is a 64-bit host; SourceGear.sqlite3 Any CPU check is suppressed by the target override below -->
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
     <StartAction>Program</StartAction>
@@ -34,66 +33,10 @@
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
-    <PackageReference Include="SourceGear.sqlite3" Version="3.50.4.5" />
-    <PackageReference Include="SQLitePCLRaw.core" Version="3.0.3" GeneratePathProperty="true">
-      <IncludeAssemblyInVSIXContainer>true</IncludeAssemblyInVSIXContainer>
-    </PackageReference>
-    <PackageReference Include="SQLitePCLRaw.provider.dynamic_cdecl" Version="3.0.3" GeneratePathProperty="true">
-      <IncludeAssemblyInVSIXContainer>true</IncludeAssemblyInVSIXContainer>
-    </PackageReference>
-    <PackageReference Include="SQLitePCLRaw.provider.e_sqlite3" Version="3.0.3" GeneratePathProperty="true">
-      <IncludeAssemblyInVSIXContainer>true</IncludeAssemblyInVSIXContainer>
-    </PackageReference>
-    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.3" GeneratePathProperty="true">
-      <IncludeAssemblyInVSIXContainer>true</IncludeAssemblyInVSIXContainer>
-    </PackageReference>
     <PackageReference Include="System.Threading.Tasks.Extensions" Version="4.6.3" GeneratePathProperty="true" />
     <Reference Include="System.Design" />
   </ItemGroup>
   <ItemGroup>
-    <Content Include="$(PkgSQLitePCLRaw_core)\lib\net461\SQLitePCLRaw.core.dll" Condition="Exists('$(PkgSQLitePCLRaw_core)\lib\net461\SQLitePCLRaw.core.dll')">
-      <Link>SQLitePCLRaw.core.dll</Link>
-      <IncludeInVSIX>true</IncludeInVSIX>
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="$(PkgSQLitePCLRaw_core)\lib\netstandard2.0\SQLitePCLRaw.core.dll" Condition="!Exists('$(PkgSQLitePCLRaw_core)\lib\net461\SQLitePCLRaw.core.dll') And Exists('$(PkgSQLitePCLRaw_core)\lib\netstandard2.0\SQLitePCLRaw.core.dll')">
-      <Link>SQLitePCLRaw.core.dll</Link>
-      <IncludeInVSIX>true</IncludeInVSIX>
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="$(PkgSQLitePCLRaw_bundle_e_sqlite3)\lib\net461\SQLitePCLRaw.batteries_v2.dll" Condition="Exists('$(PkgSQLitePCLRaw_bundle_e_sqlite3)\lib\net461\SQLitePCLRaw.batteries_v2.dll')">
-      <Link>SQLitePCLRaw.batteries_v2.dll</Link>
-      <IncludeInVSIX>true</IncludeInVSIX>
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="$(PkgSQLitePCLRaw_bundle_e_sqlite3)\lib\netstandard2.0\SQLitePCLRaw.batteries_v2.dll" Condition="!Exists('$(PkgSQLitePCLRaw_bundle_e_sqlite3)\lib\net461\SQLitePCLRaw.batteries_v2.dll') And Exists('$(PkgSQLitePCLRaw_bundle_e_sqlite3)\lib\netstandard2.0\SQLitePCLRaw.batteries_v2.dll')">
-      <Link>SQLitePCLRaw.batteries_v2.dll</Link>
-      <IncludeInVSIX>true</IncludeInVSIX>
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-
-    <Content Include="$(PkgSQLitePCLRaw_provider_e_sqlite3)\lib\net461\SQLitePCLRaw.provider.e_sqlite3.dll" Condition="Exists('$(PkgSQLitePCLRaw_provider_e_sqlite3)\lib\net461\SQLitePCLRaw.provider.e_sqlite3.dll')">
-      <Link>SQLitePCLRaw.provider.e_sqlite3.dll</Link>
-      <IncludeInVSIX>true</IncludeInVSIX>
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="$(PkgSQLitePCLRaw_provider_e_sqlite3)\lib\netstandard2.0\SQLitePCLRaw.provider.e_sqlite3.dll" Condition="!Exists('$(PkgSQLitePCLRaw_provider_e_sqlite3)\lib\net461\SQLitePCLRaw.provider.e_sqlite3.dll') And Exists('$(PkgSQLitePCLRaw_provider_e_sqlite3)\lib\netstandard2.0\SQLitePCLRaw.provider.e_sqlite3.dll')">
-      <Link>SQLitePCLRaw.provider.e_sqlite3.dll</Link>
-      <IncludeInVSIX>true</IncludeInVSIX>
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-
-    <Content Include="$(PkgSQLitePCLRaw_provider_dynamic_cdecl)\lib\net461\SQLitePCLRaw.provider.dynamic_cdecl.dll" Condition="Exists('$(PkgSQLitePCLRaw_provider_dynamic_cdecl)\lib\net461\SQLitePCLRaw.provider.dynamic_cdecl.dll')">
-      <Link>SQLitePCLRaw.provider.dynamic_cdecl.dll</Link>
-      <IncludeInVSIX>true</IncludeInVSIX>
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="$(PkgSQLitePCLRaw_provider_dynamic_cdecl)\lib\netstandard2.0\SQLitePCLRaw.provider.dynamic_cdecl.dll" Condition="!Exists('$(PkgSQLitePCLRaw_provider_dynamic_cdecl)\lib\net461\SQLitePCLRaw.provider.dynamic_cdecl.dll') And Exists('$(PkgSQLitePCLRaw_provider_dynamic_cdecl)\lib\netstandard2.0\SQLitePCLRaw.provider.dynamic_cdecl.dll')">
-      <Link>SQLitePCLRaw.provider.dynamic_cdecl.dll</Link>
-      <IncludeInVSIX>true</IncludeInVSIX>
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-
     <Content Include="$(PkgSystem_Text_Json)\lib\net462\System.Text.Json.dll" Condition="Exists('$(PkgSystem_Text_Json)\lib\net462\System.Text.Json.dll')">
       <Link>System.Text.Json.dll</Link>
       <IncludeInVSIX>true</IncludeInVSIX>
@@ -181,9 +124,6 @@
   <ItemGroup>
     <ProjectCapability Include="CreateVsixContainer" />
   </ItemGroup>
-  <!-- Suppress SourceGear.sqlite3 "does not support Any CPU" check: PlatformTarget is already x64 -->
-  <Target Name="CheckForAnyCPU" BeforeTargets="BeforeBuild" />
-
   <Target Name="AutoBumpVersion" BeforeTargets="PrepareForBuild" Condition="'$(Configuration)' == 'Release'">
     <Exec Command="powershell -NoProfile -Command &quot;&amp; { $manifestPath = 'source.extension.vsixmanifest'; if (Test-Path $manifestPath) { $content = Get-Content -Path $manifestPath -Raw; if ($content -match 'Identity\s+[^&gt;]*Version=\&quot;(\d+\.\d+\.\d+)\&quot;') { $currentVersion = $Matches[1]; $parts = $currentVersion.Split('.'); $patch = [int]$parts[2] + 1; $newVersion = $parts[0] + '.' + $parts[1] + '.' + $patch; Write-Host ('Auto-bumping version from ' + $currentVersion + ' to ' + $newVersion + '...'); $content = $content -replace ('Version=\&quot;' + $currentVersion + '\&quot;'), ('Version=\&quot;' + $newVersion + '\&quot;'); Set-Content -Path $manifestPath -Value $content -Encoding UTF8; $packagePath = 'MssqlIntelliSensePackage.cs'; if (Test-Path $packagePath) { $packageContent = Get-Content -Path $packagePath -Raw; $packageContent = $packageContent -replace ('CurrentVersion = new\(\&quot;' + $currentVersion + '\&quot;\)'), ('CurrentVersion = new(\&quot;' + $newVersion + '\&quot;)'); Set-Content -Path $packagePath -Value $packageContent -Encoding UTF8; } } } }&quot;" WorkingDirectory="$(MSBuildProjectDirectory)" />
   </Target>

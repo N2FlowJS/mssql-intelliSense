@@ -62,12 +62,6 @@ internal static class Program
 
         Console.WriteLine($"[MssqlIntelliSense scan] Connecting to: {MaskPassword(connectionString)}");
 
-        try
-        {
-            SQLitePCL.Batteries_V2.Init();
-        }
-        catch { }
-
         var name = BuildConnectionName(connectionString);
         var connId = MssqlIntelliSenseCacheWriter.RegisterConnection(NormalizeConnectionString(connectionString), name);
 
@@ -214,12 +208,6 @@ internal static class Program
 
     private static DatabaseMetadata LoadMetadata(string? databaseName)
     {
-        try
-        {
-            SQLitePCL.Batteries_V2.Init();
-        }
-        catch { }
-
         var connections = MssqlIntelliSenseCacheReader.GetConnections();
         if (connections.Count == 0)
         {

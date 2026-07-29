@@ -91,17 +91,7 @@ public sealed class MssqlIntelliSensePackage : AsyncPackage
         // Run self-healing cleanup of old conflicting directories asynchronously
         _ = Task.Run(() => CleanOldInstallations(), cancellationToken);
 
-        // Initialize SQLitePCL raw provider for in-process SQLite access
-        try
-        {
-            SQLitePCL.Batteries_V2.Init();
-        }
-        catch (Exception ex)
-        {
-            Log($"Failed to initialize SQLitePCL batteries: {ex.Message}");
-        }
-
-        // Initialize SQLite DB schema on startup
+        // Initialize JSON cache on startup
         _ = Task.Run(() => MssqlIntelliSense.Core.Metadata.MssqlIntelliSenseCacheWriter.InitializeDatabase(), cancellationToken);
 
         // Start in-process connection scanning loop to register active connections

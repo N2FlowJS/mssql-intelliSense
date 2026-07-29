@@ -8,24 +8,28 @@ public record LlmSettings(string ApiKey, string Model, string Endpoint);
 
 public static class MssqlIntelliSenseConfig
 {
-    private static readonly string AppDataFolder = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "MssqlIntelliSense"
-    );
+    private const string AppDataOverrideEnvironmentVariable = "MSSQL_INTELLISENSE_APPDATA";
 
     public static string GetAppDataFolder()
     {
-        if (!Directory.Exists(AppDataFolder))
+        var configuredFolder = Environment.GetEnvironmentVariable(AppDataOverrideEnvironmentVariable);
+        var appDataFolder = !string.IsNullOrWhiteSpace(configuredFolder)
+            ? configuredFolder
+            : Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "MssqlIntelliSense"
+            );
+
+        if (!Directory.Exists(appDataFolder))
         {
-            Directory.CreateDirectory(AppDataFolder);
+            Directory.CreateDirectory(appDataFolder);
         }
-        return AppDataFolder;
+        return appDataFolder;
     }
 
-    public static string GetDbConnectionString()
+    public static string GetCacheJsonPath()
     {
-        var dbPath = Path.Combine(GetAppDataFolder(), "MssqlIntelliSense.db");
-        return $"Data Source={dbPath};";
+        return Path.Combine(GetAppDataFolder(), "cache.json");
     }
 
     public static string GetConfigPath()

@@ -1353,8 +1353,7 @@ public partial class MssqlIntelliSenseWindow : Window
         try
         {
             AboutVersionText.Text = $"Phiên bản: v{MssqlIntelliSensePackage.VersionString}";
-            var dbFolder = MssqlIntelliSense.Core.MssqlIntelliSenseConfig.GetAppDataFolder();
-            var dbPath = System.IO.Path.Combine(dbFolder, "MssqlIntelliSense.db");
+            var dbPath = MssqlIntelliSense.Core.MssqlIntelliSenseConfig.GetCacheJsonPath();
             AboutDbPathText.Text = dbPath;
 
             if (System.IO.File.Exists(dbPath))

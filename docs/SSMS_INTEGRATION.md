@@ -13,7 +13,7 @@ SSMS 22 (.NET Framework 4.7.2)
     │   ├── Chat Agent (AI chat window)
     │   └── Tool Lab
     ├── Schema Explorer Window (WPF/XAML)
-    │   ├── Sidebar: Connections tree (SQLite cache)
+    │   ├── Sidebar: Connections tree (JSON cache)
     │   └── Detail panel (object details, settings, about)
     ├── Chat Agent Window (WPF/XAML)
     └── Tool Lab Window (WPF/XAML)
@@ -145,7 +145,7 @@ $env:OPENAI_MODEL = "gpt-4o"
 ssms
 ```
 
-**Option 2: Via Settings Panel** in Schema Explorer Window (saved in local SQLite DB, not extension settings)
+**Option 2: Via Settings Panel** in Schema Explorer Window (saved in the local JSON cache, not extension settings)
 
 ---
 
