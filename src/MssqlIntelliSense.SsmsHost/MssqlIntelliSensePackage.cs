@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.ComponentModel.Design;
 using System.IO;
 using System.Linq;
@@ -33,14 +33,31 @@ public sealed class MssqlIntelliSensePackage : AsyncPackage
 {
     public static MssqlIntelliSensePackage? Instance { get; private set; }
 
-    public static MssqlIntelliSenseOptions? GetOptions()
+    public static string? DebugActiveConnectionString { get; set; }
+    public static string? DebugActiveDatabaseName { get; set; }
+    public static MssqlIntelliSenseOptions? DebugOptions { get; set; }
+
+    public static MssqlIntelliSenseOptions GetOptions()
     {
-        return Instance?.GetDialogPage(typeof(MssqlIntelliSenseOptions)) as MssqlIntelliSenseOptions;
+        if (Instance == null) return DebugOptions ??= new MssqlIntelliSenseOptions();
+        return (Instance.GetDialogPage(typeof(MssqlIntelliSenseOptions)) as MssqlIntelliSenseOptions) ?? (DebugOptions ??= new MssqlIntelliSenseOptions());
+    }
+
+    public static async Task SwitchToMainThreadAsync()
+    {
+        if (Instance != null)
+        {
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+        }
+        else if (System.Windows.Application.Current != null && !System.Windows.Application.Current.Dispatcher.CheckAccess())
+        {
+            await System.Windows.Application.Current.Dispatcher.InvokeAsync(() => { });
+        }
     }
 
     public const string PackageGuidString = "16f11772-cdb0-42ca-a596-d755543518ac";
     private static readonly Guid CommandSet = new("63a8fcd9-601f-427d-a253-d4942b4ff2aa");
-    public static readonly Version CurrentVersion = new("0.2.73");
+    public static readonly Version CurrentVersion = new("0.2.82");
     public static string VersionString => CurrentVersion.ToString();
 
     private readonly List<CommandBarEvents> _commandBarEvents = new();
@@ -789,10 +806,12 @@ public sealed class MssqlIntelliSensePackage : AsyncPackage
 
     internal static string? GetActiveConnectionString()
     {
-        ThreadHelper.ThrowIfNotOnUIThread();
+        if (Instance == null) return DebugActiveConnectionString;
 
         try
         {
+            ThreadHelper.ThrowIfNotOnUIThread();
+
             if (DateTime.UtcNow - _activeConnectionCacheLoadedAt < ActiveConnectionCacheDuration)
             {
                 return _cachedActiveConnectionString;
@@ -850,10 +869,12 @@ public sealed class MssqlIntelliSensePackage : AsyncPackage
 
     internal static string? GetActiveDatabaseName()
     {
-        ThreadHelper.ThrowIfNotOnUIThread();
+        if (Instance == null) return DebugActiveDatabaseName;
 
         try
         {
+            ThreadHelper.ThrowIfNotOnUIThread();
+
             if (DateTime.UtcNow - _activeConnectionCacheLoadedAt < ActiveConnectionCacheDuration)
             {
                 return _cachedActiveDatabaseName;
@@ -1125,6 +1146,15 @@ public sealed class MssqlIntelliSensePackage : AsyncPackage
         }
     }
 }
+
+
+
+
+
+
+
+
+
 
 
 

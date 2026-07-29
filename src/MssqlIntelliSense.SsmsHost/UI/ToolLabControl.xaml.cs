@@ -65,7 +65,7 @@ public partial class ToolLabControl : UserControl
                 _connections.Add(connection);
             }
 
-            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+            await MssqlIntelliSensePackage.SwitchToMainThreadAsync();
             var activeContext = ResolveToolConnectionContext(registerIfMissing: true);
             if (activeContext.Connection != null)
             {
@@ -108,7 +108,7 @@ public partial class ToolLabControl : UserControl
             OutputTextBox.Text = "Running tool...";
             OutputDataGrid.ItemsSource = null;
 
-            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+            await MssqlIntelliSensePackage.SwitchToMainThreadAsync();
             var toolConnection = ResolveToolConnectionContext(registerIfMissing: true);
             var connection = toolConnection.Connection ?? ConnectionsComboBox.SelectedItem as ConnectionInfo;
             if (connection == null)

@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net472</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <UseWPF>true</UseWPF>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <StartupObject>MssqlIntelliSense.DebugApp.App</StartupObject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\MssqlIntelliSense.Core\MssqlIntelliSense.Core.csproj" />
+    <ProjectReference Include="..\MssqlIntelliSense.SsmsHost\MssqlIntelliSense.SsmsHost.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.VisualStudio.Threading" Version="17.14.41" />
+  </ItemGroup>
+
+</Project>

@@ -9,6 +9,11 @@ public sealed record ConnectionInfo(int Id, string Name, string ConnectionString
 
 public static class MssqlIntelliSenseCacheReader
 {
+    public static string GetCacheFilePath()
+    {
+        return MssqlIntelliSenseConfig.GetCacheJsonPath();
+    }
+
     public static IReadOnlyList<ConnectionInfo> GetConnections()
     {
         try
