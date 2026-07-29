@@ -41,17 +41,18 @@ dotnet build src/MssqlIntelliSense.SsmsHost/MssqlIntelliSense.SsmsHost.csproj -c
 
 VSIX output at:
 ```
-src/MssqlIntelliSense.SsmsHost/bin/Release/MssqlIntelliSense.SsmsHost.vsix
+src/MssqlIntelliSense.SsmsHost/bin/Release/net472/MssqlIntelliSense.SsmsHost.vsix
 ```
 
 ### Install VSIX
 
-1. Close SSMS completely
-2. Double-click the `.vsix` file or run:
-   ```powershell
-   vsixinstaller /a /s "path/to/MssqlIntelliSense.SsmsHost.vsix"
-   ```
-3. Launch SSMS
+Use the project install script for both first install and update:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/install.ps1 -Launch
+```
+
+The script closes SSMS, runs the SSMS/Visual Studio `VSIXInstaller.exe` against the Release VSIX, touches `extensions.configurationchanged`, and clears the SSMS component model cache. Release install/update should not copy extension binaries directly into `%LocalAppData%\Microsoft\SSMS\...\Extensions`.
 
 After installation, the **MSSQL IntelliSense** menu appears on the SSMS main menu bar.
 
@@ -86,7 +87,7 @@ Visual Studio will:
 - Launch `Ssms.exe`
 - Attach debugger automatically
 
-### Manual Deploy and Launch
+### Manual Debug Deploy and Launch
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/deploy-ssms.ps1 -Kill -Launch
@@ -95,6 +96,8 @@ powershell -ExecutionPolicy Bypass -File scripts/deploy-ssms.ps1 -Kill -Launch
 Flags:
 - `-Kill`: Force-close any running `Ssms.exe` (required because SSMS locks extension DLLs)
 - `-Launch`: Auto-start SSMS after deployment completes
+
+This path is only for local Debug/F5 loops. Use `scripts/install.ps1` for release install/update.
 
 ---
 

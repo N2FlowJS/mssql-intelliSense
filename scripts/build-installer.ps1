@@ -5,7 +5,7 @@
 
 .DESCRIPTION
     1. Builds Release configuration for solution
-    2. Packages binaries into dist/MssqlIntelliSense-v<Version>-Portable.zip (with install.ps1 & uninstall.ps1)
+    2. Packages the VSIX into dist/MssqlIntelliSense-v<Version>-VSIX.zip (with install.ps1 & uninstall.ps1)
     3. Builds Inno Setup installer executable (dist/MssqlIntelliSense-Setup-v<Version>.exe) if ISCC.exe is available.
 #>
 param (
@@ -45,26 +45,23 @@ if (-not $version) {
 }
 Write-Host "      Version: $version" -ForegroundColor Green
 
-# 3. Create dist output directory and Portable Zip Package
+# 3. Create dist output directory and VSIX Zip Package
 Write-Host ""
-Write-Host "[3/4] Creating Portable Zip Package..." -ForegroundColor Yellow
+Write-Host "[3/4] Creating VSIX Zip Package..." -ForegroundColor Yellow
 if (Test-Path $DistDir) {
     Remove-Item -Path $DistDir -Recurse -Force -ErrorAction SilentlyContinue
 }
 New-Item -ItemType Directory -Path $DistDir -Force | Out-Null
 
 $stagingDir = Join-Path $DistDir "staging"
-$binDir     = Join-Path $stagingDir "bin"
-New-Item -ItemType Directory -Path $binDir -Force | Out-Null
+New-Item -ItemType Directory -Path $stagingDir -Force | Out-Null
 
-$ssmsBinSrc  = Join-Path $ProjectDir "bin\$Configuration\net472"
-$debugBinSrc = Join-Path $RepoRoot "src\MssqlIntelliSense.DebugApp\bin\$Configuration\net472"
-
-# Copy extension binaries
-Invoke-Robocopy -Source $ssmsBinSrc -Destination $binDir
-if (Test-Path $debugBinSrc) {
-    Invoke-Robocopy -Source $debugBinSrc -Destination $binDir -ExcludeFiles @()
+$vsixSrc = Join-Path $ProjectDir "bin\$Configuration\net472\MssqlIntelliSense.SsmsHost.vsix"
+if (-not (Test-Path $vsixSrc)) {
+    Write-Error "VSIX not found at: $vsixSrc"
+    exit 1
 }
+Copy-Item $vsixSrc (Join-Path $stagingDir "MssqlIntelliSense.SsmsHost.vsix") -Force
 
 # Copy installer scripts
 Copy-Item (Join-Path $ScriptDir "install.ps1") (Join-Path $stagingDir "install.ps1") -Force
@@ -79,18 +76,18 @@ $readmeContent = @"
 Quick Installation:
 1. Right-click 'install.ps1' and select 'Run with PowerShell'.
 2. Or open PowerShell in this directory and run:
-   .\install.ps1 -Launch
+   .\install.ps1 -VsixPath .\MssqlIntelliSense.SsmsHost.vsix -Launch
 
-Features Installed:
-- SSMS Extension (Auto-completes T-SQL, DDL Tooltips, AI Chat, Tool Lab)
-- Standalone Debug Application (MssqlIntelliSense.DebugApp.exe)
+Install/Update Method:
+- Uses SSMS/Visual Studio VSIXInstaller.exe.
+- Does not copy extension binaries manually into the SSMS Extensions folder.
 
 To Uninstall:
 - Run 'uninstall.ps1' with PowerShell.
 "@
 Set-Content -Path (Join-Path $stagingDir "README.txt") -Value $readmeContent
 
-$zipPath = Join-Path $DistDir "MssqlIntelliSense-v$version-Portable.zip"
+$zipPath = Join-Path $DistDir "MssqlIntelliSense-v$version-VSIX.zip"
 Compress-Archive -Path "$stagingDir\*" -DestinationPath $zipPath -Force
 Remove-Item -Path $stagingDir -Recurse -Force -ErrorAction SilentlyContinue
 
@@ -116,7 +113,7 @@ if ($iscc) {
         Write-Host "      Created Windows EXE Setup in dist/" -ForegroundColor Green
     }
 } else {
-    Write-Host "      ISCC.exe not installed. (Portable Zip package generated successfully)." -ForegroundColor Gray
+    Write-Host "      ISCC.exe not installed. (VSIX Zip package generated successfully)." -ForegroundColor Gray
 }
 
 Write-Host ""

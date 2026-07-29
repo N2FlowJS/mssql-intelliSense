@@ -124,7 +124,7 @@
   <ItemGroup>
     <ProjectCapability Include="CreateVsixContainer" />
   </ItemGroup>
-  <Target Name="AutoBumpVersion" BeforeTargets="PrepareForBuild" Condition="'$(Configuration)' == 'Release'">
+  <Target Name="AutoBumpVersion" BeforeTargets="PrepareForBuild" Condition="'$(Configuration)' == 'Release' And '$(DisableAutoBumpVersion)' != 'true' And !$([System.String]::Copy('$(MSBuildProjectFile)').Contains('_wpftmp'))">
     <Exec Command="powershell -NoProfile -Command &quot;&amp; { $manifestPath = 'source.extension.vsixmanifest'; if (Test-Path $manifestPath) { $content = Get-Content -Path $manifestPath -Raw; if ($content -match 'Identity\s+[^&gt;]*Version=\&quot;(\d+\.\d+\.\d+)\&quot;') { $currentVersion = $Matches[1]; $parts = $currentVersion.Split('.'); $patch = [int]$parts[2] + 1; $newVersion = $parts[0] + '.' + $parts[1] + '.' + $patch; Write-Host ('Auto-bumping version from ' + $currentVersion + ' to ' + $newVersion + '...'); $content = $content -replace ('Version=\&quot;' + $currentVersion + '\&quot;'), ('Version=\&quot;' + $newVersion + '\&quot;'); Set-Content -Path $manifestPath -Value $content -Encoding UTF8; $packagePath = 'MssqlIntelliSensePackage.cs'; if (Test-Path $packagePath) { $packageContent = Get-Content -Path $packagePath -Raw; $packageContent = $packageContent -replace ('CurrentVersion = new\(\&quot;' + $currentVersion + '\&quot;\)'), ('CurrentVersion = new(\&quot;' + $newVersion + '\&quot;)'); Set-Content -Path $packagePath -Value $packageContent -Encoding UTF8; } } } }&quot;" WorkingDirectory="$(MSBuildProjectDirectory)" />
   </Target>
   <Target Name="DeployToSsms" AfterTargets="Build" Condition="'$(Configuration)' == 'Debug' And '$(DisableSsmsDeploy)' != 'true'">

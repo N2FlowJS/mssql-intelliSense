@@ -211,12 +211,15 @@ The main window displays:
 Build and install:
 
 ```powershell
-dotnet build src/MssqlIntelliSense.SsmsHost/MssqlIntelliSense.SsmsHost.csproj -c Release
+powershell -ExecutionPolicy Bypass -File scripts/build-installer.ps1
+powershell -ExecutionPolicy Bypass -File scripts/install.ps1 -Launch
 ```
 
-Then close SSMS and open:
+The install script uses the SSMS/Visual Studio `VSIXInstaller.exe`, so the same command handles both first install and version update. Release installation should not copy files directly into the SSMS Extensions folder.
+
+Release VSIX output:
 ```
-src/MssqlIntelliSense.SsmsHost/bin/Release/MssqlIntelliSense.SsmsHost.vsix
+src/MssqlIntelliSense.SsmsHost/bin/Release/net472/MssqlIntelliSense.SsmsHost.vsix
 ```
 
 ### Fast Development Deployment
@@ -247,6 +250,8 @@ powershell -ExecutionPolicy Bypass -File scripts/deploy-ssms.ps1 -Kill -Launch
 
 - `-Kill`: Closes any running SSMS instances before deploying
 - `-Launch`: Automatically starts SSMS after deployment
+
+This deploy script is only for local Debug/F5 loops. Use `scripts/install.ps1` for release install/update.
 
 ### Connection String Configuration
 

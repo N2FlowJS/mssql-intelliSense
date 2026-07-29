@@ -49,7 +49,7 @@ function Stop-SsmsProcesses {
 
     if ($Skip) { return $false }
 
-    $procs = Get-Process -Name "Ssms" -ErrorAction SilentlyContinue
+    $procs = Get-Process -Name "Ssms", "VSFinalizer" -ErrorAction SilentlyContinue
     if ($procs) {
         $procs | Stop-Process -Force
         Start-Sleep -Seconds 2
