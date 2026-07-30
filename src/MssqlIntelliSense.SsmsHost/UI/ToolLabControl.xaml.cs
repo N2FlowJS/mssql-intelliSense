@@ -272,7 +272,7 @@ public partial class ToolLabControl : UserControl
             new { schemaName = request.SchemaName, tableName = request.TableName, query = request.Query, columnName = request.Query },
             JsonOptions);
         using var doc = JsonDocument.Parse(arguments);
-        var output = await SqlMetadataToolExecutor.ExecuteToolAsync(request.ToolName, doc.RootElement, metadata);
+        var output = await SqlMetadataToolExecutorBridge.ExecuteToolAsync(request.ToolName, doc.RootElement, metadata);
         var previewRows = SqlMetadataToolExecutor.BuildPreviewRows(
                 request.ToolName,
                 metadata,

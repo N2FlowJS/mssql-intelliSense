@@ -33,11 +33,19 @@ public static class SqlMetadataToolExecutor
         ListEndpointsToolName
     };
 
+    public static Task<string> ExecuteToolAsync(
+        string toolName,
+        JsonElement arguments,
+        DatabaseMetadata metadata)
+    {
+        return ExecuteToolAsync(toolName, arguments, metadata, graphQlFallback: null);
+    }
+
     public static async Task<string> ExecuteToolAsync(
         string toolName,
         JsonElement arguments,
         DatabaseMetadata metadata,
-        Func<string, object?, Task<string>>? graphQlFallback = null)
+        Func<string, object?, Task<string>>? graphQlFallback)
     {
         var normalizedTool = NormalizeToolName(toolName);
         var safeMetadata = metadata ?? DatabaseMetadata.Empty;

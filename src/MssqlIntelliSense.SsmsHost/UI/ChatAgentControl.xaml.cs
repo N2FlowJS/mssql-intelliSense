@@ -913,7 +913,7 @@ public partial class ChatAgentControl : UserControl
     private static async Task<string> ExecuteApprovedToolAsync(OpenAiSqlToolCall toolCall, DatabaseMetadata metadata)
     {
         using var document = JsonDocument.Parse(string.IsNullOrWhiteSpace(toolCall.ArgumentsJson) ? "{}" : toolCall.ArgumentsJson);
-        return await SqlMetadataToolExecutor.ExecuteToolAsync(toolCall.Name, document.RootElement, metadata);
+        return await SqlMetadataToolExecutorBridge.ExecuteToolAsync(toolCall.Name, document.RootElement, metadata);
     }
 
     private static string SummarizeToolOutput(string output)
