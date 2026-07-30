@@ -81,6 +81,23 @@
             <Setter Property="BorderBrush" Value="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowBorderBrushKey}}" />
         </Style>
 
+        <Style x:Key="IconCommandButtonStyle" TargetType="{x:Type Button}" BasedOn="{StaticResource FlatCommandButtonStyle}">
+            <Setter Property="Width" Value="30" />
+            <Setter Property="MinWidth" Value="30" />
+            <Setter Property="Height" Value="28" />
+            <Setter Property="MinHeight" Value="28" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+
+        <Style x:Key="IconGlyphStyle" TargetType="{x:Type TextBlock}">
+            <Setter Property="FontFamily" Value="Segoe MDL2 Assets" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
         <Style x:Key="PrimaryCommandButtonStyle" TargetType="{x:Type Button}" BasedOn="{StaticResource FlatCommandButtonStyle}">
             <Setter Property="Background" Value="{DynamicResource {x:Static vsui:EnvironmentColors.SystemHighlightBrushKey}}" />
             <Setter Property="Foreground" Value="{DynamicResource {x:Static vsui:EnvironmentColors.SystemHighlightTextBrushKey}}" />
@@ -127,16 +144,17 @@
                         <Button x:Name="ToolMenuButton"
                                 Click="ToolMenuButton_Click"
                                 Margin="0,0,6,0"
-                                Style="{StaticResource FlatCommandButtonStyle}"
+                                Style="{StaticResource IconCommandButtonStyle}"
                                 ToolTip="Configure active chat tools">
-                            <TextBlock Text="Tools" FontSize="11" />
+                            <TextBlock Text="&#xE713;" Style="{StaticResource IconGlyphStyle}" />
                         </Button>
 
                         <Button x:Name="ClearChatButton"
-                                Content="Clear"
                                 Click="ClearChatButton_Click"
-                                Style="{StaticResource FlatCommandButtonStyle}"
-                                ToolTip="Clear conversation history" />
+                                Style="{StaticResource IconCommandButtonStyle}"
+                                ToolTip="Clear conversation history">
+                            <TextBlock Text="&#xE74D;" Style="{StaticResource IconGlyphStyle}" />
+                        </Button>
                     </StackPanel>
                 </DockPanel>
 
@@ -217,12 +235,17 @@
 
                     <Button x:Name="SendChatButton"
                             DockPanel.Dock="Right"
-                            Content="Send"
                             Click="SendChatButton_Click"
                             Style="{StaticResource PrimaryCommandButtonStyle}"
-                            MinWidth="96"
+                            Width="34"
+                            MinWidth="34"
+                            Height="28"
+                            Padding="0"
                             FontWeight="SemiBold"
-                            IsDefault="True" />
+                            IsDefault="True"
+                            ToolTip="Send message">
+                        <TextBlock Text="&#xE724;" Style="{StaticResource IconGlyphStyle}" />
+                    </Button>
                 </DockPanel>
             </Grid>
         </Border>

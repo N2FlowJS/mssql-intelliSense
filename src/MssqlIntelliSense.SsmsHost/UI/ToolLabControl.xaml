@@ -87,6 +87,23 @@
             <Setter Property="BorderBrush" Value="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowBorderBrushKey}}" />
         </Style>
 
+        <Style x:Key="IconCommandButtonStyle" TargetType="{x:Type Button}" BasedOn="{StaticResource FlatCommandButtonStyle}">
+            <Setter Property="Width" Value="30" />
+            <Setter Property="MinWidth" Value="30" />
+            <Setter Property="Height" Value="28" />
+            <Setter Property="MinHeight" Value="28" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+
+        <Style x:Key="IconGlyphStyle" TargetType="{x:Type TextBlock}">
+            <Setter Property="FontFamily" Value="Segoe MDL2 Assets" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
         <Style x:Key="PrimaryCommandButtonStyle" TargetType="{x:Type Button}" BasedOn="{StaticResource FlatCommandButtonStyle}">
             <Setter Property="Background" Value="{DynamicResource {x:Static vsui:EnvironmentColors.SystemHighlightBrushKey}}" />
             <Setter Property="Foreground" Value="{DynamicResource {x:Static vsui:EnvironmentColors.SystemHighlightTextBrushKey}}" />
@@ -139,10 +156,11 @@
             </ComboBox>
             <Button x:Name="RefreshConnectionsButton"
                     Grid.Column="2"
-                    Content="Refresh"
-                    MinWidth="58"
                     Click="RefreshConnectionsButton_Click"
-                    Style="{StaticResource FlatCommandButtonStyle}" />
+                    Style="{StaticResource IconCommandButtonStyle}"
+                    ToolTip="Refresh connections">
+                <TextBlock Text="&#xE72C;" Style="{StaticResource IconGlyphStyle}" />
+            </Button>
         </Grid>
 
         <!-- Tool Form -->
@@ -211,12 +229,14 @@
 
             <Button x:Name="RunToolButton"
                     Grid.Row="5"
-                    Content="Run"
                     Click="RunToolButton_Click"
                     Style="{StaticResource PrimaryCommandButtonStyle}"
                     FontWeight="SemiBold"
                     HorizontalAlignment="Stretch"
-                    Margin="0,8,0,0" />
+                    Margin="0,8,0,0"
+                    ToolTip="Run selected tool">
+                <TextBlock Text="&#xE768;" Style="{StaticResource IconGlyphStyle}" />
+            </Button>
         </Grid>
 
         <!-- Results Tabs -->

@@ -23,6 +23,10 @@ namespace MssqlIntelliSense.SsmsHost;
 public partial class ChatAgentControl : UserControl
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private const string SendIconGlyph = "\uE724";
+    private const string StopIconGlyph = "\uE71A";
+    private const string ApproveIconGlyph = "\uE73E";
+    private const string RejectIconGlyph = "\uE711";
     private const string ListTablesToolName = SqlMetadataToolExecutor.ListTablesToolName;
     private const string TableSchemaToolName = SqlMetadataToolExecutor.TableSchemaToolName;
     private const string TableRelationsToolName = SqlMetadataToolExecutor.TableRelationsToolName;
@@ -906,15 +910,32 @@ public partial class ChatAgentControl : UserControl
 
     private Button CreateActionButton(string text)
     {
+        var isApprove = text.Equals("Approve", StringComparison.OrdinalIgnoreCase);
         return new Button
         {
-            Content = text,
+            Content = CreateIconGlyph(isApprove ? ApproveIconGlyph : RejectIconGlyph),
             Background = GetThemeBrush(EnvironmentColors.SystemButtonFaceBrushKey, Color.FromRgb(240, 240, 240)),
             Foreground = GetThemeBrush(EnvironmentColors.SystemButtonTextBrushKey, Colors.Black),
             BorderBrush = GetThemeBrush(EnvironmentColors.ToolWindowBorderBrushKey, Color.FromRgb(204, 204, 204)),
-            Padding = new Thickness(8, 3, 8, 3),
+            Padding = new Thickness(0),
             Margin = new Thickness(0, 0, 6, 0),
-            MinWidth = 72
+            Width = 30,
+            MinWidth = 30,
+            Height = 28,
+            MinHeight = 28,
+            ToolTip = text
+        };
+    }
+
+    private static TextBlock CreateIconGlyph(string glyph)
+    {
+        return new TextBlock
+        {
+            Text = glyph,
+            FontFamily = new FontFamily("Segoe MDL2 Assets"),
+            FontSize = 13,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
         };
     }
 
@@ -1124,20 +1145,23 @@ public partial class ChatAgentControl : UserControl
 
     private async Task SafeSetSendButtonStateAsync(string text, bool isEnabled)
     {
+        var isStop = text.Equals("Stop", StringComparison.OrdinalIgnoreCase);
         try
         {
             if (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished) return;
             if (Dispatcher.CheckAccess())
             {
-                SendChatButton.Content = text;
+                SendChatButton.Content = CreateIconGlyph(isStop ? StopIconGlyph : SendIconGlyph);
                 SendChatButton.IsEnabled = isEnabled;
+                SendChatButton.ToolTip = isStop ? "Stop response" : "Send message";
             }
             else
             {
                 await Dispatcher.InvokeAsync(() =>
                 {
-                    SendChatButton.Content = text;
+                    SendChatButton.Content = CreateIconGlyph(isStop ? StopIconGlyph : SendIconGlyph);
                     SendChatButton.IsEnabled = isEnabled;
+                    SendChatButton.ToolTip = isStop ? "Stop response" : "Send message";
                 });
             }
         }
