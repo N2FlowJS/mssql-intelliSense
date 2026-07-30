@@ -116,7 +116,7 @@
 
                 <DockPanel Grid.Row="1" Margin="0,8,0,0">
                     <TextBlock x:Name="ToolSelectionSummaryText"
-                               Text="Tools: 7 enabled"
+                               Text="Tools: 8 enabled"
                                DockPanel.Dock="Left"
                                VerticalAlignment="Center"
                                FontSize="11"
@@ -163,7 +163,8 @@
                             <CheckBox x:Name="TableIndexesToolCheckBox" Content="Indexes" IsChecked="True" Checked="ToolSelectionChanged" Unchecked="ToolSelectionChanged" Margin="0,0,0,6" Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowTextBrushKey}}" />
                             <CheckBox x:Name="SearchObjectsToolCheckBox" Content="Search objects" IsChecked="True" Checked="ToolSelectionChanged" Unchecked="ToolSelectionChanged" Margin="0,0,0,6" Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowTextBrushKey}}" />
                             <CheckBox x:Name="FindColumnToolCheckBox" Content="Find column" IsChecked="True" Checked="ToolSelectionChanged" Unchecked="ToolSelectionChanged" Margin="0,0,0,6" Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowTextBrushKey}}" />
-                            <CheckBox x:Name="ListEndpointsToolCheckBox" Content="List endpoints" IsChecked="True" Checked="ToolSelectionChanged" Unchecked="ToolSelectionChanged" Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowTextBrushKey}}" />
+                            <CheckBox x:Name="ListEndpointsToolCheckBox" Content="List endpoints" IsChecked="True" Checked="ToolSelectionChanged" Unchecked="ToolSelectionChanged" Margin="0,0,0,6" Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowTextBrushKey}}" />
+                            <CheckBox x:Name="ExecuteSqlToolCheckBox" Content="Execute read-only SQL" IsChecked="True" Checked="ToolSelectionChanged" Unchecked="ToolSelectionChanged" Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowTextBrushKey}}" />
                         </StackPanel>
                     </Border>
                 </Popup>

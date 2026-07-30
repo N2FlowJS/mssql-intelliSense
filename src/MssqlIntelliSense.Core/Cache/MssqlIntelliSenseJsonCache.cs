@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading;
 using MssqlIntelliSense.Core.Metadata;
 
@@ -36,9 +37,9 @@ internal static class MssqlIntelliSenseJsonCache
                     c.Id,
                     c.Name,
                     c.ConnectionString,
-                    c.IsActive,
-                    c.LastSeenAt,
-                    c.SchemaUpdatedAt))
+                c.IsActive,
+                c.LastSeenAt,
+                c.SchemaUpdatedAt))
                 .ToList();
         });
     }
@@ -69,7 +70,8 @@ internal static class MssqlIntelliSenseJsonCache
                 Name = name,
                 ConnectionString = normalizedConnectionString,
                 IsActive = true,
-                LastSeenAt = DateTimeOffset.UtcNow
+                LastSeenAt = DateTimeOffset.UtcNow,
+                MetadataFile = GetConnectionMetadataFileName(id)
             });
 
             Save(store);
@@ -88,8 +90,10 @@ internal static class MssqlIntelliSenseJsonCache
                 return;
             }
 
-            connection.Metadata = metadata;
+            connection.MetadataFile = GetConnectionMetadataFileName(connection.Id);
+            connection.Metadata = null;
             connection.SchemaUpdatedAt = DateTimeOffset.UtcNow;
+            SaveConnectionMetadata(connection, metadata);
             Save(store);
         });
     }
@@ -104,7 +108,7 @@ internal static class MssqlIntelliSenseJsonCache
                 return (DatabaseMetadata.Empty, string.Empty, null);
             }
 
-            var metadata = connection.Metadata ?? DatabaseMetadata.Empty;
+            var metadata = LoadConnectionMetadata(connection);
             return (metadata, JsonSerializer.Serialize(metadata, JsonOptions), connection.SchemaUpdatedAt);
         });
     }
@@ -117,7 +121,9 @@ internal static class MssqlIntelliSenseJsonCache
                 MssqlIntelliSenseCacheWriter.NormalizeServerConnectionString(c.ConnectionString)
                     .Equals(normalizedConnectionString, StringComparison.OrdinalIgnoreCase));
 
-            return connection?.Metadata ?? DatabaseMetadata.Empty;
+            return connection == null
+                ? DatabaseMetadata.Empty
+                : LoadConnectionMetadata(connection);
         });
     }
 
@@ -135,6 +141,12 @@ internal static class MssqlIntelliSenseJsonCache
         {
             progress?.Report("Dang xoa du lieu schema cache...");
             var store = Load();
+            var connection = store.Connections.FirstOrDefault(c => c.Id == connectionId);
+            if (connection != null)
+            {
+                DeleteConnectionMetadata(connection);
+            }
+
             store.Connections.RemoveAll(c => c.Id == connectionId);
             Save(store);
             progress?.Report("Da xoa hoan tat.");
@@ -245,6 +257,28 @@ internal static class MssqlIntelliSenseJsonCache
             store.NextConnectionId = store.Connections.Count == 0 ? 1 : store.Connections.Max(c => c.Id) + 1;
         }
 
+        var migrated = false;
+        foreach (var connection in store.Connections)
+        {
+            if (string.IsNullOrWhiteSpace(connection.MetadataFile))
+            {
+                connection.MetadataFile = GetConnectionMetadataFileName(connection.Id);
+                migrated = true;
+            }
+
+            if (connection.Metadata != null)
+            {
+                SaveConnectionMetadata(connection, connection.Metadata);
+                connection.Metadata = null;
+                migrated = true;
+            }
+        }
+
+        if (migrated)
+        {
+            Save(store);
+        }
+
         return store;
     }
 
@@ -275,6 +309,88 @@ internal static class MssqlIntelliSenseJsonCache
         {
             RetryFileOperation(() => File.Delete(tempPath));
         }
+    }
+
+    private static DatabaseMetadata LoadConnectionMetadata(JsonConnectionRecord connection)
+    {
+        if (connection.Metadata != null)
+        {
+            return connection.Metadata;
+        }
+
+        var path = GetConnectionMetadataPath(connection);
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+        {
+            return DatabaseMetadata.Empty;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<DatabaseMetadata>(ReadAllTextShared(path), JsonOptions)
+                ?? DatabaseMetadata.Empty;
+        }
+        catch (JsonException)
+        {
+            return DatabaseMetadata.Empty;
+        }
+        catch (IOException)
+        {
+            return DatabaseMetadata.Empty;
+        }
+    }
+
+    private static void SaveConnectionMetadata(JsonConnectionRecord connection, DatabaseMetadata metadata)
+    {
+        var path = GetConnectionMetadataPath(connection);
+        var directory = Path.GetDirectoryName(path);
+        if (!string.IsNullOrWhiteSpace(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        var tempPath = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        WriteAllTextExclusive(tempPath, JsonSerializer.Serialize(metadata ?? DatabaseMetadata.Empty, JsonOptions));
+        RetryFileOperation(() =>
+        {
+            if (File.Exists(path))
+            {
+                File.Replace(tempPath, path, null, ignoreMetadataErrors: true);
+            }
+            else
+            {
+                File.Move(tempPath, path);
+            }
+        });
+
+        if (File.Exists(tempPath))
+        {
+            RetryFileOperation(() => File.Delete(tempPath));
+        }
+    }
+
+    private static void DeleteConnectionMetadata(JsonConnectionRecord connection)
+    {
+        var path = GetConnectionMetadataPath(connection);
+        if (File.Exists(path))
+        {
+            RetryFileOperation(() => File.Delete(path));
+        }
+    }
+
+    private static string GetConnectionMetadataFileName(int connectionId)
+    {
+        return Path.Combine("connections", $"connection-{connectionId}.json");
+    }
+
+    private static string GetConnectionMetadataPath(JsonConnectionRecord connection)
+    {
+        var fileName = string.IsNullOrWhiteSpace(connection.MetadataFile)
+            ? GetConnectionMetadataFileName(connection.Id)
+            : connection.MetadataFile;
+
+        return Path.IsPathRooted(fileName)
+            ? fileName
+            : Path.Combine(MssqlIntelliSenseConfig.GetAppDataFolder(), fileName);
     }
 
     private static string ReadAllTextShared(string path)
@@ -339,6 +455,8 @@ internal static class MssqlIntelliSenseJsonCache
         public bool IsActive { get; set; } = true;
         public DateTimeOffset? LastSeenAt { get; set; }
         public DateTimeOffset? SchemaUpdatedAt { get; set; }
+        public string MetadataFile { get; set; } = string.Empty;
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public DatabaseMetadata? Metadata { get; set; }
     }
 }

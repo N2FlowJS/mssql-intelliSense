@@ -22,6 +22,7 @@ public partial class ToolLabControl : UserControl
     private const string SearchObjectsToolName = SqlMetadataToolExecutor.SearchObjectsToolName;
     private const string FindColumnToolName = SqlMetadataToolExecutor.FindColumnToolName;
     private const string ListEndpointsToolName = SqlMetadataToolExecutor.ListEndpointsToolName;
+    private const string ExecuteSqlToolName = SqlMetadataToolExecutor.ExecuteSqlToolName;
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private readonly ObservableCollection<ConnectionInfo> _connections = new();
@@ -272,7 +273,14 @@ public partial class ToolLabControl : UserControl
             new { schemaName = request.SchemaName, tableName = request.TableName, query = request.Query, columnName = request.Query },
             JsonOptions);
         using var doc = JsonDocument.Parse(arguments);
-        var output = await SqlMetadataToolExecutorBridge.ExecuteToolAsync(request.ToolName, doc.RootElement, metadata);
+        var output = await SqlMetadataToolExecutorBridge.ExecuteToolAsync(
+            request.ToolName,
+            doc.RootElement,
+            metadata,
+            query => SqlReadOnlyQueryExecutor.ExecuteAsync(
+                request.ActiveConnectionString ?? string.Empty,
+                request.ActiveDatabase,
+                query));
         var previewRows = SqlMetadataToolExecutor.BuildPreviewRows(
                 request.ToolName,
                 metadata,

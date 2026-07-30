@@ -52,9 +52,59 @@ public class JsonCacheTests : IDisposable
         details.Metadata.Views.Should().ContainSingle(v => v.Name == "OrderView");
         details.Metadata.Endpoints.Should().ContainSingle(e => e.Port == 1433);
         File.Exists(Path.Combine(_cacheRoot, "cache.json")).Should().BeTrue();
+        File.Exists(Path.Combine(_cacheRoot, "connections", $"connection-{connectionId}.json")).Should().BeTrue();
+        File.ReadAllText(Path.Combine(_cacheRoot, "cache.json")).Should().NotContain("Orders");
 
         MssqlIntelliSenseCacheWriter.DeleteConnection(connectionId);
         MssqlIntelliSenseCacheReader.GetConnections().Should().BeEmpty();
+        File.Exists(Path.Combine(_cacheRoot, "connections", $"connection-{connectionId}.json")).Should().BeFalse();
+    }
+
+    [Fact]
+    public void JsonCache_MigratesEmbeddedMetadata_ToPerConnectionFile()
+    {
+        Directory.CreateDirectory(_cacheRoot);
+        File.WriteAllText(Path.Combine(_cacheRoot, "cache.json"), """
+        {
+          "nextConnectionId": 2,
+          "connections": [
+            {
+              "id": 1,
+              "name": "legacy",
+              "connectionString": "Data Source=.;Integrated Security=True;Trust Server Certificate=True",
+              "isActive": true,
+              "lastSeenAt": "2026-07-30T00:00:00+00:00",
+              "schemaUpdatedAt": "2026-07-30T00:01:00+00:00",
+              "metadata": {
+                "tables": [
+                  {
+                    "schema": "dbo",
+                    "name": "LegacyUsers",
+                    "columns": [
+                      { "name": "Id", "dataType": "int", "isNullable": false, "ordinal": 1 }
+                    ],
+                    "primaryKeyColumns": [ "Id" ],
+                    "database": "LegacyDb"
+                  }
+                ],
+                "foreignKeys": [],
+                "indexes": [],
+                "databases": [ "LegacyDb" ],
+                "linkedServers": []
+              }
+            }
+          ]
+        }
+        """);
+
+        var details = MssqlIntelliSenseCacheReader.GetSchemaDetails(1);
+
+        details.Metadata.Tables.Should().ContainSingle(t => t.Name == "LegacyUsers");
+        File.Exists(Path.Combine(_cacheRoot, "connections", "connection-1.json")).Should().BeTrue();
+        var indexJson = File.ReadAllText(Path.Combine(_cacheRoot, "cache.json"));
+        indexJson.Should().Contain("connections");
+        indexJson.Should().Contain("connection-1.json");
+        indexJson.Should().NotContain("LegacyUsers");
     }
 
     [Fact]
@@ -76,7 +126,8 @@ public class JsonCacheTests : IDisposable
             [MssqlIntelliSense.Core.Ai.SqlMetadataToolExecutor.SearchObjectsToolName] = "{\"query\":\"User\"}",
             [MssqlIntelliSense.Core.Ai.SqlMetadataToolExecutor.SearchSchemaObjectsToolName] = "{\"query\":\"User\"}",
             [MssqlIntelliSense.Core.Ai.SqlMetadataToolExecutor.FindColumnToolName] = "{\"query\":\"Email\"}",
-            [MssqlIntelliSense.Core.Ai.SqlMetadataToolExecutor.ListEndpointsToolName] = "{}"
+            [MssqlIntelliSense.Core.Ai.SqlMetadataToolExecutor.ListEndpointsToolName] = "{}",
+            [MssqlIntelliSense.Core.Ai.SqlMetadataToolExecutor.ExecuteSqlToolName] = "{\"query\":\"SELECT 1\"}"
         };
 
         foreach (var toolName in MssqlIntelliSense.Core.Ai.SqlMetadataToolExecutor.AllToolNames)
@@ -84,7 +135,14 @@ public class JsonCacheTests : IDisposable
             using var args = JsonDocument.Parse(argumentsByTool[toolName]);
             var output = await MssqlIntelliSense.Core.Ai.SqlMetadataToolExecutor.ExecuteToolAsync(toolName, args.RootElement, metadata);
 
-            output.Should().NotContain("\"error\"", toolName);
+            if (toolName == MssqlIntelliSense.Core.Ai.SqlMetadataToolExecutor.ExecuteSqlToolName)
+            {
+                output.Should().Contain("requires an SSMS runtime connection executor");
+            }
+            else
+            {
+                output.Should().NotContain("\"error\"", toolName);
+            }
         }
     }
 

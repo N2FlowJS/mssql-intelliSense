@@ -18,6 +18,7 @@ public static class SqlMetadataToolExecutor
     public const string SearchSchemaObjectsToolName = "search_schema_objects";
     public const string FindColumnToolName = "find_column";
     public const string ListEndpointsToolName = "list_endpoints";
+    public const string ExecuteSqlToolName = "execute";
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
@@ -30,7 +31,8 @@ public static class SqlMetadataToolExecutor
         SearchObjectsToolName,
         SearchSchemaObjectsToolName,
         FindColumnToolName,
-        ListEndpointsToolName
+        ListEndpointsToolName,
+        ExecuteSqlToolName
     };
 
     public static Task<string> ExecuteToolAsync(
@@ -39,6 +41,15 @@ public static class SqlMetadataToolExecutor
         DatabaseMetadata metadata)
     {
         return ExecuteToolAsync(toolName, arguments, metadata, graphQlFallback: null);
+    }
+
+    public static async Task<string> ExecuteToolAsync(
+        string toolName,
+        string argumentsJson,
+        DatabaseMetadata metadata)
+    {
+        using var document = JsonDocument.Parse(string.IsNullOrWhiteSpace(argumentsJson) ? "{}" : argumentsJson);
+        return await ExecuteToolAsync(toolName, document.RootElement, metadata, graphQlFallback: null);
     }
 
     public static async Task<string> ExecuteToolAsync(
@@ -117,6 +128,12 @@ public static class SqlMetadataToolExecutor
 
             case ListEndpointsToolName:
                 return JsonSerializer.Serialize(GetListEndpointsToolResult(safeMetadata), JsonOptions);
+
+            case ExecuteSqlToolName:
+                return JsonSerializer.Serialize(new
+                {
+                    error = "The execute tool requires an SSMS runtime connection executor."
+                }, JsonOptions);
 
             default:
                 throw new NotSupportedException($"Tool '{toolName}' is not supported.");
@@ -253,6 +270,7 @@ public static class SqlMetadataToolExecutor
             FindColumnToolName => BuildColumnSearchRows(metadata, query),
             ListEndpointsToolName => (metadata.Endpoints ?? Enumerable.Empty<EndpointInfo>())
                 .OrderBy(ep => ep.Name).Select(ep => new { ep.Name, ep.Type, ep.Protocol, ep.State, ep.Port }).ToList(),
+            ExecuteSqlToolName => Array.Empty<object>(),
             _ => null
         };
     }
@@ -399,6 +417,7 @@ public static class SqlMetadataToolExecutor
         SearchObjectsToolName => "Tìm kiếm thông minh các đối tượng trong schema (bảng, view, procedure, function) bằng tên, cột, định nghĩa SQL và mô tả tùy chỉnh cho agent.",
         FindColumnToolName => "Tìm column theo tên trong table/view đã cache.",
         ListEndpointsToolName => "Liệt kê SQL Server endpoints thuộc Server Objects.",
+        ExecuteSqlToolName => "Thực thi câu SQL read-only trên connection/database đang chọn trong SSMS. Chỉ dùng cho SELECT/WITH/DECLARE và metadata query an toàn.",
         _ => "Tool metadata request."
     };
 
@@ -411,6 +430,7 @@ public static class SqlMetadataToolExecutor
         SearchObjectsToolName => "search_objects: weighted search across tables, views, procedures and functions by object name, columns/parameters, SQL definition and custom agent descriptions. Arguments: query.",
         FindColumnToolName => "find_column: search table/view columns by partial column name. Arguments: query.",
         ListEndpointsToolName => "list_endpoints: list SQL Server endpoints under Server Objects.",
+        ExecuteSqlToolName => "execute: run a read-only SQL query against the active SSMS connection/database after explicit user approval. Arguments: query. Only use SELECT/WITH/DECLARE or safe metadata procedures.",
         _ => toolName + ": enabled tool."
     };
 
@@ -423,6 +443,7 @@ public static class SqlMetadataToolExecutor
         SearchObjectsToolName => "Searches cached object names, columns/parameters, SQL definitions and custom agent descriptions.",
         FindColumnToolName => "Searches cached table/view column names.",
         ListEndpointsToolName => "Reads cached SQL Server endpoint metadata under Server Objects.",
+        ExecuteSqlToolName => "Runs a read-only SQL query against the active SSMS connection/database. DML, DDL and unsafe EXEC calls are blocked.",
         _ => "Reads cached metadata for this chat session."
     };
 

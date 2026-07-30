@@ -165,6 +165,7 @@
                 <ComboBoxItem Content="search_objects" Tag="search_objects" />
                 <ComboBoxItem Content="find_column" Tag="find_column" />
                 <ComboBoxItem Content="list_endpoints" Tag="list_endpoints" />
+                <ComboBoxItem Content="execute" Tag="execute" />
             </ComboBox>
 
             <Grid Grid.Row="2" Margin="0,8,0,0">

@@ -30,6 +30,7 @@ public partial class ChatAgentControl : UserControl
     private const string SearchObjectsToolName = SqlMetadataToolExecutor.SearchObjectsToolName;
     private const string FindColumnToolName = SqlMetadataToolExecutor.FindColumnToolName;
     private const string ListEndpointsToolName = SqlMetadataToolExecutor.ListEndpointsToolName;
+    private const string ExecuteSqlToolName = SqlMetadataToolExecutor.ExecuteSqlToolName;
 
     private sealed class ChatTurn
     {
@@ -208,6 +209,7 @@ public partial class ChatAgentControl : UserControl
             model: string.IsNullOrWhiteSpace(options.Model) ? "gpt-4o" : options.Model,
             userMessage: message,
             metadata: metadata,
+            chatConnection: chatConnection,
             allowedToolNames: allowedToolNames,
             cancellationToken: cancellationToken);
 
@@ -344,6 +346,7 @@ public partial class ChatAgentControl : UserControl
         string model,
         string userMessage,
         DatabaseMetadata? metadata,
+        ChatConnectionContext chatConnection,
         ISet<string> allowedToolNames,
         CancellationToken cancellationToken)
     {
@@ -409,7 +412,7 @@ public partial class ChatAgentControl : UserControl
                 string output;
                 if (approved)
                 {
-                    output = await ExecuteApprovedToolAsync(plannerResult.ToolCall, metadata ?? DatabaseMetadata.Empty);
+                    output = await ExecuteApprovedToolAsync(plannerResult.ToolCall, metadata ?? DatabaseMetadata.Empty, chatConnection);
                     await AddChatMessageOnMainThreadAsync(
                         "Tool",
                         $"Executed {plannerResult.ToolCall.Name}\n{SummarizeToolOutput(output)}",
@@ -521,6 +524,11 @@ public partial class ChatAgentControl : UserControl
         if (ListEndpointsToolCheckBox?.IsChecked == true)
         {
             allowed.Add(ListEndpointsToolName);
+        }
+
+        if (ExecuteSqlToolCheckBox?.IsChecked == true)
+        {
+            allowed.Add(ExecuteSqlToolName);
         }
 
         return allowed;
@@ -910,10 +918,17 @@ public partial class ChatAgentControl : UserControl
         };
     }
 
-    private static async Task<string> ExecuteApprovedToolAsync(OpenAiSqlToolCall toolCall, DatabaseMetadata metadata)
+    private static async Task<string> ExecuteApprovedToolAsync(OpenAiSqlToolCall toolCall, DatabaseMetadata metadata, ChatConnectionContext chatConnection)
     {
         using var document = JsonDocument.Parse(string.IsNullOrWhiteSpace(toolCall.ArgumentsJson) ? "{}" : toolCall.ArgumentsJson);
-        return await SqlMetadataToolExecutorBridge.ExecuteToolAsync(toolCall.Name, document.RootElement, metadata);
+        return await SqlMetadataToolExecutorBridge.ExecuteToolAsync(
+            toolCall.Name,
+            document.RootElement,
+            metadata,
+            query => SqlReadOnlyQueryExecutor.ExecuteAsync(
+                chatConnection.ActiveConnectionString ?? string.Empty,
+                chatConnection.ActiveDatabase,
+                query));
     }
 
     private static string SummarizeToolOutput(string output)

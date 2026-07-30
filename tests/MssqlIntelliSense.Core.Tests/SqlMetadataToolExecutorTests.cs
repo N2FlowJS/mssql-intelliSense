@@ -138,7 +138,8 @@ public sealed class SqlMetadataToolExecutorTests
             [SqlMetadataToolExecutor.SearchObjectsToolName] = "{\"query\":\"User\"}",
             [SqlMetadataToolExecutor.SearchSchemaObjectsToolName] = "{\"query\":\"User\"}",
             [SqlMetadataToolExecutor.FindColumnToolName] = "{\"query\":\"Email\"}",
-            [SqlMetadataToolExecutor.ListEndpointsToolName] = "{}"
+            [SqlMetadataToolExecutor.ListEndpointsToolName] = "{}",
+            [SqlMetadataToolExecutor.ExecuteSqlToolName] = "{\"query\":\"SELECT 1\"}"
         };
 
         foreach (var toolName in SqlMetadataToolExecutor.AllToolNames)
@@ -147,7 +148,15 @@ public sealed class SqlMetadataToolExecutorTests
             var json = await SqlMetadataToolExecutor.ExecuteToolAsync(toolName, args.RootElement, metadata);
 
             json.Should().NotBeNullOrWhiteSpace(toolName);
-            json.Should().NotContain("\"error\"", toolName);
+            if (toolName == SqlMetadataToolExecutor.ExecuteSqlToolName)
+            {
+                json.Should().Contain("requires an SSMS runtime connection executor");
+            }
+            else
+            {
+                json.Should().NotContain("\"error\"", toolName);
+            }
+
             SqlMetadataToolExecutor.BuildPreviewRows(toolName, metadata, "dbo", "Users", "Email")
                 .Should().NotBeNull(toolName);
         }
