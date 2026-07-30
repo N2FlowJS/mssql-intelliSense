@@ -196,7 +196,10 @@ public partial class ToolLabControl : UserControl
                 OutputDataGrid.ItemsSource = null;
             });
 
-            var request = await Dispatcher.InvokeAsync(CaptureRunRequest);
+            await MssqlIntelliSensePackage.SwitchToMainThreadAsync();
+#pragma warning disable VSTHRD010
+            var request = CaptureRunRequest();
+#pragma warning restore VSTHRD010
             if (request == null)
             {
                 await UpdateToolUiAsync(() => OutputTextBox.Text = "No active or selected cached connection found.");
@@ -314,7 +317,9 @@ public partial class ToolLabControl : UserControl
             return Task.CompletedTask;
         }
 
+#pragma warning disable VSTHRD001
         return Dispatcher.InvokeAsync(action).Task;
+#pragma warning restore VSTHRD001
     }
 
     private string GetSelectedToolName()

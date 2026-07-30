@@ -166,7 +166,10 @@ public partial class ChatAgentControl : UserControl
             return;
         }
 
+        await MssqlIntelliSensePackage.SwitchToMainThreadAsync(cancellationToken);
+#pragma warning disable VSTHRD010
         var chatConnection = ResolveChatConnectionContext();
+#pragma warning restore VSTHRD010
         AddChatMessage(
             "Context",
             string.IsNullOrWhiteSpace(chatConnection.DisplayName)
@@ -245,7 +248,9 @@ public partial class ChatAgentControl : UserControl
     {
         if (MssqlIntelliSensePackage.Instance != null)
         {
+#pragma warning disable VSTHRD108
             Microsoft.VisualStudio.Shell.ThreadHelper.ThrowIfNotOnUIThread();
+#pragma warning restore VSTHRD108
         }
 
         var activeConnectionString = MssqlIntelliSensePackage.GetActiveConnectionString();
@@ -1114,7 +1119,9 @@ public partial class ChatAgentControl : UserControl
             }
             else
             {
+#pragma warning disable VSTHRD001
                 Dispatcher.Invoke(() => AddChatMessage("Error", message, isUser: false));
+#pragma warning restore VSTHRD001
             }
         }
         catch
@@ -1134,7 +1141,9 @@ public partial class ChatAgentControl : UserControl
             }
             else
             {
+#pragma warning disable VSTHRD001
                 await messageBorder.Dispatcher.InvokeAsync(() => UpdateChatMessage(messageBorder, newContent));
+#pragma warning restore VSTHRD001
             }
         }
         catch (Exception ex)
@@ -1157,12 +1166,14 @@ public partial class ChatAgentControl : UserControl
             }
             else
             {
+#pragma warning disable VSTHRD001
                 await Dispatcher.InvokeAsync(() =>
                 {
                     SendChatButton.Content = CreateIconGlyph(isStop ? StopIconGlyph : SendIconGlyph);
                     SendChatButton.IsEnabled = isEnabled;
                     SendChatButton.ToolTip = isStop ? "Stop response" : "Send message";
                 });
+#pragma warning restore VSTHRD001
             }
         }
         catch (Exception ex)

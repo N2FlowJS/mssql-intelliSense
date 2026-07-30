@@ -119,5 +119,7 @@ Write-Host "  Releases dir    : $ReleasesDir" -ForegroundColor White
 Write-Host ""
 Write-Host "  Start server with:" -ForegroundColor White
 Write-Host "    dotnet run --project src\MssqlIntelliSense.UpdateServer -- --urls http://0.0.0.0:5100" -ForegroundColor Cyan
+Write-Host "  Open browser at:" -ForegroundColor White
+Write-Host "    http://localhost:5100" -ForegroundColor Cyan
 Write-Host "==========================================" -ForegroundColor Cyan
 Write-Host ""

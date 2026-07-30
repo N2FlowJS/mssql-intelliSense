@@ -304,7 +304,9 @@ public partial class MainWindow : Window
         UpdateDebugConnectionContext();
     }
 
+#pragma warning disable VSTHRD100
     private async void SavedDatabaseComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+#pragma warning restore VSTHRD100
     {
         if (!_isInitialized || _isLoadingSavedContext || SavedDatabaseComboBox.SelectedItem is not string databaseName)
         {
@@ -319,7 +321,9 @@ public partial class MainWindow : Window
         await TriggerCompletionAsync();
     }
 
+#pragma warning disable VSTHRD100
     private async void SavedConnectionComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+#pragma warning restore VSTHRD100
     {
         if (!_isInitialized || _isLoadingSavedContext || SavedConnectionComboBox.SelectedItem is not ConnectionInfo connection)
         {
@@ -338,7 +342,9 @@ public partial class MainWindow : Window
         await TriggerCompletionAsync();
     }
 
+#pragma warning disable VSTHRD100
     private async void ReloadSsmsContextButton_Click(object sender, RoutedEventArgs e)
+#pragma warning restore VSTHRD100
     {
         LoadExistingSsmsContext();
         await LoadCacheJsonAsync();
@@ -351,7 +357,9 @@ public partial class MainWindow : Window
         MessageBox.Show("Debug settings saved successfully!", "MSSQL IntelliSense Debugger", MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
+#pragma warning disable VSTHRD100
     private async void RefreshMetadataButton_Click(object sender, RoutedEventArgs e)
+#pragma warning restore VSTHRD100
     {
         try
         {
@@ -517,7 +525,9 @@ public partial class MainWindow : Window
             SqlCompletionKind.UserType or
             SqlCompletionKind.Synonym;
 
+#pragma warning disable VSTHRD100
     private async void LoadCacheJsonButton_Click(object sender, RoutedEventArgs e)
+#pragma warning restore VSTHRD100
     {
         await LoadCacheJsonAsync();
     }

@@ -24,7 +24,7 @@ public partial class App : Application
         catch { }
     }
 
-    private static Assembly OnResolveAssembly(object sender, ResolveEventArgs args)
+    private static Assembly? OnResolveAssembly(object? sender, ResolveEventArgs args)
     {
         try
         {

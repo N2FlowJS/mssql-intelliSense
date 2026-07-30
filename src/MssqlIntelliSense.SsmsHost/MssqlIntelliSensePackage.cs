@@ -52,7 +52,9 @@ public sealed class MssqlIntelliSensePackage : AsyncPackage
         }
         else if (System.Windows.Application.Current != null && !System.Windows.Application.Current.Dispatcher.CheckAccess())
         {
+#pragma warning disable VSTHRD001
             await System.Windows.Application.Current.Dispatcher.InvokeAsync(() => { });
+#pragma warning restore VSTHRD001
         }
     }
 
@@ -64,16 +66,18 @@ public sealed class MssqlIntelliSensePackage : AsyncPackage
         }
         else if (System.Windows.Application.Current != null && !System.Windows.Application.Current.Dispatcher.CheckAccess())
         {
+#pragma warning disable VSTHRD001
             await System.Windows.Application.Current.Dispatcher.InvokeAsync(
                 () => { },
                 System.Windows.Threading.DispatcherPriority.Normal,
                 cancellationToken);
+#pragma warning restore VSTHRD001
         }
     }
 
     public const string PackageGuidString = "16f11772-cdb0-42ca-a596-d755543518ac";
     private static readonly Guid CommandSet = new("63a8fcd9-601f-427d-a253-d4942b4ff2aa");
-    public static readonly Version CurrentVersion = new("0.2.114");
+    public static readonly Version CurrentVersion = new("0.2.121");
     public static string VersionString => CurrentVersion.ToString();
 
     private readonly List<CommandBarEvents> _commandBarEvents = new();
@@ -1223,6 +1227,13 @@ public sealed class MssqlIntelliSensePackage : AsyncPackage
         }
     }
 }
+
+
+
+
+
+
+
 
 
 

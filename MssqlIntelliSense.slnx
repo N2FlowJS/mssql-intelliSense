@@ -4,6 +4,7 @@
     <Project Path="src/MssqlIntelliSense.Cli/MssqlIntelliSense.Cli.csproj" />
     <Project Path="src/MssqlIntelliSense.SsmsHost/MssqlIntelliSense.SsmsHost.csproj" />
     <Project Path="src/MssqlIntelliSense.DebugApp/MssqlIntelliSense.DebugApp.csproj" />
+    <Project Path="src/MssqlIntelliSense.UpdateServer/MssqlIntelliSense.UpdateServer.csproj" />
   </Folder>
 
   <Folder Name="/tests/">
