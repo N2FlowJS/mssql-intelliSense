@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Text.Json;
@@ -49,6 +50,25 @@ public partial class ToolLabControl : UserControl
         public string DisplayName { get; set; } = string.Empty;
     }
 
+    private sealed class ToolRunRequest
+    {
+        public int ConnectionId { get; set; }
+        public string ConnectionName { get; set; } = string.Empty;
+        public string? ActiveConnectionString { get; set; }
+        public string? ActiveDatabase { get; set; }
+        public string DisplayName { get; set; } = string.Empty;
+        public string ToolName { get; set; } = ListTablesToolName;
+        public string SchemaName { get; set; } = "dbo";
+        public string TableName { get; set; } = string.Empty;
+        public string Query { get; set; } = string.Empty;
+    }
+
+    private sealed class ToolRunResult
+    {
+        public string OutputText { get; set; } = string.Empty;
+        public IList<object>? PreviewRows { get; set; }
+    }
+
     public ToolLabControl()
     {
         InitializeComponent();
@@ -76,12 +96,38 @@ public partial class ToolLabControl : UserControl
 
     private void RefreshConnectionsButton_Click(object sender, RoutedEventArgs e)
     {
-        _ = RefreshConnectionsAsync();
+        _ = RefreshConnectionsButtonClickAsync();
+    }
+
+    private async Task RefreshConnectionsButtonClickAsync()
+    {
+        try
+        {
+            await RefreshConnectionsAsync();
+        }
+        catch (Exception ex)
+        {
+            await UpdateToolUiAsync(() => OutputTextBox.Text = "Failed to load connections: " + ex.Message);
+            MssqlIntelliSensePackage.Log($"[Tool Lab Load Connections Handler Error] {ex}");
+        }
     }
 
     private void RunToolButton_Click(object sender, RoutedEventArgs e)
     {
-        _ = RunToolAsync();
+        _ = RunToolButtonClickAsync();
+    }
+
+    private async Task RunToolButtonClickAsync()
+    {
+        try
+        {
+            await RunToolAsync();
+        }
+        catch (Exception ex)
+        {
+            await UpdateToolUiAsync(() => OutputTextBox.Text = "Tool execution failed: " + ex.Message);
+            MssqlIntelliSensePackage.Log($"[Tool Lab Execute Handler Error] {ex}");
+        }
     }
 
     private async Task RefreshConnectionsAsync()
@@ -99,7 +145,7 @@ public partial class ToolLabControl : UserControl
                 _connections.Add(connection);
             }
 
-            await MssqlIntelliSensePackage.SwitchToMainThreadAsync();
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
             var activeContext = ResolveToolConnectionContext(registerIfMissing: true);
             if (activeContext.Connection != null)
             {
@@ -142,70 +188,125 @@ public partial class ToolLabControl : UserControl
     {
         try
         {
-            RunToolButton.IsEnabled = false;
-            OutputTextBox.Text = "Running tool...";
-            OutputDataGrid.ItemsSource = null;
-
-            await MssqlIntelliSensePackage.SwitchToMainThreadAsync();
-            var toolConnection = ResolveToolConnectionContext(registerIfMissing: true);
-            var connection = toolConnection.Connection ?? ConnectionsComboBox.SelectedItem as ConnectionInfo;
-            if (connection == null)
+            await UpdateToolUiAsync(() =>
             {
-                OutputTextBox.Text = "No active or selected cached connection found.";
+                RunToolButton.IsEnabled = false;
+                OutputTextBox.Text = "Running tool...";
+                OutputDataGrid.ItemsSource = null;
+            });
+
+            var request = await Dispatcher.InvokeAsync(CaptureRunRequest);
+            if (request == null)
+            {
+                await UpdateToolUiAsync(() => OutputTextBox.Text = "No active or selected cached connection found.");
                 return;
             }
 
-            if (!_connections.Any(c => c.Id == connection.Id))
+            var result = await Task.Run(async () => await ExecuteToolRequestAsync(request));
+            await UpdateToolUiAsync(() =>
             {
-                _connections.Add(connection);
-            }
-
-            ConnectionsComboBox.SelectedItem = _connections.FirstOrDefault(c => c.Id == connection.Id) ?? connection;
-
-            var toolName = GetSelectedToolName();
-            var schemaName = string.IsNullOrWhiteSpace(SchemaTextBox.Text)
-                ? "dbo"
-                : SchemaTextBox.Text.Trim();
-            var tableName = TableTextBox.Text?.Trim() ?? string.Empty;
-            var query = QueryTextBox.Text?.Trim() ?? string.Empty;
-
-            var metadata = await Task.Run(() =>
-            {
-                DatabaseMetadata result;
-                var activeConnectionString = toolConnection.ActiveConnectionString;
-                if (!string.IsNullOrWhiteSpace(activeConnectionString))
-                {
-                    result = MssqlIntelliSenseCacheReader.GetMetadataByConnectionString(activeConnectionString!);
-                }
-                else
-                {
-                    result = MssqlIntelliSenseCacheReader.GetSchemaDetails(connection.Id).Metadata;
-                }
-
-                var activeDatabase = toolConnection.ActiveDatabase;
-                return string.IsNullOrWhiteSpace(activeDatabase)
-                    ? result
-                    : MssqlIntelliSenseCacheReader.FilterByDatabase(result, activeDatabase!);
+                OutputTextBox.Text = result.OutputText;
+                OutputDataGrid.ItemsSource = result.PreviewRows;
             });
-            var arguments = JsonSerializer.Serialize(new { schemaName, tableName, query, columnName = query }, JsonOptions);
-            using var doc = JsonDocument.Parse(arguments);
-            var output = await SqlMetadataToolExecutor.ExecuteToolAsync(toolName, doc.RootElement, metadata);
-
-            var connectionHeader = string.IsNullOrWhiteSpace(toolConnection.DisplayName)
-                ? $"Connection: {connection.Name}"
-                : $"Connection: {toolConnection.DisplayName}";
-            OutputTextBox.Text = connectionHeader + Environment.NewLine + PrettyPrintJson(output);
-            OutputDataGrid.ItemsSource = SqlMetadataToolExecutor.BuildPreviewRows(toolName, metadata, schemaName, tableName, query);
         }
         catch (Exception ex)
         {
-            OutputTextBox.Text = "Tool execution failed: " + ex.Message;
+            await UpdateToolUiAsync(() => OutputTextBox.Text = "Tool execution failed: " + ex.Message);
             MssqlIntelliSensePackage.Log($"[Tool Lab Execute Error] {ex}");
         }
         finally
         {
-            RunToolButton.IsEnabled = true;
+            await UpdateToolUiAsync(() => RunToolButton.IsEnabled = true);
         }
+    }
+
+    private ToolRunRequest? CaptureRunRequest()
+    {
+        ThreadHelper.ThrowIfNotOnUIThread();
+        var toolConnection = ResolveToolConnectionContext(registerIfMissing: true);
+        var connection = toolConnection.Connection ?? ConnectionsComboBox.SelectedItem as ConnectionInfo;
+        if (connection == null)
+        {
+            return null;
+        }
+
+        if (!_connections.Any(c => c.Id == connection.Id))
+        {
+            _connections.Add(connection);
+        }
+
+        ConnectionsComboBox.SelectedItem = _connections.FirstOrDefault(c => c.Id == connection.Id) ?? connection;
+
+        return new ToolRunRequest
+        {
+            ConnectionId = connection.Id,
+            ConnectionName = connection.Name,
+            ActiveConnectionString = toolConnection.ActiveConnectionString,
+            ActiveDatabase = toolConnection.ActiveDatabase,
+            DisplayName = toolConnection.DisplayName,
+            ToolName = GetSelectedToolName(),
+            SchemaName = string.IsNullOrWhiteSpace(SchemaTextBox.Text) ? "dbo" : SchemaTextBox.Text.Trim(),
+            TableName = TableTextBox.Text?.Trim() ?? string.Empty,
+            Query = QueryTextBox.Text?.Trim() ?? string.Empty
+        };
+    }
+
+    private static async Task<ToolRunResult> ExecuteToolRequestAsync(ToolRunRequest request)
+    {
+        DatabaseMetadata metadata;
+        if (!string.IsNullOrWhiteSpace(request.ActiveConnectionString))
+        {
+            metadata = MssqlIntelliSenseCacheReader.GetMetadataByConnectionString(request.ActiveConnectionString!);
+        }
+        else
+        {
+            metadata = MssqlIntelliSenseCacheReader.GetSchemaDetails(request.ConnectionId).Metadata;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.ActiveDatabase))
+        {
+            metadata = MssqlIntelliSenseCacheReader.FilterByDatabase(metadata, request.ActiveDatabase!);
+        }
+
+        var arguments = JsonSerializer.Serialize(
+            new { schemaName = request.SchemaName, tableName = request.TableName, query = request.Query, columnName = request.Query },
+            JsonOptions);
+        using var doc = JsonDocument.Parse(arguments);
+        var output = await SqlMetadataToolExecutor.ExecuteToolAsync(request.ToolName, doc.RootElement, metadata);
+        var previewRows = SqlMetadataToolExecutor.BuildPreviewRows(
+                request.ToolName,
+                metadata,
+                request.SchemaName,
+                request.TableName,
+                request.Query)
+            ?.Cast<object>()
+            .ToList();
+
+        var connectionHeader = string.IsNullOrWhiteSpace(request.DisplayName)
+            ? $"Connection: {request.ConnectionName}"
+            : $"Connection: {request.DisplayName}";
+
+        return new ToolRunResult
+        {
+            OutputText = connectionHeader + Environment.NewLine + PrettyPrintJson(output),
+            PreviewRows = previewRows
+        };
+    }
+
+    private Task UpdateToolUiAsync(Action action)
+    {
+        if (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished)
+        {
+            return Task.CompletedTask;
+        }
+
+        if (Dispatcher.CheckAccess())
+        {
+            action();
+            return Task.CompletedTask;
+        }
+
+        return Dispatcher.InvokeAsync(action).Task;
     }
 
     private string GetSelectedToolName()
@@ -220,10 +321,7 @@ public partial class ToolLabControl : UserControl
 
     private ToolConnectionContext ResolveToolConnectionContext(bool registerIfMissing)
     {
-        if (MssqlIntelliSensePackage.Instance != null)
-        {
-            Microsoft.VisualStudio.Shell.ThreadHelper.ThrowIfNotOnUIThread();
-        }
+        Microsoft.VisualStudio.Shell.ThreadHelper.ThrowIfNotOnUIThread();
 
         var activeConnectionString = MssqlIntelliSensePackage.GetActiveConnectionString();
         var activeDatabase = MssqlIntelliSensePackage.GetActiveDatabaseName();
