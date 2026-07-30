@@ -628,19 +628,45 @@ public partial class ChatAgentControl : UserControl
 
     private sealed class MessageControlState
     {
-        public MessageControlState(StackPanel contentPanel, Brush foreground, Brush borderBrush, Brush codeBackground)
+        public MessageControlState(StackPanel contentPanel, Brush foreground, Brush borderBrush, Brush codeBackground, bool renderMarkdown)
         {
             ContentPanel = contentPanel;
             Foreground = foreground;
             BorderBrush = borderBrush;
             CodeBackground = codeBackground;
+            RenderMarkdown = renderMarkdown;
         }
 
         public StackPanel ContentPanel { get; }
         public Brush Foreground { get; }
         public Brush BorderBrush { get; }
         public Brush CodeBackground { get; }
+        public bool RenderMarkdown { get; }
         public string RawText { get; set; } = string.Empty;
+    }
+
+    private static void RenderMessageContent(MessageControlState state, string message)
+    {
+        state.RawText = message;
+        if (state.RenderMarkdown)
+        {
+            RenderMarkdownToContainer(
+                state.ContentPanel,
+                message,
+                state.Foreground,
+                state.BorderBrush,
+                state.CodeBackground);
+            return;
+        }
+
+        state.ContentPanel.Children.Clear();
+        state.ContentPanel.Children.Add(new TextBlock
+        {
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = state.Foreground,
+            FontFamily = new FontFamily("Consolas, Courier New, monospace"),
+            Text = message
+        });
     }
 
     private static void RenderMarkdownToContainer(
@@ -665,7 +691,7 @@ public partial class ChatAgentControl : UserControl
             if (match.Index > lastIndex)
             {
                 var textSegment = markdownText.Substring(lastIndex, match.Index - lastIndex);
-                RenderTextParagraphs(contentPanel, textSegment, foreground);
+                RenderTextParagraphs(contentPanel, textSegment, foreground, borderBrush, codeBackground);
             }
 
             string code = match.Groups["code"].Success ? match.Groups["code"].Value : match.Groups["code2"].Value;
@@ -700,17 +726,18 @@ public partial class ChatAgentControl : UserControl
         if (lastIndex < markdownText.Length)
         {
             var textSegment = markdownText.Substring(lastIndex);
-            RenderTextParagraphs(contentPanel, textSegment, foreground);
+            RenderTextParagraphs(contentPanel, textSegment, foreground, borderBrush, codeBackground);
         }
     }
 
-    private static void RenderTextParagraphs(StackPanel container, string text, Brush foreground)
+    private static void RenderTextParagraphs(StackPanel container, string text, Brush foreground, Brush borderBrush, Brush codeBackground)
     {
         var lines = text.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
         TextBlock? currentTextBlock = null;
 
-        foreach (var line in lines)
+        for (int i = 0; i < lines.Length; i++)
         {
+            var line = lines[i];
             var trimmed = line.Trim();
             if (string.IsNullOrEmpty(trimmed))
             {
@@ -718,7 +745,21 @@ public partial class ChatAgentControl : UserControl
                 continue;
             }
 
-            if (trimmed.StartsWith("# "))
+            if (IsMarkdownTableStart(lines, i))
+            {
+                currentTextBlock = null;
+                var tableLines = new List<string> { lines[i] };
+                i += 2;
+                while (i < lines.Length && IsPipeRow(lines[i]))
+                {
+                    tableLines.Add(lines[i]);
+                    i++;
+                }
+
+                i--;
+                container.Children.Add(CreateMarkdownTable(tableLines, foreground, borderBrush, codeBackground));
+            }
+            else if (trimmed.StartsWith("# "))
             {
                 container.Children.Add(new TextBlock
                 {
@@ -757,6 +798,11 @@ public partial class ChatAgentControl : UserControl
                 });
                 currentTextBlock = null;
             }
+            else if (IsListItem(trimmed))
+            {
+                currentTextBlock = null;
+                container.Children.Add(CreateListItem(trimmed, foreground));
+            }
             else
             {
                 if (currentTextBlock == null)
@@ -777,6 +823,145 @@ public partial class ChatAgentControl : UserControl
                 ParseInlineFormattedText(currentTextBlock, line);
             }
         }
+    }
+
+    private static bool IsListItem(string trimmed)
+    {
+        if (trimmed.StartsWith("- ") || trimmed.StartsWith("* "))
+        {
+            return true;
+        }
+
+        var markerEnd = trimmed.IndexOf(' ');
+        if (markerEnd < 2)
+        {
+            return false;
+        }
+
+        var marker = trimmed.Substring(0, markerEnd);
+        return (marker.EndsWith(".") || marker.EndsWith(")"))
+            && marker.Length > 1
+            && marker.Take(marker.Length - 1).All(char.IsDigit);
+    }
+
+    private static TextBlock CreateListItem(string trimmed, Brush foreground)
+    {
+        var markerEnd = trimmed.IndexOf(' ');
+        var body = markerEnd >= 0 ? trimmed.Substring(markerEnd + 1).Trim() : trimmed;
+        var textBlock = new TextBlock
+        {
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = foreground,
+            Margin = new Thickness(10, 1, 0, 1)
+        };
+        textBlock.Inlines.Add(new System.Windows.Documents.Run("- ")
+        {
+            FontWeight = FontWeights.Bold
+        });
+        ParseInlineFormattedText(textBlock, body);
+        return textBlock;
+    }
+
+    private static bool IsMarkdownTableStart(string[] lines, int index)
+    {
+        return index + 1 < lines.Length
+            && IsPipeRow(lines[index])
+            && IsMarkdownTableSeparator(lines[index + 1]);
+    }
+
+    private static bool IsPipeRow(string line)
+    {
+        var trimmed = line.Trim();
+        return trimmed.Contains('|') && trimmed.Count(c => c == '|') >= 2;
+    }
+
+    private static bool IsMarkdownTableSeparator(string line)
+    {
+        var cells = SplitMarkdownTableRow(line);
+        return cells.Count > 0
+            && cells.All(cell =>
+            {
+                var value = cell.Trim();
+                return value.Length >= 3 && value.Trim('-', ':').Length == 0;
+            });
+    }
+
+    private static Grid CreateMarkdownTable(IReadOnlyList<string> tableLines, Brush foreground, Brush borderBrush, Brush codeBackground)
+    {
+        var rows = tableLines.Select(SplitMarkdownTableRow).Where(row => row.Count > 0).ToList();
+        var columnCount = rows.Count == 0 ? 0 : rows.Max(row => row.Count);
+        var grid = new Grid
+        {
+            Margin = new Thickness(0, 5, 0, 7),
+            HorizontalAlignment = HorizontalAlignment.Stretch
+        };
+
+        for (var column = 0; column < columnCount; column++)
+        {
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = 64 });
+        }
+
+        for (var rowIndex = 0; rowIndex < rows.Count; rowIndex++)
+        {
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            var row = rows[rowIndex];
+            for (var column = 0; column < columnCount; column++)
+            {
+                var cellText = column < row.Count ? row[column] : string.Empty;
+                var cellTextBlock = new TextBlock
+                {
+                    TextWrapping = TextWrapping.Wrap,
+                    Foreground = foreground,
+                    Margin = new Thickness(0)
+                };
+                ParseInlineFormattedText(cellTextBlock, cellText);
+
+                var cell = new Border
+                {
+                    BorderBrush = borderBrush,
+                    BorderThickness = new Thickness(0, 0, 1, 1),
+                    Background = rowIndex == 0 ? codeBackground : Brushes.Transparent,
+                    Padding = new Thickness(6, 4, 6, 4),
+                    Child = cellTextBlock
+                };
+
+                if (rowIndex == 0)
+                {
+                    cellTextBlock.FontWeight = FontWeights.SemiBold;
+                }
+
+                Grid.SetRow(cell, rowIndex);
+                Grid.SetColumn(cell, column);
+                grid.Children.Add(cell);
+            }
+        }
+
+        var frame = new Border
+        {
+            BorderBrush = borderBrush,
+            BorderThickness = new Thickness(1, 1, 0, 0),
+            Child = grid
+        };
+
+        var outerGrid = new Grid { ClipToBounds = true };
+        outerGrid.Children.Add(frame);
+        return outerGrid;
+    }
+
+    private static List<string> SplitMarkdownTableRow(string line)
+    {
+        var trimmed = line.Trim();
+        if (trimmed.StartsWith("|"))
+        {
+            trimmed = trimmed.Substring(1);
+        }
+
+        if (trimmed.EndsWith("|"))
+        {
+            trimmed = trimmed.Substring(0, trimmed.Length - 1);
+        }
+
+        return trimmed.Split('|').Select(cell => cell.Trim()).ToList();
     }
 
     private static void ParseInlineFormattedText(TextBlock textBlock, string text)
@@ -1339,9 +1524,9 @@ public partial class ChatAgentControl : UserControl
             {
                 try
                 {
-                    if (border.Tag is TextBlock textBlock)
+                    if (border.Tag is MessageControlState state)
                     {
-                        Clipboard.SetText(textBlock.Text ?? string.Empty);
+                        Clipboard.SetText(state.RawText ?? string.Empty);
                     }
                 }
                 catch (Exception ex)
@@ -1354,17 +1539,17 @@ public partial class ChatAgentControl : UserControl
         container.Children.Add(headerPanel);
 
         // Content
-        var contentBlock = new TextBlock
+        var contentPanel = new StackPanel
         {
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = messageForeground,
-            FontFamily = new FontFamily("Consolas, Courier New, monospace"),
-            Text = message
+            Orientation = Orientation.Vertical,
+            HorizontalAlignment = HorizontalAlignment.Stretch
         };
-        container.Children.Add(contentBlock);
+        container.Children.Add(contentPanel);
 
         border.Child = container;
-        border.Tag = contentBlock;
+        var state = new MessageControlState(contentPanel, messageForeground, borderBrush, messageBackground, renderMarkdown: !isUser);
+        RenderMessageContent(state, message);
+        border.Tag = state;
         ChatMessagesPanel.Children.Add(border);
 
         // Scroll to bottom
@@ -1374,9 +1559,9 @@ public partial class ChatAgentControl : UserControl
 
     private void UpdateChatMessage(Border messageBorder, string newContent)
     {
-        if (messageBorder.Tag is TextBlock textBlock)
+        if (messageBorder.Tag is MessageControlState state)
         {
-            textBlock.Text = newContent;
+            RenderMessageContent(state, newContent);
         }
         ChatMessagesScrollViewer.ScrollToEnd();
     }

@@ -49,7 +49,7 @@ app.MapGet("/version.json", (HttpRequest request) =>
     });
 });
 
-app.MapGet("/releases/{fileName}", (string fileName) =>
+app.MapMethods("/releases/{fileName}", new[] { "GET", "HEAD" }, (string fileName) =>
 {
     var safeName = Path.GetFileName(fileName);
     var path = Path.Combine(releasesDirectory, safeName);
