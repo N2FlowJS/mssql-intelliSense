@@ -220,7 +220,10 @@ public partial class ToolLabControl : UserControl
 
     private ToolConnectionContext ResolveToolConnectionContext(bool registerIfMissing)
     {
-        Microsoft.VisualStudio.Shell.ThreadHelper.ThrowIfNotOnUIThread();
+        if (MssqlIntelliSensePackage.Instance != null)
+        {
+            Microsoft.VisualStudio.Shell.ThreadHelper.ThrowIfNotOnUIThread();
+        }
 
         var activeConnectionString = MssqlIntelliSensePackage.GetActiveConnectionString();
         var activeDatabase = MssqlIntelliSensePackage.GetActiveDatabaseName();

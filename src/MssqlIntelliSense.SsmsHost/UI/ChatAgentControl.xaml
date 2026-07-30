@@ -71,80 +71,103 @@
                 </Setter.Value>
             </Setter>
         </Style>
+
+        <Style x:Key="FlatCommandButtonStyle" TargetType="{x:Type Button}">
+            <Setter Property="Padding" Value="10,4" />
+            <Setter Property="MinHeight" Value="26" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Background" Value="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowCodeBlockBackgroundBrushKey}}" />
+            <Setter Property="Foreground" Value="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowTextBrushKey}}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowBorderBrushKey}}" />
+        </Style>
+
+        <Style x:Key="PrimaryCommandButtonStyle" TargetType="{x:Type Button}" BasedOn="{StaticResource FlatCommandButtonStyle}">
+            <Setter Property="Background" Value="{DynamicResource {x:Static vsui:EnvironmentColors.SystemHighlightBrushKey}}" />
+            <Setter Property="Foreground" Value="{DynamicResource {x:Static vsui:EnvironmentColors.SystemHighlightTextBrushKey}}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource {x:Static vsui:EnvironmentColors.SystemHighlightBrushKey}}" />
+        </Style>
     </UserControl.Resources>
 
-    <Grid Margin="8,6">
+    <Grid Margin="10,8">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <!-- Top Header Bar -->
+        <!-- Header -->
         <Border Grid.Row="0"
                 BorderBrush="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowBorderBrushKey}}"
                 BorderThickness="0,0,0,1"
-                Padding="6,4,6,8"
-                Margin="0,0,0,6">
-            <DockPanel>
-                <!-- Right Controls: Tools Menu & Clear Chat -->
-                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                Padding="2,0,2,8"
+                Margin="0,0,0,8">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <TextBlock Grid.Row="0"
+                           Text="SQL AI Agent"
+                           FontWeight="SemiBold"
+                           FontSize="13"
+                           TextTrimming="CharacterEllipsis"
+                           Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowTextBrushKey}}" />
+
+                <DockPanel Grid.Row="1" Margin="0,8,0,0">
                     <TextBlock x:Name="ToolSelectionSummaryText"
                                Text="Tools: 7 enabled"
+                               DockPanel.Dock="Left"
                                VerticalAlignment="Center"
                                FontSize="11"
                                Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.PanelTextBrushKey}}"
                                Margin="0,0,8,0" />
-                    <Button x:Name="ToolMenuButton"
-                            Click="ToolMenuButton_Click"
-                            Padding="8,3"
-                            Margin="0,0,6,0"
-                            ToolTip="Configure active chat tools">
-                        <TextBlock Text="⚙ Tools" FontSize="11" />
-                    </Button>
-                    <Popup x:Name="ToolMenuPopup"
-                           PlacementTarget="{Binding ElementName=ToolMenuButton}"
-                           Placement="Bottom"
-                           StaysOpen="False"
-                           AllowsTransparency="True">
-                        <Border BorderBrush="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowBorderBrushKey}}"
-                                BorderThickness="1"
-                                CornerRadius="4"
-                                Padding="12,10"
-                                MinWidth="200"
-                                Background="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowBackgroundBrushKey}}">
-                            <StackPanel>
-                                <TextBlock Text="Allowed AI Tools"
-                                           FontWeight="Bold"
-                                           FontSize="12"
-                                           Margin="0,0,0,8"
-                                           Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowTextBrushKey}}" />
-                                <CheckBox x:Name="ListTablesToolCheckBox" Content="List tables" IsChecked="True" Checked="ToolSelectionChanged" Unchecked="ToolSelectionChanged" Margin="0,0,0,6" Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowTextBrushKey}}" />
-                                <CheckBox x:Name="TableSchemaToolCheckBox" Content="Table schema" IsChecked="True" Checked="ToolSelectionChanged" Unchecked="ToolSelectionChanged" Margin="0,0,0,6" Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowTextBrushKey}}" />
-                                <CheckBox x:Name="TableRelationsToolCheckBox" Content="Relations" IsChecked="True" Checked="ToolSelectionChanged" Unchecked="ToolSelectionChanged" Margin="0,0,0,6" Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowTextBrushKey}}" />
-                                <CheckBox x:Name="TableIndexesToolCheckBox" Content="Indexes" IsChecked="True" Checked="ToolSelectionChanged" Unchecked="ToolSelectionChanged" Margin="0,0,0,6" Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowTextBrushKey}}" />
-                                <CheckBox x:Name="SearchObjectsToolCheckBox" Content="Search objects" IsChecked="True" Checked="ToolSelectionChanged" Unchecked="ToolSelectionChanged" Margin="0,0,0,6" Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowTextBrushKey}}" />
-                                <CheckBox x:Name="FindColumnToolCheckBox" Content="Find column" IsChecked="True" Checked="ToolSelectionChanged" Unchecked="ToolSelectionChanged" Margin="0,0,0,6" Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowTextBrushKey}}" />
-                                <CheckBox x:Name="ListEndpointsToolCheckBox" Content="List endpoints" IsChecked="True" Checked="ToolSelectionChanged" Unchecked="ToolSelectionChanged" Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowTextBrushKey}}" />
-                            </StackPanel>
-                        </Border>
-                    </Popup>
 
-                    <Button x:Name="ClearChatButton"
-                            Content="Clear"
-                            Click="ClearChatButton_Click"
-                            Padding="8,3"
-                            ToolTip="Clear conversation history" />
-                </StackPanel>
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                        <Button x:Name="ToolMenuButton"
+                                Click="ToolMenuButton_Click"
+                                Margin="0,0,6,0"
+                                Style="{StaticResource FlatCommandButtonStyle}"
+                                ToolTip="Configure active chat tools">
+                            <TextBlock Text="Tools" FontSize="11" />
+                        </Button>
 
-                <!-- Left: Title & Status -->
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="🤖 SQL AI Agent"
-                               FontWeight="Bold"
-                               FontSize="13"
-                               Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowTextBrushKey}}" />
-                </StackPanel>
-            </DockPanel>
+                        <Button x:Name="ClearChatButton"
+                                Content="Clear"
+                                Click="ClearChatButton_Click"
+                                Style="{StaticResource FlatCommandButtonStyle}"
+                                ToolTip="Clear conversation history" />
+                    </StackPanel>
+                </DockPanel>
+
+                <Popup x:Name="ToolMenuPopup"
+                       PlacementTarget="{Binding ElementName=ToolMenuButton}"
+                       Placement="Bottom"
+                       StaysOpen="False"
+                       AllowsTransparency="True">
+                    <Border BorderBrush="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowBorderBrushKey}}"
+                            BorderThickness="1"
+                            CornerRadius="4"
+                            Padding="12,10"
+                            MinWidth="200"
+                            Background="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowBackgroundBrushKey}}">
+                        <StackPanel>
+                            <TextBlock Text="Allowed AI Tools"
+                                       FontWeight="Bold"
+                                       FontSize="12"
+                                       Margin="0,0,0,8"
+                                       Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowTextBrushKey}}" />
+                            <CheckBox x:Name="ListTablesToolCheckBox" Content="List tables" IsChecked="True" Checked="ToolSelectionChanged" Unchecked="ToolSelectionChanged" Margin="0,0,0,6" Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowTextBrushKey}}" />
+                            <CheckBox x:Name="TableSchemaToolCheckBox" Content="Table schema" IsChecked="True" Checked="ToolSelectionChanged" Unchecked="ToolSelectionChanged" Margin="0,0,0,6" Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowTextBrushKey}}" />
+                            <CheckBox x:Name="TableRelationsToolCheckBox" Content="Relations" IsChecked="True" Checked="ToolSelectionChanged" Unchecked="ToolSelectionChanged" Margin="0,0,0,6" Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowTextBrushKey}}" />
+                            <CheckBox x:Name="TableIndexesToolCheckBox" Content="Indexes" IsChecked="True" Checked="ToolSelectionChanged" Unchecked="ToolSelectionChanged" Margin="0,0,0,6" Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowTextBrushKey}}" />
+                            <CheckBox x:Name="SearchObjectsToolCheckBox" Content="Search objects" IsChecked="True" Checked="ToolSelectionChanged" Unchecked="ToolSelectionChanged" Margin="0,0,0,6" Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowTextBrushKey}}" />
+                            <CheckBox x:Name="FindColumnToolCheckBox" Content="Find column" IsChecked="True" Checked="ToolSelectionChanged" Unchecked="ToolSelectionChanged" Margin="0,0,0,6" Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowTextBrushKey}}" />
+                            <CheckBox x:Name="ListEndpointsToolCheckBox" Content="List endpoints" IsChecked="True" Checked="ToolSelectionChanged" Unchecked="ToolSelectionChanged" Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowTextBrushKey}}" />
+                        </StackPanel>
+                    </Border>
+                </Popup>
+            </Grid>
         </Border>
 
         <!-- Chat Messages Container -->
@@ -153,18 +176,17 @@
                       VerticalScrollBarVisibility="Auto"
                       HorizontalScrollBarVisibility="Disabled"
                       Background="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowBackgroundBrushKey}}"
-                      Padding="6,4">
+                      Padding="2,0,2,4">
             <StackPanel x:Name="ChatMessagesPanel" Orientation="Vertical" />
         </ScrollViewer>
 
-        <!-- Input Card -->
+        <!-- Input -->
         <Border Grid.Row="2"
                 BorderBrush="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowBorderBrushKey}}"
-                BorderThickness="1"
-                CornerRadius="5"
-                Padding="8"
+                BorderThickness="0,1,0,0"
+                Padding="0,8,0,0"
                 Margin="0,6,0,0"
-                Background="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowCodeBlockBackgroundBrushKey}}">
+                Background="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowBackgroundBrushKey}}">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="*" />
@@ -194,13 +216,12 @@
 
                     <Button x:Name="SendChatButton"
                             DockPanel.Dock="Right"
-                            Content="Send  ➔"
+                            Content="Send"
                             Click="SendChatButton_Click"
-                            Padding="14,4"
-                            MinHeight="26"
+                            Style="{StaticResource PrimaryCommandButtonStyle}"
+                            MinWidth="96"
                             FontWeight="SemiBold"
-                            Background="{DynamicResource {x:Static vsui:EnvironmentColors.SystemHighlightBrushKey}}"
-                            Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.SystemHighlightTextBrushKey}}" />
+                            IsDefault="True" />
                 </DockPanel>
             </Grid>
         </Border>

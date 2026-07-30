@@ -93,7 +93,7 @@ public static class FunctionCompletionHelper
                 $"{fn.Schema}.{fn.Name}",
                 insertText,
                 SqlCompletionKind.Function,
-                $"Function {fn.Schema}.{fn.Name} ({fn.ReturnType})",
+                SqlDefinitionFormatter.FormatFunctionDefinition(fn),
                 caretOffset,
                 selectionStart,
                 selectionEnd));

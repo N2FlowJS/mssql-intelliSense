@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel.Composition;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows.Media;
 using Microsoft.VisualStudio;
@@ -23,18 +24,19 @@ using MssqlIntelliSense.Core.Metadata;
 namespace MssqlIntelliSense.SsmsHost;
 
 [Export(typeof(ICompletionSourceProvider))]
-[ContentType("SQL")]
+[ContentType("text")]
 [Name("MSSQL IntelliSense Autocomplete Provider")]
 internal sealed class SqlCompletionSourceProvider : ICompletionSourceProvider
 {
     public ICompletionSource TryCreateCompletionSource(ITextBuffer textBuffer)
     {
+        MssqlIntelliSensePackage.Log($"[Autocomplete] Source created for content type: {textBuffer.ContentType.TypeName}");
         return new SqlCompletionSource(textBuffer);
     }
 }
 
 [Export(typeof(IVsTextViewCreationListener))]
-[ContentType("SQL")]
+[ContentType("text")]
 [TextViewRole(PredefinedTextViewRoles.Editable)]
 [Name("MSSQL IntelliSense Autocomplete Command Filter")]
 internal sealed class SqlCompletionCommandFilterProvider : IVsTextViewCreationListener
@@ -50,6 +52,7 @@ internal sealed class SqlCompletionCommandFilterProvider : IVsTextViewCreationLi
         var textView = AdapterService.GetWpfTextView(textViewAdapter);
         if (textView == null) return;
 
+        MssqlIntelliSensePackage.Log($"[Autocomplete] Text view created for content type: {textView.TextBuffer.ContentType.TypeName}");
         textView.Properties.GetOrCreateSingletonProperty(() => 
             new SqlCompletionCommandFilter(textViewAdapter, textView, CompletionBroker));
     }
@@ -91,6 +94,8 @@ internal sealed class SqlCompletionCommandFilter : IOleCommandTarget
     private readonly ICompletionBroker _completionBroker;
     private readonly IOleCommandTarget _nextCommandTarget;
     private ICompletionSession? _currentSession;
+    private string? _lastReviewedCompletionKey;
+    private DateTime _lastReviewedAtUtc;
 
     public SqlCompletionCommandFilter(IVsTextView textViewAdapter, IWpfTextView textView, ICompletionBroker completionBroker)
     {
@@ -100,6 +105,7 @@ internal sealed class SqlCompletionCommandFilter : IOleCommandTarget
 
         // Add filter to the command chain
         textViewAdapter.AddCommandFilter(this, out _nextCommandTarget);
+        MssqlIntelliSensePackage.Log($"[Autocomplete] Command filter attached for content type: {textView.TextBuffer.ContentType.TypeName}");
     }
 
     public int QueryStatus(ref Guid pguidCmdGroup, uint cCmds, OLECMD[] prgCmds, IntPtr pCmdText)
@@ -164,6 +170,7 @@ internal sealed class SqlCompletionCommandFilter : IOleCommandTarget
 
                                 // Find matching SqlCompletionItem to retrieve CaretOffset
                                 SqlCompletionItem? match = null;
+                                DatabaseMetadata? completionMetadata = null;
                                 if (_currentSession.Properties.TryGetProperty(
                                     SqlCompletionSource.CompletionItemsPropertyKey,
                                     out IReadOnlyList<SqlCompletionItem> items))
@@ -171,6 +178,9 @@ internal sealed class SqlCompletionCommandFilter : IOleCommandTarget
                                     match = items.FirstOrDefault(
                                         i => i.Label.Equals(selectedCompletion.DisplayText, StringComparison.Ordinal));
                                 }
+                                _currentSession.Properties.TryGetProperty(
+                                    SqlCompletionSource.CompletionMetadataPropertyKey,
+                                    out completionMetadata);
 
                                 RecordCompletionUsage(selectedCompletion);
 
@@ -196,6 +206,8 @@ internal sealed class SqlCompletionCommandFilter : IOleCommandTarget
                                     _textView.Caret.MoveTo(newPosition);
                                 }
 
+                                TryOpenObjectReview(match, completionMetadata);
+
                                 return VSConstants.S_OK;
                             }
                         }
@@ -204,12 +216,23 @@ internal sealed class SqlCompletionCommandFilter : IOleCommandTarget
 
                 case VSConstants.VSStd2KCmdID.TYPECHAR:
                     var typedValue = System.Runtime.InteropServices.Marshal.GetObjectForNativeVariant(pvaIn);
-                    if (typedValue is not ushort typedChar)
+                    var typedChar = typedValue switch
                     {
+                        ushort value => (char)value,
+                        short value => (char)value,
+                        int value => (char)value,
+                        char value => value,
+                        string { Length: > 0 } value => value[0],
+                        _ => (char?)null
+                    };
+
+                    if (typedChar == null)
+                    {
+                        MssqlIntelliSensePackage.Log($"[Autocomplete] Ignored TYPECHAR value type: {typedValue?.GetType().FullName ?? "<null>"}");
                         return _nextCommandTarget.Exec(ref pguidCmdGroup, cmdID, cmdexecopt, pvaIn, pvaOut);
                     }
 
-                    char ch = (char)typedChar;
+                    char ch = typedChar.Value;
                     
                     int result = _nextCommandTarget.Exec(ref pguidCmdGroup, cmdID, cmdexecopt, pvaIn, pvaOut);
 
@@ -271,25 +294,93 @@ internal sealed class SqlCompletionCommandFilter : IOleCommandTarget
         if (_completionBroker.IsCompletionActive(_textView))
         {
             _currentSession = _completionBroker.GetSessions(_textView).FirstOrDefault();
+            MssqlIntelliSensePackage.Log($"[Autocomplete] Reusing active completion session: {_currentSession != null}");
             return _currentSession != null;
         }
 
         _currentSession = _completionBroker.TriggerCompletion(_textView);
         if (_currentSession != null)
         {
+            _currentSession.Committed += OnSessionCommitted;
             _currentSession.Dismissed += OnSessionDismissed;
+            MssqlIntelliSensePackage.Log("[Autocomplete] Triggered completion session.");
             return true;
         }
+        MssqlIntelliSensePackage.Log("[Autocomplete] Completion broker returned null session.");
         return false;
+    }
+
+    private void OnSessionCommitted(object sender, EventArgs e)
+    {
+        ThreadHelper.ThrowIfNotOnUIThread();
+        if (sender is not ICompletionSession session ||
+            session.SelectedCompletionSet?.SelectionStatus.Completion is not { } selected)
+        {
+            return;
+        }
+
+        var match = GetCompletionItem(session, selected);
+        session.Properties.TryGetProperty(
+            SqlCompletionSource.CompletionMetadataPropertyKey,
+            out DatabaseMetadata? metadata);
+        TryOpenObjectReview(match, metadata);
     }
 
     private void OnSessionDismissed(object sender, EventArgs e)
     {
         if (_currentSession != null)
         {
+            _currentSession.Committed -= OnSessionCommitted;
             _currentSession.Dismissed -= OnSessionDismissed;
             _currentSession = null;
         }
+    }
+
+    private static SqlCompletionItem? GetCompletionItem(ICompletionSession session, Completion selected)
+    {
+        if (session.Properties.TryGetProperty(
+            SqlCompletionSource.CompletionItemsPropertyKey,
+            out IReadOnlyList<SqlCompletionItem> items))
+        {
+            return items.FirstOrDefault(
+                i => i.Label.Equals(selected.DisplayText, StringComparison.Ordinal));
+        }
+
+        return null;
+    }
+
+    private void TryOpenObjectReview(SqlCompletionItem? match, DatabaseMetadata? metadata)
+    {
+        if (match == null)
+        {
+            MssqlIntelliSensePackage.Log("[Autocomplete] Object review skipped: no matching completion item.");
+            return;
+        }
+
+        if (metadata == null || metadata == DatabaseMetadata.Empty)
+        {
+            MssqlIntelliSensePackage.Log($"[Autocomplete] Object review skipped for {match.Label}: no metadata.");
+            return;
+        }
+
+        if (!CanReviewCompletion(match.Kind))
+        {
+            MssqlIntelliSensePackage.Log($"[Autocomplete] Object review skipped for {match.Label}: kind {match.Kind} not reviewable.");
+            return;
+        }
+
+        var key = $"{match.Kind}:{match.Label}:{match.InsertText}";
+        var now = DateTime.UtcNow;
+        if (key.Equals(_lastReviewedCompletionKey, StringComparison.Ordinal) &&
+            now - _lastReviewedAtUtc < TimeSpan.FromSeconds(1))
+        {
+            return;
+        }
+
+        _lastReviewedCompletionKey = key;
+        _lastReviewedAtUtc = now;
+        MssqlIntelliSensePackage.Log($"[Autocomplete] Opening object review for {match.Kind}: {match.Label}");
+        ObjectReviewWindow.ShowForCompletion(match, metadata);
     }
 
     private void RecordCompletionUsage(Completion? selected)
@@ -309,6 +400,14 @@ internal sealed class SqlCompletionCommandFilter : IOleCommandTarget
             }
         }
     }
+
+    private static bool CanReviewCompletion(SqlCompletionKind kind) =>
+        kind is SqlCompletionKind.Table or
+            SqlCompletionKind.View or
+            SqlCompletionKind.Procedure or
+            SqlCompletionKind.Function or
+            SqlCompletionKind.UserType or
+            SqlCompletionKind.Synonym;
 
     private static bool ShouldTriggerAfterSpace(string lineText, int caretColumn)
     {
@@ -352,6 +451,7 @@ internal sealed class SqlCompletionSource : ICompletionSource
     private bool _isDisposed;
 
     internal const string CompletionItemsPropertyKey = "MssqlIntelliSenseCompletionItems";
+    internal const string CompletionMetadataPropertyKey = "MssqlIntelliSenseCompletionMetadata";
 
     internal static string? SnippetDirectory
     {
@@ -374,13 +474,22 @@ internal sealed class SqlCompletionSource : ICompletionSource
         _textBuffer = textBuffer;
     }
 
-    private static DatabaseMetadata? GetDatabaseMetadata()
+    private static DatabaseMetadata? GetDatabaseMetadata(string? sql = null, int caretPosition = -1)
     {
         ThreadHelper.ThrowIfNotOnUIThread();
 
         var connectionString = MssqlIntelliSensePackage.GetActiveConnectionString();
+        var useDatabaseOverride = TryGetUseDatabaseBeforeCaret(sql, caretPosition);
         if (string.IsNullOrWhiteSpace(connectionString))
-            return DatabaseMetadata.Empty;
+        {
+            var cachedConnection = MssqlIntelliSenseCacheReader.GetConnections()
+                .OrderByDescending(c => c.IsActive)
+                .ThenByDescending(c => c.SchemaUpdatedAt ?? c.LastSeenAt ?? DateTimeOffset.MinValue)
+                .FirstOrDefault();
+            connectionString = cachedConnection?.ConnectionString;
+            if (string.IsNullOrWhiteSpace(connectionString))
+                return DatabaseMetadata.Empty;
+        }
 
         // Parse active database from the connection string (InitialCatalog).
         // We cache full metadata per server/auth (cacheKey strips InitialCatalog)
@@ -394,6 +503,10 @@ internal sealed class SqlCompletionSource : ICompletionSource
             if (string.IsNullOrWhiteSpace(activeDatabase) || activeDatabase.Equals("master", StringComparison.OrdinalIgnoreCase))
             {
                 activeDatabase = MssqlIntelliSensePackage.GetActiveDatabaseName() ?? activeDatabase;
+            }
+            if (!string.IsNullOrWhiteSpace(useDatabaseOverride))
+            {
+                activeDatabase = useDatabaseOverride!;
             }
             // Normalize cache key: server + auth only (no InitialCatalog)
             builder.Remove("Initial Catalog");
@@ -429,6 +542,174 @@ internal sealed class SqlCompletionSource : ICompletionSource
         string.IsNullOrWhiteSpace(activeDatabase)
             ? metadata
             : MssqlIntelliSenseCacheReader.FilterByDatabase(metadata, activeDatabase);
+
+    private static string? TryGetUseDatabaseBeforeCaret(string? sql, int caretPosition)
+    {
+        if (string.IsNullOrWhiteSpace(sql) || caretPosition <= 0)
+        {
+            return null;
+        }
+
+        var length = Math.Min(caretPosition, sql!.Length);
+        var beforeCaret = sql.Substring(0, length);
+        var matches = Regex.Matches(
+            beforeCaret,
+            @"(?im)^\s*USE\s+(?:\[([^\]]+)\]|""([^""]+)""|([A-Za-z0-9_.-]+))\s*;?");
+
+        if (matches.Count == 0)
+        {
+            return null;
+        }
+
+        var match = matches[matches.Count - 1];
+        return match.Groups[1].Success ? match.Groups[1].Value.Replace("]]", "]")
+            : match.Groups[2].Success ? match.Groups[2].Value.Replace("\"\"", "\"")
+            : match.Groups[3].Success ? match.Groups[3].Value
+            : null;
+    }
+
+    internal static bool TryOpenObjectReviewFromSql(string sql, int caretPosition)
+    {
+        ThreadHelper.ThrowIfNotOnUIThread();
+
+        var token = ExtractObjectTokenAtCaret(sql, caretPosition);
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            MssqlIntelliSensePackage.Log("[Autocomplete] Review-at-caret skipped: no token at caret.");
+            return false;
+        }
+
+        var metadata = GetDatabaseMetadata(sql, caretPosition);
+        if (metadata == null || metadata == DatabaseMetadata.Empty)
+        {
+            MssqlIntelliSensePackage.Log($"[Autocomplete] Review-at-caret skipped for '{token}': no metadata.");
+            return false;
+        }
+
+        if (!TryCreateReviewItem(token!, metadata, out var item))
+        {
+            MssqlIntelliSensePackage.Log($"[Autocomplete] Review-at-caret skipped: no reviewable object matched '{token}'.");
+            return false;
+        }
+
+        MssqlIntelliSensePackage.Log($"[Autocomplete] Review-at-caret opening object review for {item.Kind}: {item.Label}");
+        ObjectReviewWindow.ShowForCompletion(item, metadata);
+        return true;
+    }
+
+    private static bool TryCreateReviewItem(string token, DatabaseMetadata metadata, out SqlCompletionItem item)
+    {
+        var parts = token.Split(new[] { '.' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(UnquoteIdentifier)
+            .Where(p => !string.IsNullOrWhiteSpace(p))
+            .ToArray();
+
+        var objectName = parts.Length == 0 ? token : parts[parts.Length - 1];
+        var schemaName = parts.Length >= 2 ? parts[parts.Length - 2] : null;
+
+        bool SchemaMatches(string schema) =>
+            string.IsNullOrWhiteSpace(schemaName) ||
+            schema.Equals(schemaName, StringComparison.OrdinalIgnoreCase);
+
+        static bool NameMatches(string candidate, string typed) =>
+            candidate.Equals(typed, StringComparison.OrdinalIgnoreCase) ||
+            candidate.StartsWith(typed, StringComparison.OrdinalIgnoreCase);
+
+        var view = metadata.Views
+            .Where(v => SchemaMatches(v.Schema))
+            .OrderByDescending(v => v.Name.Equals(objectName, StringComparison.OrdinalIgnoreCase))
+            .FirstOrDefault(v => NameMatches(v.Name, objectName));
+        if (view != null)
+        {
+            item = BuildReviewItem(SqlCompletionKind.View, view.Schema, view.Name, SqlDefinitionFormatter.FormatViewDefinition(view));
+            return true;
+        }
+
+        var table = metadata.Tables
+            .Where(t => SchemaMatches(t.Schema))
+            .OrderByDescending(t => t.Name.Equals(objectName, StringComparison.OrdinalIgnoreCase))
+            .FirstOrDefault(t => NameMatches(t.Name, objectName));
+        if (table != null)
+        {
+            item = BuildReviewItem(SqlCompletionKind.Table, table.Schema, table.Name, SqlDefinitionFormatter.FormatTableDefinition(table));
+            return true;
+        }
+
+        var proc = metadata.Procedures
+            .Where(p => SchemaMatches(p.Schema))
+            .OrderByDescending(p => p.Name.Equals(objectName, StringComparison.OrdinalIgnoreCase))
+            .FirstOrDefault(p => NameMatches(p.Name, objectName));
+        if (proc != null)
+        {
+            item = BuildReviewItem(SqlCompletionKind.Procedure, proc.Schema, proc.Name, SqlDefinitionFormatter.FormatProcedureDefinition(proc));
+            return true;
+        }
+
+        var function = metadata.Functions
+            .Where(f => SchemaMatches(f.Schema))
+            .OrderByDescending(f => f.Name.Equals(objectName, StringComparison.OrdinalIgnoreCase))
+            .FirstOrDefault(f => NameMatches(f.Name, objectName));
+        if (function != null)
+        {
+            item = BuildReviewItem(SqlCompletionKind.Function, function.Schema, function.Name, SqlDefinitionFormatter.FormatFunctionDefinition(function));
+            return true;
+        }
+
+        var userType = metadata.UserTypes
+            .Where(t => SchemaMatches(t.Schema))
+            .OrderByDescending(t => t.Name.Equals(objectName, StringComparison.OrdinalIgnoreCase))
+            .FirstOrDefault(t => NameMatches(t.Name, objectName));
+        if (userType != null)
+        {
+            item = BuildReviewItem(SqlCompletionKind.UserType, userType.Schema, userType.Name, SqlDefinitionFormatter.FormatUserTypeDefinition(userType));
+            return true;
+        }
+
+        var synonym = metadata.Synonyms
+            .Where(s => SchemaMatches(s.Schema))
+            .OrderByDescending(s => s.Name.Equals(objectName, StringComparison.OrdinalIgnoreCase))
+            .FirstOrDefault(s => NameMatches(s.Name, objectName));
+        if (synonym != null)
+        {
+            item = BuildReviewItem(SqlCompletionKind.Synonym, synonym.Schema, synonym.Name, SqlDefinitionFormatter.FormatSynonymDefinition(synonym));
+            return true;
+        }
+
+        item = null!;
+        return false;
+
+        static SqlCompletionItem BuildReviewItem(SqlCompletionKind kind, string schema, string name, string description) =>
+            new($"{schema}.{name}", $"[{schema}].[{name}]", kind, description);
+    }
+
+    private static string? ExtractObjectTokenAtCaret(string sql, int caretPosition)
+    {
+        if (string.IsNullOrWhiteSpace(sql))
+        {
+            return null;
+        }
+
+        var position = Math.Max(0, Math.Min(caretPosition, sql.Length));
+        var start = position;
+        while (start > 0 && IsObjectTokenChar(sql[start - 1]))
+        {
+            start--;
+        }
+
+        var end = position;
+        while (end < sql.Length && IsObjectTokenChar(sql[end]))
+        {
+            end++;
+        }
+
+        return end <= start ? null : sql.Substring(start, end - start).Trim();
+    }
+
+    private static bool IsObjectTokenChar(char ch) =>
+        char.IsLetterOrDigit(ch) || ch is '_' or '.' or '[' or ']' or '#' or '@' or '$';
+
+    private static string UnquoteIdentifier(string value) =>
+        value.Trim().Trim('[', ']').Replace("]]", "]");
 
     private static void QueueMetadataRefresh(string cacheKey, string connectionString)
     {
@@ -515,17 +796,23 @@ internal sealed class SqlCompletionSource : ICompletionSource
         int caretPosition = triggerSnapshotPoint.Position;
 
         DatabaseMetadata metadata = DatabaseMetadata.Empty;
-        var cached = GetDatabaseMetadata();
+        var cached = GetDatabaseMetadata(sql, caretPosition);
         if (cached != null)
         {
             metadata = cached;
         }
 
         var completionItems = SharedProvider.GetCompletions(sql, caretPosition, metadata);
+        MssqlIntelliSensePackage.Log(
+            $"[Autocomplete] Augment caret={caretPosition}, contentType={_textBuffer.ContentType.TypeName}, " +
+            $"metadata tables={metadata.Tables.Count}, views={metadata.Views.Count}, procs={metadata.Procedures.Count}, funcs={metadata.Functions.Count}, " +
+            $"items={completionItems?.Count ?? 0}");
+
         if (completionItems == null || completionItems.Count == 0) return;
 
-        // Store items in session for RecordUsage on commit
+        // Store items in session for RecordUsage and object review on commit.
         session.Properties[CompletionItemsPropertyKey] = completionItems;
+        session.Properties[CompletionMetadataPropertyKey] = metadata;
 
         // Find the start of the current word being typed (including quoted identifiers starting with [
         var start = triggerSnapshotPoint.Position;

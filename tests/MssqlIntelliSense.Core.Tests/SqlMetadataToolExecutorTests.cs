@@ -1,5 +1,7 @@
 using System;
+using System.IO;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using FluentAssertions;
 using MssqlIntelliSense.Core.Ai;
@@ -51,6 +53,43 @@ public sealed class SqlMetadataToolExecutorTests
 
         json1.Should().Contain("Users");
         json2.Should().Be(json1);
+    }
+
+    [Fact]
+    public async Task ExecuteToolAsync_SearchObjects_UsesCustomAgentDescription()
+    {
+        var previous = Environment.GetEnvironmentVariable("MSSQL_INTELLISENSE_APPDATA");
+        var tempFolder = Path.Combine(Path.GetTempPath(), "mssql-intellisense-tests-" + Guid.NewGuid().ToString("N"));
+        Environment.SetEnvironmentVariable("MSSQL_INTELLISENSE_APPDATA", tempFolder);
+        try
+        {
+            var metadata = TestMetadata.Create();
+            ObjectDescriptionStore.SaveDescription("table", "TestDb", "dbo", "Users", "customer login identity profile");
+            using var args = JsonDocument.Parse("{\"query\":\"identity profile\"}");
+
+            var json = await SqlMetadataToolExecutor.ExecuteToolAsync(SqlMetadataToolExecutor.SearchObjectsToolName, args.RootElement, metadata);
+
+            json.Should().Contain("Users");
+            json.Should().Contain("customer login identity profile");
+            json.Should().Contain("\"score\"");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("MSSQL_INTELLISENSE_APPDATA", previous);
+            DeleteDirectoryWithRetry(tempFolder);
+        }
+    }
+
+    [Fact]
+    public async Task ExecuteToolAsync_SearchObjects_UsesSqlDefinitionText()
+    {
+        var metadata = TestMetadata.Create();
+        using var args = JsonDocument.Parse("{\"query\":\"IsActive\"}");
+
+        var json = await SqlMetadataToolExecutor.ExecuteToolAsync(SqlMetadataToolExecutor.SearchObjectsToolName, args.RootElement, metadata);
+
+        json.Should().Contain("ActiveUsers");
+        json.Should().Contain("WHERE IsActive = 1");
     }
 
     [Fact]
@@ -199,5 +238,30 @@ public sealed class SqlMetadataToolExecutorTests
         var count = 0;
         foreach (var _ in preview!) count++;
         count.Should().Be(500);
+    }
+
+    private static void DeleteDirectoryWithRetry(string path)
+    {
+        if (!Directory.Exists(path))
+        {
+            return;
+        }
+
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                Directory.Delete(path, recursive: true);
+                return;
+            }
+            catch (IOException) when (attempt < 8)
+            {
+                Thread.Sleep(attempt * 75);
+            }
+            catch (UnauthorizedAccessException) when (attempt < 8)
+            {
+                Thread.Sleep(attempt * 75);
+            }
+        }
     }
 }

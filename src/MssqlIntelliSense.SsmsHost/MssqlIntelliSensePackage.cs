@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using Microsoft.VisualStudio;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Shell.Interop;
+using Microsoft.VisualStudio.TextManager.Interop;
 using Task = System.Threading.Tasks.Task;
 using EnvDTE;
 using Microsoft.VisualStudio.CommandBars;
@@ -55,9 +56,24 @@ public sealed class MssqlIntelliSensePackage : AsyncPackage
         }
     }
 
+    public static async Task SwitchToMainThreadAsync(CancellationToken cancellationToken)
+    {
+        if (Instance != null)
+        {
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
+        }
+        else if (System.Windows.Application.Current != null && !System.Windows.Application.Current.Dispatcher.CheckAccess())
+        {
+            await System.Windows.Application.Current.Dispatcher.InvokeAsync(
+                () => { },
+                System.Windows.Threading.DispatcherPriority.Normal,
+                cancellationToken);
+        }
+    }
+
     public const string PackageGuidString = "16f11772-cdb0-42ca-a596-d755543518ac";
     private static readonly Guid CommandSet = new("63a8fcd9-601f-427d-a253-d4942b4ff2aa");
-    public static readonly Version CurrentVersion = new("0.2.85");
+    public static readonly Version CurrentVersion = new("0.2.101");
     public static string VersionString => CurrentVersion.ToString();
 
     private readonly List<CommandBarEvents> _commandBarEvents = new();
@@ -65,6 +81,7 @@ public sealed class MssqlIntelliSensePackage : AsyncPackage
     private static readonly (int Id, string Name)[] RegisteredCommands =
     [
         (0x010B, "mssql-intellisense-window"),
+        (0x010E, "review-object-at-caret"),
         (0x010C, "chat-agent-window"),
         (0x010D, "tool-lab-window"),
     ];
@@ -414,6 +431,7 @@ public sealed class MssqlIntelliSensePackage : AsyncPackage
             {
                 (0x010B, "MSSQL IntelliSense"),
                 (0x010A, "Refresh Schema"),
+                (0x010E, "Review Object At Caret"),
                 (0x010C, "Chat Agent"),
                 (0x010D, "Tool Lab"),
             };
@@ -487,6 +505,59 @@ public sealed class MssqlIntelliSensePackage : AsyncPackage
         {
             await OpenToolLabWindowAsync(cancellationToken);
             return;
+        }
+        else if (command == "review-object-at-caret")
+        {
+            await OpenObjectReviewAtCaretAsync(cancellationToken);
+            return;
+        }
+    }
+
+    private async Task OpenObjectReviewAtCaretAsync(CancellationToken cancellationToken)
+    {
+        await JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
+
+        try
+        {
+            var textManager = await GetServiceAsync(typeof(SVsTextManager)) as IVsTextManager;
+            if (textManager == null)
+            {
+                await ShowMessageAsync("MSSQL IntelliSense", "Cannot access the active SQL editor.", OLEMSGICON.OLEMSGICON_WARNING);
+                return;
+            }
+
+            ErrorHandler.ThrowOnFailure(textManager.GetActiveView(1, null, out var view));
+            if (view == null)
+            {
+                await ShowMessageAsync("MSSQL IntelliSense", "No active SQL editor found.", OLEMSGICON.OLEMSGICON_WARNING);
+                return;
+            }
+
+            ErrorHandler.ThrowOnFailure(view.GetBuffer(out var buffer));
+            if (buffer is not IVsTextLines lines)
+            {
+                await ShowMessageAsync("MSSQL IntelliSense", "Cannot read SQL text from the active editor.", OLEMSGICON.OLEMSGICON_WARNING);
+                return;
+            }
+
+            ErrorHandler.ThrowOnFailure(view.GetCaretPos(out var caretLine, out var caretColumn));
+            ErrorHandler.ThrowOnFailure(lines.GetLastLineIndex(out var lastLine, out var lastColumn));
+            ErrorHandler.ThrowOnFailure(lines.GetLineText(0, 0, lastLine, lastColumn, out var sql));
+            ErrorHandler.ThrowOnFailure(lines.GetLineText(0, 0, caretLine, caretColumn, out var beforeCaret));
+
+            var opened = SqlCompletionSource.TryOpenObjectReviewFromSql(sql, beforeCaret.Length);
+            if (!opened)
+            {
+                await ShowMessageAsync(
+                    "MSSQL IntelliSense",
+                    "No reviewable table, view, procedure, function, type, or synonym was found at the caret.",
+                    OLEMSGICON.OLEMSGICON_INFO);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log($"Open object review at caret failed: {ex}");
+            await ShowMessageAsync("MSSQL IntelliSense", $"Open object review failed: {GetDeepestExceptionMessage(ex)}", OLEMSGICON.OLEMSGICON_CRITICAL);
         }
     }
 
@@ -1152,6 +1223,21 @@ public sealed class MssqlIntelliSensePackage : AsyncPackage
         }
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

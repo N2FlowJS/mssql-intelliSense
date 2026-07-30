@@ -148,7 +148,7 @@ public partial class ChatAgentControl : UserControl
 
     private async Task SendChatAsync(string message, CancellationToken cancellationToken)
     {
-        await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
+        await MssqlIntelliSensePackage.SwitchToMainThreadAsync(cancellationToken);
         AddChatMessage("You", message, isUser: true);
         ChatInputTextBox.Text = string.Empty;
         var allowedToolNames = GetAllowedToolNamesFromUi();
@@ -218,7 +218,7 @@ public partial class ChatAgentControl : UserControl
         }
 
         Border? assistantMessageBorder = null;
-        await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
+        await MssqlIntelliSensePackage.SwitchToMainThreadAsync(cancellationToken);
         assistantMessageBorder = AddChatMessage("Assistant", string.Empty, isUser: false, isStreaming: true);
 
         var reply = await CompleteChatStreamingTextAsync(
@@ -237,7 +237,10 @@ public partial class ChatAgentControl : UserControl
 
     private ChatConnectionContext ResolveChatConnectionContext()
     {
-        Microsoft.VisualStudio.Shell.ThreadHelper.ThrowIfNotOnUIThread();
+        if (MssqlIntelliSensePackage.Instance != null)
+        {
+            Microsoft.VisualStudio.Shell.ThreadHelper.ThrowIfNotOnUIThread();
+        }
 
         var activeConnectionString = MssqlIntelliSensePackage.GetActiveConnectionString();
         var activeDatabase = MssqlIntelliSensePackage.GetActiveDatabaseName();
@@ -601,7 +604,7 @@ public partial class ChatAgentControl : UserControl
         var tcs = new TaskCompletionSource<bool>();
         using var registration = cancellationToken.Register(() => tcs.TrySetCanceled());
 
-        await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
+        await MssqlIntelliSensePackage.SwitchToMainThreadAsync(cancellationToken);
         AddToolApprovalCard(toolCall, tcs);
         return await tcs.Task;
     }
@@ -959,10 +962,10 @@ public partial class ChatAgentControl : UserControl
             var chatClient = client.GetChatClient(model);
             var messages = BuildChatMessages(systemPrompt, message);
 
-            await Task.Run(async () =>
+            await Task.Run(() =>
             {
                 var completionOptions = new ChatCompletionOptions();
-                await foreach (var chatUpdate in chatClient.CompleteChatStreamingAsync(messages, completionOptions, cancellationToken))
+                foreach (var chatUpdate in chatClient.CompleteChatStreaming(messages, completionOptions, cancellationToken))
                 {
                     cancellationToken.ThrowIfCancellationRequested();
 
@@ -976,7 +979,7 @@ public partial class ChatAgentControl : UserControl
                         assistantMessageContent.Append(part.Text);
                         if (lastUiUpdate.ElapsedMilliseconds >= 50)
                         {
-                            await SafeUpdateChatMessageAsync(assistantMessageBorder, assistantMessageContent.ToString());
+                            SafeUpdateChatMessageAsync(assistantMessageBorder, assistantMessageContent.ToString()).GetAwaiter().GetResult();
                             lastUiUpdate.Restart();
                         }
                     }
@@ -1075,11 +1078,7 @@ public partial class ChatAgentControl : UserControl
             }
             else
             {
-                ThreadHelper.JoinableTaskFactory.Run(async () =>
-                {
-                    await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-                    AddChatMessage("Error", message, isUser: false);
-                });
+                Dispatcher.Invoke(() => AddChatMessage("Error", message, isUser: false));
             }
         }
         catch
@@ -1092,9 +1091,15 @@ public partial class ChatAgentControl : UserControl
     {
         try
         {
-            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-            if (messageBorder == null || Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished) return;
-            UpdateChatMessage(messageBorder, newContent);
+            if (messageBorder == null || messageBorder.Dispatcher.HasShutdownStarted || messageBorder.Dispatcher.HasShutdownFinished) return;
+            if (messageBorder.Dispatcher.CheckAccess())
+            {
+                UpdateChatMessage(messageBorder, newContent);
+            }
+            else
+            {
+                await messageBorder.Dispatcher.InvokeAsync(() => UpdateChatMessage(messageBorder, newContent));
+            }
         }
         catch (Exception ex)
         {
@@ -1106,10 +1111,20 @@ public partial class ChatAgentControl : UserControl
     {
         try
         {
-            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
             if (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished) return;
-            SendChatButton.Content = text;
-            SendChatButton.IsEnabled = isEnabled;
+            if (Dispatcher.CheckAccess())
+            {
+                SendChatButton.Content = text;
+                SendChatButton.IsEnabled = isEnabled;
+            }
+            else
+            {
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    SendChatButton.Content = text;
+                    SendChatButton.IsEnabled = isEnabled;
+                });
+            }
         }
         catch (Exception ex)
         {
@@ -1123,7 +1138,7 @@ public partial class ChatAgentControl : UserControl
         bool isUser,
         CancellationToken cancellationToken)
     {
-        await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
+        await MssqlIntelliSensePackage.SwitchToMainThreadAsync(cancellationToken);
         AddChatMessage(sender, message, isUser);
     }
 

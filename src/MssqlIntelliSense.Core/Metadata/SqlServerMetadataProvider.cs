@@ -184,7 +184,7 @@ public sealed class SqlServerMetadataProvider : IMetadataProvider
                 if (scope.HasFlag(MetadataScanScope.Programmability))
                 {
                 progress?.Report($"[CSDL: {dbName}] Đang quét Thủ tục lưu trữ (Procedures)...");
-                var procRows = new List<(string Schema, string Name, string Type, string? ParamName, string? ParamType, bool IsOutput, int ParamOrdinal)>();
+                var procRows = new List<(string Schema, string Name, string Type, string Definition, string? ParamName, string? ParamType, bool IsOutput, int ParamOrdinal)>();
                 try
                 {
                     using (var command = CreateCommand(connection, ProceduresSql))
@@ -195,15 +195,16 @@ public sealed class SqlServerMetadataProvider : IMetadataProvider
                                     reader.GetString(0),
                                     reader.GetString(1),
                                     reader.GetString(2),
-                                    reader.IsDBNull(3) ? null : reader.GetString(3),
+                                    reader.IsDBNull(3) ? "" : reader.GetString(3),
                                     reader.IsDBNull(4) ? null : reader.GetString(4),
-                                    !reader.IsDBNull(5) && reader.GetBoolean(5),
-                                    reader.IsDBNull(6) ? 0 : reader.GetInt32(6)
+                                    reader.IsDBNull(5) ? null : reader.GetString(5),
+                                    !reader.IsDBNull(6) && reader.GetBoolean(6),
+                                    reader.IsDBNull(7) ? 0 : reader.GetInt32(7)
                                 ));
                     }
 
                     procedures.AddRange(procRows
-                        .GroupBy(row => (row.Schema, row.Name, row.Type))
+                        .GroupBy(row => (row.Schema, row.Name, row.Type, row.Definition))
                         .Select(group =>
                         {
                             var parameters = group
@@ -214,6 +215,7 @@ public sealed class SqlServerMetadataProvider : IMetadataProvider
                             {
                                 Database = dbName,
                                 ObjectType = group.Key.Type,
+                                Definition = group.Key.Definition,
                                 Parameters = parameters
                             };
                         }));
@@ -225,16 +227,17 @@ public sealed class SqlServerMetadataProvider : IMetadataProvider
 
                 // ── Views ─────────────────────────────────────────────────
                 progress?.Report($"[CSDL: {dbName}] Đang quét Khung nhìn (Views)...");
-                var viewRows = new List<(string Schema, string View, string Column, string Type, bool Nullable, int Ordinal, bool IsIndexed)>();
+                var viewRows = new List<(string Schema, string View, string Definition, string Column, string Type, bool Nullable, int Ordinal, bool IsIndexed)>();
                 try
                 {
                     using (var command = CreateCommand(connection, ViewsSql))
                     {
                         using (var reader = await command.ExecuteReaderAsync(cancellationToken))
                             while (await reader.ReadAsync(cancellationToken))
-                                viewRows.Add((reader.GetString(0), reader.GetString(1), reader.GetString(2),
-                                    reader.GetString(3), reader.GetBoolean(4),
-                                    System.Convert.ToInt32(reader.GetValue(5)), reader.GetBoolean(6)));
+                                viewRows.Add((reader.GetString(0), reader.GetString(1),
+                                    reader.IsDBNull(2) ? "" : reader.GetString(2),
+                                    reader.GetString(3), reader.GetString(4), reader.GetBoolean(5),
+                                    System.Convert.ToInt32(reader.GetValue(6)), reader.GetBoolean(7)));
                     }
                 }
                 catch (Exception ex)
@@ -243,15 +246,15 @@ public sealed class SqlServerMetadataProvider : IMetadataProvider
                 }
 
                 views.AddRange(viewRows
-                    .GroupBy(row => (row.Schema, row.View, row.IsIndexed))
+                    .GroupBy(row => (row.Schema, row.View, row.Definition, row.IsIndexed))
                     .Select(group => new ViewMetadata(
                         group.Key.Schema, group.Key.View,
                         group.OrderBy(r => r.Ordinal).Select(r => new ColumnMetadata(r.Column, r.Type, r.Nullable, r.Ordinal)).ToArray())
-                    { Database = dbName, IsIndexed = group.Key.IsIndexed }));
+                    { Database = dbName, IsIndexed = group.Key.IsIndexed, Definition = group.Key.Definition }));
 
                 // ── Functions (Scalar / TVF / CLR) ────────────────────────
                 progress?.Report($"[CSDL: {dbName}] Đang quét các Hàm (Functions)...");
-                var fnRows = new List<(string Schema, string Name, string FnType, string ReturnType, string ParamName, string ParamType, bool IsOutput, int ParamOrdinal)>();
+                var fnRows = new List<(string Schema, string Name, string FnType, string Definition, string ReturnType, string ParamName, string ParamType, bool IsOutput, int ParamOrdinal)>();
                 try
                 {
                     using (var command = CreateCommand(connection, FunctionsSql))
@@ -262,8 +265,9 @@ public sealed class SqlServerMetadataProvider : IMetadataProvider
                                     reader.IsDBNull(3) ? "" : reader.GetString(3),
                                     reader.IsDBNull(4) ? "" : reader.GetString(4),
                                     reader.IsDBNull(5) ? "" : reader.GetString(5),
-                                    !reader.IsDBNull(6) && reader.GetBoolean(6),
-                                    reader.IsDBNull(7) ? 0 : System.Convert.ToInt32(reader.GetValue(7))));
+                                    reader.IsDBNull(6) ? "" : reader.GetString(6),
+                                    !reader.IsDBNull(7) && reader.GetBoolean(7),
+                                    reader.IsDBNull(8) ? 0 : System.Convert.ToInt32(reader.GetValue(8))));
                     }
                 }
                 catch (Exception ex)
@@ -272,7 +276,7 @@ public sealed class SqlServerMetadataProvider : IMetadataProvider
                 }
 
                 functions.AddRange(fnRows
-                    .GroupBy(row => (row.Schema, row.Name, row.FnType, row.ReturnType))
+                    .GroupBy(row => (row.Schema, row.Name, row.FnType, row.Definition, row.ReturnType))
                     .Select(group =>
                     {
                         var parameters = group
@@ -283,6 +287,7 @@ public sealed class SqlServerMetadataProvider : IMetadataProvider
                         {
                             Database     = dbName,
                             FunctionType = group.Key.FnType,
+                            Definition   = group.Key.Definition,
                             ReturnType   = group.Key.ReturnType,
                             Parameters   = parameters
                         };
@@ -541,7 +546,7 @@ public sealed class SqlServerMetadataProvider : IMetadataProvider
         """;
 
     private const string ViewsSql = """
-        SELECT s.name, v.name, c.name, ty.name, c.is_nullable, c.column_id,
+        SELECT s.name, v.name, OBJECT_DEFINITION(v.object_id) AS [definition], c.name, ty.name, c.is_nullable, c.column_id,
                CONVERT(bit, CASE WHEN idx.object_id IS NOT NULL THEN 1 ELSE 0 END) AS is_indexed
         FROM sys.views v
         JOIN sys.schemas s ON s.schema_id = v.schema_id
@@ -582,6 +587,7 @@ public sealed class SqlServerMetadataProvider : IMetadataProvider
             s.name                      AS [schema],
             o.name                      AS [name],
             o.type                      AS [type],
+            OBJECT_DEFINITION(o.object_id) AS [definition],
             p.name                      AS [param_name],
             pty.name                    AS [param_type],
             p.is_output                 AS [is_output],
@@ -599,6 +605,7 @@ public sealed class SqlServerMetadataProvider : IMetadataProvider
             s.name                      AS [schema],
             o.name                      AS [name],
             o.type                      AS [fn_type],
+            OBJECT_DEFINITION(o.object_id) AS [definition],
             tp.name                     AS [return_type],
             p.name                      AS [param_name],
             pty.name                    AS [param_type],

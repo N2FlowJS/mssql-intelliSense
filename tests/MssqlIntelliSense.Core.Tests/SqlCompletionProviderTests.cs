@@ -1871,6 +1871,45 @@ public sealed class SqlCompletionProviderTests
     }
 
     [Fact]
+    public void GetCompletions_FunctionDescriptionUsesSavedDefinition()
+    {
+        var metadata = TestMetadata.Create();
+
+        var sql = "SELECT Norm";
+        var items = _provider.GetCompletions(sql, sql.Length, metadata);
+
+        var fnItem = items.First(item => item.Label.Contains("NormalizeEmail"));
+        fnItem.Description.Should().Contain("CREATE FUNCTION [dbo].[NormalizeEmail]");
+        fnItem.Description.Should().Contain("RETURN LOWER(@value);");
+    }
+
+    [Fact]
+    public void GetCompletions_ViewDescriptionUsesSavedDefinition()
+    {
+        var metadata = TestMetadata.Create();
+
+        var sql = "SELECT * FROM Active";
+        var items = _provider.GetCompletions(sql, sql.Length, metadata);
+
+        var viewItem = items.First(item => item.Kind == SqlCompletionKind.View && item.Label.Contains("ActiveUsers"));
+        viewItem.Description.Should().Contain("CREATE VIEW [dbo].[ActiveUsers]");
+        viewItem.Description.Should().Contain("WHERE IsActive = 1");
+    }
+
+    [Fact]
+    public void GetCompletions_ProcedureDescriptionUsesSavedDefinition()
+    {
+        var metadata = TestMetadata.Create();
+
+        var sql = "EXEC Get";
+        var items = _provider.GetCompletions(sql, sql.Length, metadata);
+
+        var procItem = items.First(item => item.Kind == SqlCompletionKind.Procedure && item.Label.Contains("GetUser"));
+        procItem.Description.Should().Contain("CREATE PROCEDURE [dbo].[GetUser]");
+        procItem.Description.Should().Contain("SELECT * FROM dbo.Users");
+    }
+
+    [Fact]
     public void GetCompletions_JoinOnSuggestsImplicitColumnMatchWhenNoFk()
     {
         var tables = new[]

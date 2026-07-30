@@ -88,6 +88,31 @@ public class JsonCacheTests : IDisposable
         }
     }
 
+    [Fact]
+    public void JsonCache_RoundTrips_ViewProcedureAndFunctionDefinitions()
+    {
+        MssqlIntelliSenseCacheWriter.InitializeDatabase();
+        var connectionId = MssqlIntelliSenseCacheWriter.RegisterConnection(
+            "Server=.;Database=TestDb;Integrated Security=True;TrustServerCertificate=True",
+            "local");
+
+        MssqlIntelliSenseCacheWriter.SaveSchemaCache(connectionId, TestMetadata.Create());
+
+        var metadata = MssqlIntelliSenseCacheReader.GetSchemaDetails(connectionId).Metadata;
+        metadata.Views.Should().ContainSingle(v =>
+            v.Name == "ActiveUsers" &&
+            v.Definition.Contains("CREATE VIEW [dbo].[ActiveUsers]") &&
+            v.Definition.Contains("WHERE IsActive = 1"));
+        metadata.Procedures.Should().ContainSingle(p =>
+            p.Name == "GetUser" &&
+            p.Definition.Contains("CREATE PROCEDURE [dbo].[GetUser]") &&
+            p.Definition.Contains("@IncludeInactive bit"));
+        metadata.Functions.Should().ContainSingle(f =>
+            f.Name == "NormalizeEmail" &&
+            f.Definition.Contains("CREATE FUNCTION [dbo].[NormalizeEmail]") &&
+            f.Definition.Contains("RETURN LOWER(@value);"));
+    }
+
     public void Dispose()
     {
         Environment.SetEnvironmentVariable("MSSQL_INTELLISENSE_APPDATA", _oldCacheRoot);

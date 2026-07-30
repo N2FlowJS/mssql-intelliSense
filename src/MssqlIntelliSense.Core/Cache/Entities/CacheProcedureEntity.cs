@@ -10,6 +10,7 @@ public class CacheProcedureEntity
     public string Name { get; set; } = string.Empty;
     /// <summary>P = Stored Procedure.</summary>
     public string ObjectType { get; set; } = "P";
+    public string Definition { get; set; } = string.Empty;
 
     public CacheDatabaseEntity Database { get; set; } = null!;
     public List<CacheProcedureParamEntity> Parameters { get; set; } = new();

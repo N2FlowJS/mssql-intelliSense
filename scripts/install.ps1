@@ -201,7 +201,8 @@ if ($skipInstall) {
     $installedPath = $alreadyInstalledPath
     Write-Host "      Already installed at: $installedPath" -ForegroundColor Green
 } else {
-    $installProcess = Start-Process -FilePath $vsixInstaller -ArgumentList @("/a", "/s", $VsixPath) -PassThru -NoNewWindow
+    $installLog = Join-Path $env:TEMP ("MssqlIntelliSense-VSIXInstaller-{0:yyyyMMddHHmmss}.log" -f (Get-Date))
+    $installProcess = Start-Process -FilePath $vsixInstaller -ArgumentList @("/a", "/q", "/logFile:$installLog", $VsixPath) -PassThru -NoNewWindow
     $completed = $installProcess.WaitForExit(600000)
     if (-not $completed) {
         $installedPath = Test-InstalledVsix -Id $vsixIdentity.Id -Version $vsixIdentity.Version -VsixInstallerPath $vsixInstaller
@@ -214,11 +215,17 @@ if ($skipInstall) {
             Write-Error "VSIXInstaller timed out before the extension could be verified."
             exit 1
         }
-    } elseif ($installProcess.ExitCode -ne 0) {
-        Write-Error "VSIXInstaller failed with exit code $($installProcess.ExitCode)."
-        exit $installProcess.ExitCode
     } else {
+        $installProcess.Refresh()
         $installedPath = Test-InstalledVsix -Id $vsixIdentity.Id -Version $vsixIdentity.Version -VsixInstallerPath $vsixInstaller
+        if ($installProcess.ExitCode -ne $null -and $installProcess.ExitCode -ne 0 -and -not $installedPath) {
+            Write-Error "VSIXInstaller failed with exit code $($installProcess.ExitCode)."
+            exit $installProcess.ExitCode
+        }
+
+        if ($installProcess.ExitCode -eq $null -and $installedPath) {
+            Write-Warning "VSIXInstaller did not report an exit code; installed extension was verified at $installedPath."
+        }
     }
 
     if (-not $installedPath) {

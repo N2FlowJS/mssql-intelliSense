@@ -38,6 +38,7 @@ public sealed record ProcedureMetadata(string Schema, string Name)
     public string Database { get; init; } = "";
     /// <summary>P = Stored Procedure, FN/TF/IF/FS/FT/PC = Function variant</summary>
     public string ObjectType { get; init; } = "P";
+    public string Definition { get; init; } = "";
     public string Connection { get; init; } = "";
     public int ConnectionId { get; init; } = 0;
     public IReadOnlyList<FunctionParameterMetadata> Parameters { get; init; }
@@ -101,6 +102,7 @@ public sealed record ViewMetadata(
 {
     public string Database  { get; init; } = "";
     public bool   IsIndexed { get; init; } = false;
+    public string Definition { get; init; } = "";
     public string Connection { get; init; } = "";
     public int ConnectionId { get; init; } = 0;
 
@@ -117,6 +119,7 @@ public sealed record FunctionMetadata(string Schema, string Name)
     /// <summary>FN = Scalar, TF = Multi-stmt TVF, IF = Inline TVF, AF = Aggregate, FS/FT = CLR</summary>
     public string FunctionType { get; init; } = "FN";
     public string ReturnType  { get; init; } = "";
+    public string Definition { get; init; } = "";
     public IReadOnlyList<FunctionParameterMetadata> Parameters { get; init; }
         = Array.Empty<FunctionParameterMetadata>();
     public string Connection { get; init; } = "";

@@ -30,6 +30,11 @@ public static class SqlDefinitionFormatter
 
     public static string FormatViewDefinition(ViewMetadata view)
     {
+        if (!string.IsNullOrWhiteSpace(view.Definition))
+        {
+            return view.Definition.Trim();
+        }
+
         var sb = new StringBuilder();
         sb.AppendLine($"CREATE VIEW [{view.Schema}].[{view.Name}]");
         if (view.Columns.Count > 0)
@@ -49,6 +54,11 @@ public static class SqlDefinitionFormatter
 
     public static string FormatProcedureDefinition(ProcedureMetadata proc)
     {
+        if (!string.IsNullOrWhiteSpace(proc.Definition))
+        {
+            return proc.Definition.Trim();
+        }
+
         var sb = new StringBuilder();
         sb.AppendLine($"CREATE PROCEDURE [{proc.Schema}].[{proc.Name}]");
         if (proc.Parameters.Count > 0)
@@ -71,6 +81,11 @@ public static class SqlDefinitionFormatter
 
     public static string FormatFunctionDefinition(FunctionMetadata fn)
     {
+        if (!string.IsNullOrWhiteSpace(fn.Definition))
+        {
+            return fn.Definition.Trim();
+        }
+
         var sb = new StringBuilder();
         sb.AppendLine($"CREATE FUNCTION [{fn.Schema}].[{fn.Name}]");
         sb.AppendLine("(");

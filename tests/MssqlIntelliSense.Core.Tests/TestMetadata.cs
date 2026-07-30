@@ -22,7 +22,8 @@ internal static class TestMetadata
         [
             new ViewMetadata("dbo", "ActiveUsers", [new("Id", "int", false, 1), new("Email", "nvarchar", true, 2)])
             {
-                Database = "TestDb"
+                Database = "TestDb",
+                Definition = "CREATE VIEW [dbo].[ActiveUsers]\nAS\nSELECT Id, Email FROM dbo.Users WHERE IsActive = 1"
             }
         ],
         Procedures =
@@ -30,6 +31,7 @@ internal static class TestMetadata
             new ProcedureMetadata("dbo", "GetUser")
             {
                 Database = "TestDb",
+                Definition = "CREATE PROCEDURE [dbo].[GetUser]\n    @UserId int,\n    @IncludeInactive bit\nAS\nSELECT * FROM dbo.Users",
                 Parameters =
                 [
                     new FunctionParameterMetadata("@UserId", "int", false, 1),
@@ -40,7 +42,12 @@ internal static class TestMetadata
         ],
         Functions =
         [
-            new FunctionMetadata("dbo", "NormalizeEmail") { Database = "TestDb", ReturnType = "nvarchar" }
+            new FunctionMetadata("dbo", "NormalizeEmail")
+            {
+                Database = "TestDb",
+                ReturnType = "nvarchar",
+                Definition = "CREATE FUNCTION [dbo].[NormalizeEmail](@value nvarchar(320))\nRETURNS nvarchar(320)\nAS\nBEGIN\n    RETURN LOWER(@value);\nEND"
+            }
         ],
         Endpoints =
         [

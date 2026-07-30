@@ -11,6 +11,7 @@ public class CacheViewEntity
     public string Schema { get; set; } = "dbo";
     public string Name { get; set; } = string.Empty;
     public bool IsIndexed { get; set; }
+    public string Definition { get; set; } = string.Empty;
 
     public CacheDatabaseEntity Database { get; set; } = null!;
     public List<CacheViewColumnEntity> Columns { get; set; } = new();

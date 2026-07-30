@@ -13,6 +13,7 @@ public class CacheFunctionEntity
     /// <summary>FN = Scalar, TF = Multi-stmt TVF, IF = Inline TVF, AF = Aggregate, FS/FT = CLR.</summary>
     public string FnType { get; set; } = "FN";
     public string ReturnType { get; set; } = string.Empty;
+    public string Definition { get; set; } = string.Empty;
 
     public CacheDatabaseEntity Database { get; set; } = null!;
     public List<CacheFunctionParamEntity> Parameters { get; set; } = new();

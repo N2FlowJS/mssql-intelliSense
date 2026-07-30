@@ -44,7 +44,7 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             DebugLog("Initialization error", ex);
-            if (StatusBarText != null) StatusBarText.Content = "Initialization error: " + ex.Message;
+            if (StatusBarText != null) StatusBarText.Text = "Init error: " + ex.Message;
         }
     }
 
@@ -98,9 +98,9 @@ public partial class MainWindow : Window
 
         if (StatusBarText != null)
         {
-            StatusBarText.Content = string.IsNullOrWhiteSpace(_savedConnectionString)
-                ? "No saved SSMS cache found. Open SSMS and scan schema once."
-                : $"Loaded {source}. Database={_savedDatabaseName}";
+            StatusBarText.Text = string.IsNullOrWhiteSpace(_savedConnectionString)
+                ? "No saved SSMS cache"
+                : $"Loaded: {_savedDatabaseName}";
         }
 
         if (SsmsContextText != null)
@@ -260,9 +260,9 @@ public partial class MainWindow : Window
 
         if (StatusBarText != null)
         {
-            StatusBarText.Content = string.IsNullOrWhiteSpace(_savedConnectionString)
-                ? "Saved SSMS cache is empty."
-                : $"Using saved SSMS cache. Database={_savedDatabaseName}";
+            StatusBarText.Text = string.IsNullOrWhiteSpace(_savedConnectionString)
+                ? "Saved SSMS cache is empty"
+                : $"Database: {_savedDatabaseName}";
         }
     }
 
@@ -283,9 +283,9 @@ public partial class MainWindow : Window
 
         if (StatusBarText != null)
         {
-            StatusBarText.Content = string.IsNullOrWhiteSpace(_savedConnectionString)
-                ? "Saved SSMS cache is empty."
-                : $"Using saved SSMS cache. Connection={_savedConnection?.Name ?? "connection"}, Database={_savedDatabaseName}";
+            StatusBarText.Text = string.IsNullOrWhiteSpace(_savedConnectionString)
+                ? "Saved SSMS cache is empty"
+                : $"{_savedConnection?.Name ?? "connection"} / {_savedDatabaseName}";
         }
     }
 
@@ -356,7 +356,7 @@ public partial class MainWindow : Window
         try
         {
             RefreshMetadataButton.IsEnabled = false;
-            if (StatusBarText != null) StatusBarText.Content = "Scanning schema and updating database cache...";
+            if (StatusBarText != null) StatusBarText.Text = "Scanning schema...";
 
             var connStr = _savedConnectionString;
             if (string.IsNullOrWhiteSpace(connStr))
@@ -374,13 +374,13 @@ public partial class MainWindow : Window
                 _currentMetadata = metadata;
             });
 
-            if (StatusBarText != null) StatusBarText.Content = "Schema scan completed! Cache updated.";
+            if (StatusBarText != null) StatusBarText.Text = "Schema cache updated";
             await LoadCacheJsonAsync();
             await TriggerCompletionAsync();
         }
         catch (Exception ex)
         {
-            if (StatusBarText != null) StatusBarText.Content = "Schema scan error: " + ex.Message;
+            if (StatusBarText != null) StatusBarText.Text = "Scan error: " + ex.Message;
             MessageBox.Show("Failed to scan schema: " + ex.Message, "Error", MessageBoxButton.OK, MessageBoxImage.Error);
         }
         finally
@@ -402,6 +402,16 @@ public partial class MainWindow : Window
     private void RunCompletionButton_Click(object sender, RoutedEventArgs e)
     {
         _ = TriggerCompletionAsync();
+    }
+
+    private void ReviewCompletionButton_Click(object sender, RoutedEventArgs e)
+    {
+        OpenSelectedCompletionReview();
+    }
+
+    private void CompletionResultsDataGrid_MouseDoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        OpenSelectedCompletionReview();
     }
 
     private async Task TriggerCompletionAsync()
@@ -428,7 +438,7 @@ public partial class MainWindow : Window
 
             if (_currentMetadata == null || ReferenceEquals(_currentMetadata, DatabaseMetadata.Empty))
             {
-                if (StatusBarText != null) StatusBarText.Content = "Completion: No metadata loaded. Scan schema first.";
+                if (StatusBarText != null) StatusBarText.Text = "Completion: no metadata";
                 DebugLog("TriggerCompletion stopped: no metadata loaded.");
                 return;
             }
@@ -444,12 +454,12 @@ public partial class MainWindow : Window
                 }
             }
 
-            if (StatusBarText != null) StatusBarText.Content = $"Completion triggered at pos {caretIndex}: {items.Count} suggestion(s) returned.";
+            if (StatusBarText != null) StatusBarText.Text = $"Completion: {items.Count} suggestion(s)";
         }
         catch (Exception ex)
         {
             DebugLog("Completion error", ex);
-            if (StatusBarText != null) StatusBarText.Content = "Completion error: " + ex.Message;
+            if (StatusBarText != null) StatusBarText.Text = "Completion error: " + ex.Message;
         }
     }
 
@@ -460,12 +470,52 @@ public partial class MainWindow : Window
         if (CompletionResultsDataGrid.SelectedItem is SqlCompletionItem item)
         {
             CompletionDescriptionPreview.Text = item.Description;
+            if (ReviewCompletionButton != null)
+            {
+                ReviewCompletionButton.IsEnabled = _currentMetadata != null && CanReviewCompletion(item);
+            }
         }
         else
         {
             CompletionDescriptionPreview.Text = string.Empty;
+            if (ReviewCompletionButton != null)
+            {
+                ReviewCompletionButton.IsEnabled = false;
+            }
         }
     }
+
+    private void OpenSelectedCompletionReview()
+    {
+        if (CompletionResultsDataGrid?.SelectedItem is not SqlCompletionItem item)
+        {
+            if (StatusBarText != null) StatusBarText.Text = "Review: select a suggestion first";
+            return;
+        }
+
+        if (_currentMetadata == null || ReferenceEquals(_currentMetadata, DatabaseMetadata.Empty))
+        {
+            if (StatusBarText != null) StatusBarText.Text = "Review: no metadata loaded";
+            return;
+        }
+
+        if (!CanReviewCompletion(item))
+        {
+            if (StatusBarText != null) StatusBarText.Text = $"Review: {item.Kind} is not an object";
+            return;
+        }
+
+        ObjectReviewWindow.ShowForCompletion(item, _currentMetadata);
+        if (StatusBarText != null) StatusBarText.Text = $"Review opened: {item.Label}";
+    }
+
+    private static bool CanReviewCompletion(SqlCompletionItem item) =>
+        item.Kind is SqlCompletionKind.Table or
+            SqlCompletionKind.View or
+            SqlCompletionKind.Procedure or
+            SqlCompletionKind.Function or
+            SqlCompletionKind.UserType or
+            SqlCompletionKind.Synonym;
 
     private async void LoadCacheJsonButton_Click(object sender, RoutedEventArgs e)
     {

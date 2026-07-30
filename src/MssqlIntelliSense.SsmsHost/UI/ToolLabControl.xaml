@@ -71,6 +71,27 @@
                 </Setter.Value>
             </Setter>
         </Style>
+
+        <Style x:Key="FieldLabelStyle" TargetType="{x:Type TextBlock}">
+            <Setter Property="FontSize" Value="10.5" />
+            <Setter Property="Margin" Value="0,0,0,3" />
+            <Setter Property="Foreground" Value="{DynamicResource {x:Static vsui:EnvironmentColors.PanelTextBrushKey}}" />
+        </Style>
+
+        <Style x:Key="FlatCommandButtonStyle" TargetType="{x:Type Button}">
+            <Setter Property="Padding" Value="10,4" />
+            <Setter Property="MinHeight" Value="26" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Background" Value="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowCodeBlockBackgroundBrushKey}}" />
+            <Setter Property="Foreground" Value="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowTextBrushKey}}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowBorderBrushKey}}" />
+        </Style>
+
+        <Style x:Key="PrimaryCommandButtonStyle" TargetType="{x:Type Button}" BasedOn="{StaticResource FlatCommandButtonStyle}">
+            <Setter Property="Background" Value="{DynamicResource {x:Static vsui:EnvironmentColors.SystemHighlightBrushKey}}" />
+            <Setter Property="Foreground" Value="{DynamicResource {x:Static vsui:EnvironmentColors.SystemHighlightTextBrushKey}}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource {x:Static vsui:EnvironmentColors.SystemHighlightBrushKey}}" />
+        </Style>
     </UserControl.Resources>
 
     <Grid Margin="10,8">
@@ -80,9 +101,8 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <!-- Header Bar -->
+        <!-- Header -->
         <DockPanel Grid.Row="0" Margin="0,0,0,8">
-            <!-- Connection Selector (Right aligned) -->
             <StackPanel x:Name="ConnectionSelectorPanel" DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
                 <TextBlock Text="Connection:"
                            VerticalAlignment="Center"
@@ -106,15 +126,13 @@
                 <Button x:Name="RefreshConnectionsButton"
                         Content="Refresh"
                         Click="RefreshConnectionsButton_Click"
-                        Padding="8,2"
-                        MinHeight="24" />
+                        Style="{StaticResource FlatCommandButtonStyle}" />
             </StackPanel>
 
-            <!-- Title & Subtitle (Left aligned) -->
             <StackPanel VerticalAlignment="Center">
                 <TextBlock Text="Tool Lab"
                            FontSize="14"
-                           FontWeight="Bold"
+                           FontWeight="SemiBold"
                            Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowTextBrushKey}}" />
                 <TextBlock Text="Run schema tools against cached metadata"
                            FontSize="10.5"
@@ -122,117 +140,72 @@
             </StackPanel>
         </DockPanel>
 
-        <!-- Compact Tool Form Card -->
-        <Border Grid.Row="1"
-                BorderBrush="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowBorderBrushKey}}"
-                BorderThickness="1"
-                CornerRadius="4"
-                Padding="10,8"
-                Margin="0,0,0,8"
-                Background="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowCodeBlockBackgroundBrushKey}}">
-            <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
+        <!-- Tool Form -->
+        <StackPanel Grid.Row="1" Margin="0,0,0,10">
+            <TextBlock Text="Action" Style="{StaticResource FieldLabelStyle}" />
+            <ComboBox x:Name="ActionComboBox" SelectedIndex="0" MinHeight="26">
+                <ComboBoxItem Content="list_tables" Tag="list_tables" />
+                <ComboBoxItem Content="get_table_schema" Tag="get_table_schema" />
+                <ComboBoxItem Content="get_table_relations" Tag="get_table_relations" />
+                <ComboBoxItem Content="get_table_indexes" Tag="get_table_indexes" />
+                <ComboBoxItem Content="search_objects" Tag="search_objects" />
+                <ComboBoxItem Content="find_column" Tag="find_column" />
+                <ComboBoxItem Content="list_endpoints" Tag="list_endpoints" />
+            </ComboBox>
+
+            <Grid Margin="0,8,0,0">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="150" />
-                    <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="80" />
-                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="8" />
                     <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
-                <!-- Row 1: Action, Schema, Table, Run -->
-                <TextBlock Grid.Row="0" Grid.Column="0"
-                           Text="Action:"
-                           VerticalAlignment="Center"
-                           FontWeight="SemiBold"
-                           FontSize="11"
-                           Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.PanelTextBrushKey}}"
-                           Margin="0,0,6,6" />
-                <ComboBox x:Name="ActionComboBox"
-                          Grid.Row="0" Grid.Column="1"
-                          Margin="0,0,12,6"
-                          SelectedIndex="0"
-                          MinHeight="24">
-                    <ComboBoxItem Content="list_tables" Tag="list_tables" />
-                    <ComboBoxItem Content="get_table_schema" Tag="get_table_schema" />
-                    <ComboBoxItem Content="get_table_relations" Tag="get_table_relations" />
-                    <ComboBoxItem Content="get_table_indexes" Tag="get_table_indexes" />
-                    <ComboBoxItem Content="search_objects" Tag="search_objects" />
-                    <ComboBoxItem Content="find_column" Tag="find_column" />
-                    <ComboBoxItem Content="list_endpoints" Tag="list_endpoints" />
-                </ComboBox>
+                <StackPanel Grid.Column="0">
+                    <TextBlock Text="Schema" Style="{StaticResource FieldLabelStyle}" />
+                    <TextBox x:Name="SchemaTextBox"
+                             Text="dbo"
+                             Padding="5,3"
+                             MinHeight="26"
+                             VerticalContentAlignment="Center"
+                             Background="{DynamicResource {x:Static vsui:EnvironmentColors.ComboBoxBackgroundBrushKey}}"
+                             Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.ComboBoxTextBrushKey}}"
+                             BorderBrush="{DynamicResource {x:Static vsui:EnvironmentColors.ComboBoxBorderBrushKey}}" />
+                </StackPanel>
 
-                <TextBlock Grid.Row="0" Grid.Column="2"
-                           Text="Schema:"
-                           VerticalAlignment="Center"
-                           FontWeight="SemiBold"
-                           FontSize="11"
-                           Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.PanelTextBrushKey}}"
-                           Margin="0,0,6,6" />
-                <TextBox x:Name="SchemaTextBox"
-                         Grid.Row="0" Grid.Column="3"
-                         Text="dbo"
-                         Padding="4,2"
-                         Margin="0,0,12,6"
-                         MinHeight="24"
-                         VerticalContentAlignment="Center"
-                         Background="{DynamicResource {x:Static vsui:EnvironmentColors.ComboBoxBackgroundBrushKey}}"
-                         Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.ComboBoxTextBrushKey}}"
-                         BorderBrush="{DynamicResource {x:Static vsui:EnvironmentColors.ComboBoxBorderBrushKey}}" />
-
-                <TextBlock Grid.Row="0" Grid.Column="4"
-                           Text="Table:"
-                           VerticalAlignment="Center"
-                           FontWeight="SemiBold"
-                           FontSize="11"
-                           Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.PanelTextBrushKey}}"
-                           Margin="0,0,6,6" />
-                <TextBox x:Name="TableTextBox"
-                         Grid.Row="0" Grid.Column="5"
-                         Padding="4,2"
-                         Margin="0,0,12,6"
-                         MinHeight="24"
-                         VerticalContentAlignment="Center"
-                         Background="{DynamicResource {x:Static vsui:EnvironmentColors.ComboBoxBackgroundBrushKey}}"
-                         Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.ComboBoxTextBrushKey}}"
-                         BorderBrush="{DynamicResource {x:Static vsui:EnvironmentColors.ComboBoxBorderBrushKey}}" />
-
-                <Button x:Name="RunToolButton"
-                        Grid.Row="0" Grid.Column="6"
-                        Grid.RowSpan="2"
-                        Content="Run"
-                        Click="RunToolButton_Click"
-                        Padding="16,0"
-                        FontWeight="SemiBold"
-                        VerticalAlignment="Stretch" />
-
-                <!-- Row 2: Query / Search Filter -->
-                <TextBlock Grid.Row="1" Grid.Column="0"
-                           Text="Query:"
-                           VerticalAlignment="Center"
-                           FontWeight="SemiBold"
-                           FontSize="11"
-                           Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.PanelTextBrushKey}}"
-                           Margin="0,0,6,0" />
-                <TextBox x:Name="QueryTextBox"
-                         Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="5"
-                         Padding="4,2"
-                         Margin="0,0,12,0"
-                         MinHeight="24"
-                         VerticalContentAlignment="Center"
-                         Background="{DynamicResource {x:Static vsui:EnvironmentColors.ComboBoxBackgroundBrushKey}}"
-                         Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.ComboBoxTextBrushKey}}"
-                         BorderBrush="{DynamicResource {x:Static vsui:EnvironmentColors.ComboBoxBorderBrushKey}}" />
+                <StackPanel Grid.Column="2">
+                    <TextBlock Text="Table" Style="{StaticResource FieldLabelStyle}" />
+                    <TextBox x:Name="TableTextBox"
+                             Padding="5,3"
+                             MinHeight="26"
+                             VerticalContentAlignment="Center"
+                             Background="{DynamicResource {x:Static vsui:EnvironmentColors.ComboBoxBackgroundBrushKey}}"
+                             Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.ComboBoxTextBrushKey}}"
+                             BorderBrush="{DynamicResource {x:Static vsui:EnvironmentColors.ComboBoxBorderBrushKey}}" />
+                </StackPanel>
             </Grid>
-        </Border>
+
+            <TextBlock Text="Query" Style="{StaticResource FieldLabelStyle}" Margin="0,8,0,3" />
+            <TextBox x:Name="QueryTextBox"
+                     Padding="5,3"
+                     MinHeight="26"
+                     VerticalContentAlignment="Center"
+                     Background="{DynamicResource {x:Static vsui:EnvironmentColors.ComboBoxBackgroundBrushKey}}"
+                     Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.ComboBoxTextBrushKey}}"
+                     BorderBrush="{DynamicResource {x:Static vsui:EnvironmentColors.ComboBoxBorderBrushKey}}" />
+
+            <Button x:Name="RunToolButton"
+                    Content="Run"
+                    Click="RunToolButton_Click"
+                    Style="{StaticResource PrimaryCommandButtonStyle}"
+                    FontWeight="SemiBold"
+                    HorizontalAlignment="Stretch"
+                    Margin="0,8,0,0" />
+        </StackPanel>
 
         <!-- Results Tabs -->
-        <TabControl Grid.Row="2">
+        <TabControl Grid.Row="2"
+                    BorderThickness="0"
+                    Background="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowBackgroundBrushKey}}">
             <TabItem Header="Grid View">
                 <DataGrid x:Name="OutputDataGrid"
                           AutoGenerateColumns="True"

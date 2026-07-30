@@ -266,20 +266,71 @@ public static class SqlMetadataToolExecutor
     {
         if (metadata == null) return Array.Empty<object>();
 
+        var customDescriptions = ObjectDescriptionStore.LoadAll();
+
         var tables = (metadata.Tables ?? Enumerable.Empty<TableMetadata>())
-            .Select(t => new { kind = "table", database = t.Database, schema = t.Schema, name = t.Name, description = t.Description });
+            .Select(t => CreateObjectSearchCandidate(
+                "table",
+                t.Database,
+                t.Schema,
+                t.Name,
+                t.Description,
+                t.Keywords,
+                string.Join(" ", t.Columns.Select(c => c.Name)),
+                string.Empty,
+                customDescriptions));
         var views = (metadata.Views ?? Enumerable.Empty<ViewMetadata>())
-            .Select(v => new { kind = "view", database = v.Database, schema = v.Schema, name = v.Name, description = v.Description });
+            .Select(v => CreateObjectSearchCandidate(
+                "view",
+                v.Database,
+                v.Schema,
+                v.Name,
+                v.Description,
+                v.Keywords,
+                string.Join(" ", v.Columns.Select(c => c.Name)),
+                v.Definition,
+                customDescriptions));
         var procedures = (metadata.Procedures ?? Enumerable.Empty<ProcedureMetadata>())
-            .Select(p => new { kind = "procedure", database = p.Database, schema = p.Schema, name = p.Name, description = p.Description });
+            .Select(p => CreateObjectSearchCandidate(
+                "procedure",
+                p.Database,
+                p.Schema,
+                p.Name,
+                p.Description,
+                p.Keywords,
+                string.Join(" ", p.Parameters.Select(param => param.Name)),
+                p.Definition,
+                customDescriptions));
         var functions = (metadata.Functions ?? Enumerable.Empty<FunctionMetadata>())
-            .Select(f => new { kind = "function", database = f.Database, schema = f.Schema, name = f.Name, description = f.Description });
+            .Select(f => CreateObjectSearchCandidate(
+                "function",
+                f.Database,
+                f.Schema,
+                f.Name,
+                f.Description,
+                f.Keywords,
+                string.Join(" ", f.Parameters.Select(param => param.Name)),
+                f.Definition,
+                customDescriptions));
 
         return tables.Concat(views).Concat(procedures).Concat(functions)
-            .Where(o => Matches(o.name, query) || Matches(o.schema + "." + o.name, query) || Matches(o.description, query))
-            .OrderBy(o => o.kind)
-            .ThenBy(o => o.schema)
-            .ThenBy(o => o.name)
+            .Select(o => new { Candidate = o, Score = ScoreObjectSearch(o, query) })
+            .Where(o => string.IsNullOrWhiteSpace(query) || o.Score > 0)
+            .OrderByDescending(o => o.Score)
+            .ThenBy(o => o.Candidate.kind)
+            .ThenBy(o => o.Candidate.schema)
+            .ThenBy(o => o.Candidate.name)
+            .Select(o => new
+            {
+                o.Candidate.kind,
+                o.Candidate.database,
+                o.Candidate.schema,
+                o.Candidate.name,
+                o.Candidate.description,
+                o.Candidate.customDescription,
+                definitionSnippet = Snippet(o.Candidate.definition, 1000),
+                score = o.Score
+            })
             .Take(100)
             .ToList();
     }
@@ -337,7 +388,7 @@ public static class SqlMetadataToolExecutor
         TableSchemaToolName => "Đọc column, kiểu dữ liệu và primary key của một table.",
         TableRelationsToolName => "Đọc foreign key/relationship liên quan đến table.",
         TableIndexesToolName => "Đọc index metadata liên quan đến table.",
-        SearchObjectsToolName => "Tìm kiếm các đối tượng trong schema (bảng, view, procedure, function) bằng từ khóa hoặc mô tả.",
+        SearchObjectsToolName => "Tìm kiếm thông minh các đối tượng trong schema (bảng, view, procedure, function) bằng tên, cột, định nghĩa SQL và mô tả tùy chỉnh cho agent.",
         FindColumnToolName => "Tìm column theo tên trong table/view đã cache.",
         ListEndpointsToolName => "Liệt kê SQL Server endpoints thuộc Server Objects.",
         _ => "Tool metadata request."
@@ -349,7 +400,7 @@ public static class SqlMetadataToolExecutor
         TableSchemaToolName => "get_table_schema: get columns and primary key for one table. Arguments: schemaName, tableName.",
         TableRelationsToolName => "get_table_relations: get foreign keys for one table. Arguments: tableName.",
         TableIndexesToolName => "get_table_indexes: get indexes for one table. Arguments: tableName.",
-        SearchObjectsToolName => "search_objects: search tables, views, procedures and functions by partial name/description. Arguments: query.",
+        SearchObjectsToolName => "search_objects: weighted search across tables, views, procedures and functions by object name, columns/parameters, SQL definition and custom agent descriptions. Arguments: query.",
         FindColumnToolName => "find_column: search table/view columns by partial column name. Arguments: query.",
         ListEndpointsToolName => "list_endpoints: list SQL Server endpoints under Server Objects.",
         _ => toolName + ": enabled tool."
@@ -361,7 +412,7 @@ public static class SqlMetadataToolExecutor
         TableSchemaToolName => "Reads cached columns, data types and primary key information for one table.",
         TableRelationsToolName => "Reads cached foreign-key relationships for one table.",
         TableIndexesToolName => "Reads cached index metadata for one table.",
-        SearchObjectsToolName => "Searches cached object names across tables, views, procedures and functions.",
+        SearchObjectsToolName => "Searches cached object names, columns/parameters, SQL definitions and custom agent descriptions.",
         FindColumnToolName => "Searches cached table/view column names.",
         ListEndpointsToolName => "Reads cached SQL Server endpoint metadata under Server Objects.",
         _ => "Reads cached metadata for this chat session."
@@ -385,5 +436,129 @@ public static class SqlMetadataToolExecutor
         if (string.IsNullOrWhiteSpace(query)) return true;
         if (string.IsNullOrWhiteSpace(value)) return false;
         return value!.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0;
+    }
+
+    private sealed record ObjectSearchCandidate(
+        string kind,
+        string database,
+        string schema,
+        string name,
+        string description,
+        string customDescription,
+        string searchableText,
+        string definition);
+
+    private static ObjectSearchCandidate CreateObjectSearchCandidate(
+        string kind,
+        string database,
+        string schema,
+        string name,
+        string description,
+        string keywords,
+        string secondaryText,
+        string definition,
+        IReadOnlyDictionary<string, string> customDescriptions)
+    {
+        var key = ObjectDescriptionStore.BuildKey(kind, database, schema, name);
+        customDescriptions.TryGetValue(key, out var customDescription);
+        customDescription ??= string.Empty;
+
+        var searchableText = string.Join(" ", new[]
+        {
+            kind,
+            database,
+            schema,
+            name,
+            schema + "." + name,
+            description,
+            customDescription,
+            keywords,
+            secondaryText,
+            definition
+        }.Where(value => !string.IsNullOrWhiteSpace(value)));
+
+        return new ObjectSearchCandidate(
+            kind,
+            database,
+            schema,
+            name,
+            string.IsNullOrWhiteSpace(customDescription) ? description : customDescription,
+            customDescription,
+            searchableText,
+            definition);
+    }
+
+    private static int ScoreObjectSearch(ObjectSearchCandidate candidate, string query)
+    {
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return 1;
+        }
+
+        var tokens = query
+            .Split(new[] { ' ', '.', '_', '-', '/', '\\', '[', ']', '(', ')', ',', ';' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(t => t.Trim())
+            .Where(t => t.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        if (tokens.Length == 0)
+        {
+            return 1;
+        }
+
+        var score = 0;
+        foreach (var token in tokens)
+        {
+            var tokenScore = 0;
+            tokenScore = Math.Max(tokenScore, ScoreField(candidate.name, token, exact: 120, prefix: 90, contains: 60));
+            tokenScore = Math.Max(tokenScore, ScoreField(candidate.schema + "." + candidate.name, token, exact: 110, prefix: 80, contains: 55));
+            tokenScore = Math.Max(tokenScore, ScoreField(candidate.customDescription, token, exact: 95, prefix: 75, contains: 50));
+            tokenScore = Math.Max(tokenScore, ScoreField(candidate.description, token, exact: 50, prefix: 35, contains: 22));
+            tokenScore = Math.Max(tokenScore, ScoreField(candidate.searchableText, token, exact: 25, prefix: 18, contains: 12));
+            tokenScore = Math.Max(tokenScore, ScoreField(candidate.definition, token, exact: 16, prefix: 12, contains: 8));
+
+            if (tokenScore == 0)
+            {
+                return 0;
+            }
+
+            score += tokenScore;
+        }
+
+        return score;
+    }
+
+    private static int ScoreField(string? value, string token, int exact, int prefix, int contains)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return 0;
+        }
+
+        var text = value!;
+        if (text.Equals(token, StringComparison.OrdinalIgnoreCase))
+        {
+            return exact;
+        }
+
+        if (text.StartsWith(token, StringComparison.OrdinalIgnoreCase))
+        {
+            return prefix;
+        }
+
+        return text.IndexOf(token, StringComparison.OrdinalIgnoreCase) >= 0 ? contains : 0;
+    }
+
+    private static string Snippet(string? value, int maxLength)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var text = value!;
+        var trimmed = text.Trim();
+        return trimmed.Length <= maxLength ? trimmed : trimmed.Substring(0, maxLength) + "...";
     }
 }

@@ -188,18 +188,64 @@ internal static class MssqlIntelliSenseJsonCache
 
         try
         {
-            var store = JsonSerializer.Deserialize<JsonCacheStore>(ReadAllTextShared(path), JsonOptions) ?? new JsonCacheStore();
-            if (store.NextConnectionId <= 0)
-            {
-                store.NextConnectionId = store.Connections.Count == 0 ? 1 : store.Connections.Max(c => c.Id) + 1;
-            }
-
-            return store;
+            return NormalizeStore(JsonSerializer.Deserialize<JsonCacheStore>(ReadAllTextShared(path), JsonOptions));
         }
         catch (JsonException)
         {
+            return LoadFallbackStore(path);
+        }
+        catch (IOException)
+        {
+            return LoadFallbackStore(path);
+        }
+    }
+
+    private static JsonCacheStore LoadFallbackStore(string path)
+    {
+        var directory = Path.GetDirectoryName(path);
+        var fileName = Path.GetFileName(path);
+        if (string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory))
+        {
             return new JsonCacheStore();
         }
+
+        var candidates = Directory.GetFiles(directory, fileName + "*")
+            .Where(p => !p.Equals(path, StringComparison.OrdinalIgnoreCase))
+            .Select(p => new FileInfo(p))
+            .Where(f => f.Length > 0)
+            .OrderByDescending(f => f.LastWriteTimeUtc)
+            .ToArray();
+
+        foreach (var candidate in candidates)
+        {
+            try
+            {
+                var store = NormalizeStore(JsonSerializer.Deserialize<JsonCacheStore>(ReadAllTextShared(candidate.FullName), JsonOptions));
+                if (store.Connections.Count > 0)
+                {
+                    return store;
+                }
+            }
+            catch (Exception) when (
+                candidate.Exists &&
+                (candidate.Extension.Equals(".tmp", StringComparison.OrdinalIgnoreCase) ||
+                 candidate.Name.IndexOf(".TMP", StringComparison.OrdinalIgnoreCase) >= 0))
+            {
+            }
+        }
+
+        return new JsonCacheStore();
+    }
+
+    private static JsonCacheStore NormalizeStore(JsonCacheStore? store)
+    {
+        store ??= new JsonCacheStore();
+        if (store.NextConnectionId <= 0)
+        {
+            store.NextConnectionId = store.Connections.Count == 0 ? 1 : store.Connections.Max(c => c.Id) + 1;
+        }
+
+        return store;
     }
 
     private static void Save(JsonCacheStore store)

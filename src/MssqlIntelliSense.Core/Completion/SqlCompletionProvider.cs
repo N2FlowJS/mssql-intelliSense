@@ -606,7 +606,7 @@ public sealed class SqlCompletionProvider
                     $"{schema.Name}.{fn.Name}",
                     insertText,
                     SqlCompletionKind.Function,
-                    $"Scalar Function {schema.Name}.{fn.Name} ({fn.ReturnType})",
+                    SqlDefinitionFormatter.FormatFunctionDefinition(fn.Source),
                     caretOffset,
                     selectionStart,
                     selectionEnd));
