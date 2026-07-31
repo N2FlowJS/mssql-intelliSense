@@ -58,6 +58,9 @@ public partial class ChatAgentControl : UserControl
     }
 
     private readonly List<ChatTurn> _chatHistory = new();
+    private readonly List<string> _sentInputHistory = new();
+    private int _historyIndex = -1;
+    private string _currentDraft = string.Empty;
     private ConnectionInfo? _selectedConnection;
     private string? _selectedDatabase;
     private CancellationTokenSource? _activeSendCancellation;
@@ -92,6 +95,13 @@ public partial class ChatAgentControl : UserControl
             var message = ChatInputTextBox.Text?.Trim() ?? string.Empty;
             if (string.IsNullOrWhiteSpace(message)) return;
 
+            if (_sentInputHistory.Count == 0 || _sentInputHistory[_sentInputHistory.Count - 1] != message)
+            {
+                _sentInputHistory.Add(message);
+            }
+            _historyIndex = -1;
+            _currentDraft = string.Empty;
+
             _activeSendCancellation = new CancellationTokenSource();
             await SafeSetSendButtonStateAsync("Stop", true);
             await SendChatAsync(message, _activeSendCancellation.Token);
@@ -119,6 +129,55 @@ public partial class ChatAgentControl : UserControl
         {
             e.Handled = true;
             _ = SendChatButtonClickAsync();
+            return;
+        }
+
+        if (e.Key == Key.Up)
+        {
+            if (_sentInputHistory.Count > 0)
+            {
+                var caretLineIndex = ChatInputTextBox.GetLineIndexFromCharacterIndex(ChatInputTextBox.CaretIndex);
+                if (caretLineIndex <= 0 || Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
+                {
+                    if (_historyIndex == -1)
+                    {
+                        _currentDraft = ChatInputTextBox.Text;
+                        _historyIndex = _sentInputHistory.Count - 1;
+                    }
+                    else if (_historyIndex > 0)
+                    {
+                        _historyIndex--;
+                    }
+
+                    ChatInputTextBox.Text = _sentInputHistory[_historyIndex];
+                    ChatInputTextBox.CaretIndex = ChatInputTextBox.Text.Length;
+                    e.Handled = true;
+                }
+            }
+        }
+        else if (e.Key == Key.Down)
+        {
+            if (_historyIndex != -1)
+            {
+                var lineCount = ChatInputTextBox.LineCount;
+                var caretLineIndex = ChatInputTextBox.GetLineIndexFromCharacterIndex(ChatInputTextBox.CaretIndex);
+                if (caretLineIndex >= lineCount - 1 || Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
+                {
+                    if (_historyIndex < _sentInputHistory.Count - 1)
+                    {
+                        _historyIndex++;
+                        ChatInputTextBox.Text = _sentInputHistory[_historyIndex];
+                    }
+                    else
+                    {
+                        _historyIndex = -1;
+                        ChatInputTextBox.Text = _currentDraft;
+                    }
+
+                    ChatInputTextBox.CaretIndex = ChatInputTextBox.Text.Length;
+                    e.Handled = true;
+                }
+            }
         }
     }
 
@@ -211,6 +270,10 @@ public partial class ChatAgentControl : UserControl
             }
         }, cancellationToken);
 
+        Border? assistantMessageBorder = null;
+        await MssqlIntelliSensePackage.SwitchToMainThreadAsync(cancellationToken);
+        assistantMessageBorder = AddChatMessage("Assistant", "Checking available actions...", isUser: false, isStreaming: true);
+
         var toolContext = await ResolveApprovedToolContextAsync(
             endpoint: options.Endpoint,
             apiKey: options.ApiKey,
@@ -219,6 +282,7 @@ public partial class ChatAgentControl : UserControl
             metadata: metadata,
             chatConnection: chatConnection,
             allowedToolNames: allowedToolNames,
+            statusBorder: assistantMessageBorder,
             cancellationToken: cancellationToken);
 
         var systemPrompt = BuildSystemPrompt(metadata, toolContext);
@@ -226,10 +290,6 @@ public partial class ChatAgentControl : UserControl
         {
             systemPrompt = $"Active SQL connection: {chatConnection.DisplayName}\n" + systemPrompt;
         }
-
-        Border? assistantMessageBorder = null;
-        await MssqlIntelliSensePackage.SwitchToMainThreadAsync(cancellationToken);
-        assistantMessageBorder = AddChatMessage("Assistant", string.Empty, isUser: false, isStreaming: true);
 
         var reply = await CompleteChatStreamingTextAsync(
             endpoint: options.Endpoint,
@@ -358,6 +418,7 @@ public partial class ChatAgentControl : UserControl
         DatabaseMetadata? metadata,
         ChatConnectionContext chatConnection,
         ISet<string> allowedToolNames,
+        Border? statusBorder,
         CancellationToken cancellationToken)
     {
         var toolOutputs = new List<string>();
@@ -380,11 +441,7 @@ public partial class ChatAgentControl : UserControl
 
             for (var iteration = 0; iteration < 4; iteration++)
             {
-                await AddChatMessageOnMainThreadAsync(
-                    "Assistant",
-                    "Checking available actions...",
-                    isUser: false,
-                    cancellationToken);
+                await SafeUpdateChatMessageAsync(statusBorder, "Checking available actions...");
 
                 var plannerJson = await CompleteToolPlannerStreamingAsync(
                     chatClient,
@@ -482,15 +539,42 @@ public partial class ChatAgentControl : UserControl
 
         await Task.Run(() =>
         {
-            foreach (var update in chatClient.CompleteChatStreaming(messages, options, cancellationToken))
+            try
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                foreach (var part in update.ContentUpdate)
+                foreach (var update in chatClient.CompleteChatStreaming(messages, options, cancellationToken))
                 {
-                    if (!string.IsNullOrEmpty(part.Text))
+                    cancellationToken.ThrowIfCancellationRequested();
+                    foreach (var part in update.ContentUpdate)
                     {
-                        content.Append(part.Text);
+                        if (!string.IsNullOrEmpty(part.Text))
+                        {
+                            content.Append(part.Text);
+                        }
                     }
+                }
+            }
+            catch (Exception ex)
+            {
+                MssqlIntelliSensePackage.Log($"[Chat Agent Tool Planner JsonSchema Error] {ex.Message}");
+                content.Clear();
+                try
+                {
+                    var fallbackOptions = new ChatCompletionOptions();
+                    foreach (var update in chatClient.CompleteChatStreaming(messages, fallbackOptions, cancellationToken))
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        foreach (var part in update.ContentUpdate)
+                        {
+                            if (!string.IsNullOrEmpty(part.Text))
+                            {
+                                content.Append(part.Text);
+                            }
+                        }
+                    }
+                }
+                catch (Exception fallbackEx)
+                {
+                    MssqlIntelliSensePackage.Log($"[Chat Agent Tool Planner Fallback Error] {fallbackEx.Message}");
                 }
             }
         }, cancellationToken);
@@ -697,6 +781,71 @@ public partial class ChatAgentControl : UserControl
 
             string code = match.Groups["code"].Success ? match.Groups["code"].Value : match.Groups["code2"].Value;
             code = code.TrimEnd('\r', '\n');
+            string lang = match.Groups["lang"].Success ? match.Groups["lang"].Value : string.Empty;
+
+            var codeContainer = new Grid();
+            codeContainer.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            codeContainer.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+
+            var codeHeaderGrid = new Grid
+            {
+                Margin = new Thickness(0, 0, 0, 4)
+            };
+            codeHeaderGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            codeHeaderGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            var langTextBlock = new TextBlock
+            {
+                Text = string.IsNullOrWhiteSpace(lang) ? "code" : lang.ToLowerInvariant(),
+                FontSize = 10,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = foreground,
+                Opacity = 0.7,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            Grid.SetColumn(langTextBlock, 0);
+            codeHeaderGrid.Children.Add(langTextBlock);
+
+            var copyCodeButton = new Button
+            {
+                Content = "Copy",
+                Padding = new Thickness(6, 2, 6, 2),
+                FontSize = 10,
+                MinHeight = 20,
+                Background = codeBackground,
+                Foreground = foreground,
+                BorderBrush = borderBrush,
+                BorderThickness = new Thickness(1),
+                HorizontalAlignment = HorizontalAlignment.Right,
+                ToolTip = "Copy code block to clipboard"
+            };
+
+            var capturedCode = code;
+            copyCodeButton.Click += (s, e) =>
+            {
+                _ = CopyCodeWithFeedbackAsync(capturedCode, copyCodeButton);
+            };
+            Grid.SetColumn(copyCodeButton, 1);
+            codeHeaderGrid.Children.Add(copyCodeButton);
+
+            Grid.SetRow(codeHeaderGrid, 0);
+            codeContainer.Children.Add(codeHeaderGrid);
+
+            var codeTextBox = new TextBox
+            {
+                Text = code,
+                FontFamily = new FontFamily("Consolas, Courier New, monospace"),
+                FontSize = 11.5,
+                Foreground = foreground,
+                Background = Brushes.Transparent,
+                BorderThickness = new Thickness(0),
+                IsReadOnly = true,
+                TextWrapping = TextWrapping.Wrap,
+                AcceptsReturn = true,
+                Padding = new Thickness(0)
+            };
+            Grid.SetRow(codeTextBox, 1);
+            codeContainer.Children.Add(codeTextBox);
 
             var codeBorder = new Border
             {
@@ -706,19 +855,10 @@ public partial class ChatAgentControl : UserControl
                 CornerRadius = new CornerRadius(4),
                 Padding = new Thickness(8),
                 Margin = new Thickness(0, 4, 0, 6),
-                HorizontalAlignment = HorizontalAlignment.Stretch
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                Child = codeContainer
             };
 
-            var codeTextBlock = new TextBlock
-            {
-                Text = code,
-                FontFamily = new FontFamily("Consolas, Courier New, monospace"),
-                FontSize = 11.5,
-                Foreground = foreground,
-                TextWrapping = TextWrapping.Wrap
-            };
-
-            codeBorder.Child = codeTextBlock;
             contentPanel.Children.Add(codeBorder);
 
             lastIndex = match.Index + match.Length;
@@ -728,6 +868,21 @@ public partial class ChatAgentControl : UserControl
         {
             var textSegment = markdownText.Substring(lastIndex);
             RenderTextParagraphs(contentPanel, textSegment, foreground, borderBrush, codeBackground);
+        }
+    }
+
+    private static async Task CopyCodeWithFeedbackAsync(string code, Button copyButton)
+    {
+        try
+        {
+            Clipboard.SetText(code);
+            copyButton.Content = "Copied!";
+            await Task.Delay(1500);
+            copyButton.Content = "Copy";
+        }
+        catch (Exception ex)
+        {
+            MssqlIntelliSensePackage.Log($"Copy code error: {ex.Message}");
         }
     }
 

@@ -77,7 +77,7 @@ public sealed class MssqlIntelliSensePackage : AsyncPackage
 
     public const string PackageGuidString = "16f11772-cdb0-42ca-a596-d755543518ac";
     private static readonly Guid CommandSet = new("63a8fcd9-601f-427d-a253-d4942b4ff2aa");
-    public static readonly Version CurrentVersion = new("0.2.124");
+    public static readonly Version CurrentVersion = new("0.2.126");
     public static string VersionString => CurrentVersion.ToString();
 
     private readonly List<CommandBarEvents> _commandBarEvents = new();
@@ -313,7 +313,7 @@ public sealed class MssqlIntelliSensePackage : AsyncPackage
         }
 
         Log("Starting manual schema scan in background...");
-        
+
         _ = Task.Run(async () =>
         {
             lock (_scanLock)
@@ -331,10 +331,10 @@ public sealed class MssqlIntelliSensePackage : AsyncPackage
                     builder.Remove("Initial Catalog");
                     normalizedConnStr = builder.ConnectionString;
                 }
-                catch {}
+                catch { }
 
                 var connId = MssqlIntelliSense.Core.Metadata.MssqlIntelliSenseCacheWriter.RegisterConnection(normalizedConnStr, name);
-                
+
                 var provider = new MssqlIntelliSense.Core.Metadata.SqlServerMetadataProvider(connectionStringToScan);
                 var metadata = await provider.GetMetadataAsync(cancellationToken);
 
@@ -723,10 +723,10 @@ public sealed class MssqlIntelliSensePackage : AsyncPackage
                     builder.Remove("Initial Catalog");
                     normalizedConnStr = builder.ConnectionString;
                 }
-                catch {}
+                catch { }
 
                 var connId = MssqlIntelliSense.Core.Metadata.MssqlIntelliSenseCacheWriter.RegisterConnection(normalizedConnStr, name);
-                
+
                 var provider = new MssqlIntelliSense.Core.Metadata.SqlServerMetadataProvider(connectionString);
                 var scannedMetadata = await provider.GetMetadataAsync(progress, scope, databaseName, DisposalToken);
                 var metadata = scope == MssqlIntelliSense.Core.Metadata.MetadataScanScope.All
@@ -848,7 +848,7 @@ public sealed class MssqlIntelliSensePackage : AsyncPackage
                         builder.Remove("Initial Catalog");
                         normalizedConnStr = builder.ConnectionString;
                     }
-                    catch {}
+                    catch { }
 
                     MssqlIntelliSense.Core.Metadata.MssqlIntelliSenseCacheWriter.RegisterConnection(normalizedConnStr, name);
                 }
@@ -910,7 +910,7 @@ public sealed class MssqlIntelliSensePackage : AsyncPackage
             var databaseName = GetDatabaseNameFromUiConnectionInfo(uiConnectionInfo) ?? GetActiveDatabaseNameFromToolbar();
             var userName = uiType.GetProperty("UserName")?.GetValue(uiConnectionInfo) as string;
             var password = uiType.GetProperty("Password")?.GetValue(uiConnectionInfo) as string;
-            
+
             var authTypeProp = uiType.GetProperty("AuthenticationType");
             int authType = authTypeProp != null ? Convert.ToInt32(authTypeProp.GetValue(uiConnectionInfo)) : 0;
             bool isWindowsAuth = authType == 0 || string.IsNullOrEmpty(userName);
@@ -1145,13 +1145,13 @@ public sealed class MssqlIntelliSensePackage : AsyncPackage
             var currentDir = System.IO.Path.GetDirectoryName(currentAssemblyPath);
             if (string.IsNullOrEmpty(currentDir)) return;
             var parentDir = System.IO.Path.GetDirectoryName(currentDir); // This is the "Extensions" folder
-            
+
             if (string.IsNullOrEmpty(parentDir) || !System.IO.Directory.Exists(parentDir)) return;
-            
+
             foreach (var dir in System.IO.Directory.GetDirectories(parentDir))
             {
                 if (string.Equals(dir, currentDir, StringComparison.OrdinalIgnoreCase)) continue;
-                
+
                 var dllPath = System.IO.Path.Combine(dir, "MssqlIntelliSense.SsmsHost.dll");
                 if (System.IO.File.Exists(dllPath))
                 {
@@ -1199,7 +1199,7 @@ public sealed class MssqlIntelliSensePackage : AsyncPackage
             jtf.RunAsync(async () =>
             {
                 await jtf.SwitchToMainThreadAsync();
-                
+
                 if (_outputPane == null)
                 {
                     var outWindow = GetGlobalService(typeof(SVsOutputWindow)) as IVsOutputWindow;
@@ -1227,6 +1227,8 @@ public sealed class MssqlIntelliSensePackage : AsyncPackage
         }
     }
 }
+
+
 
 
 

@@ -16,7 +16,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.VisualStudio.Threading" Version="17.14.41" />
+    <PackageReference Include="Microsoft.VisualStudio.Threading" Version="18.7.23" />
   </ItemGroup>
 
 </Project>

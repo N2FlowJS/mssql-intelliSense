@@ -57,6 +57,7 @@ public partial class ToolLabControl : UserControl
         public string ConnectionName { get; set; } = string.Empty;
         public string? ActiveConnectionString { get; set; }
         public string? ActiveDatabase { get; set; }
+        public string DatabaseName { get; set; } = string.Empty;
         public string DisplayName { get; set; } = string.Empty;
         public string ToolName { get; set; } = ListTablesToolName;
         public string SchemaName { get; set; } = "dbo";
@@ -168,6 +169,11 @@ public partial class ToolLabControl : UserControl
                 ConnectionsComboBox.SelectedIndex = 0;
             }
 
+            if (string.IsNullOrWhiteSpace(DatabaseTextBox.Text) && !string.IsNullOrWhiteSpace(activeContext.ActiveDatabase))
+            {
+                DatabaseTextBox.Text = activeContext.ActiveDatabase;
+            }
+
             OutputTextBox.Text = !string.IsNullOrWhiteSpace(activeContext.DisplayName)
                 ? $"Active connection: {activeContext.DisplayName}"
                 : _connections.Count == 0
@@ -241,12 +247,18 @@ public partial class ToolLabControl : UserControl
 
         ConnectionsComboBox.SelectedItem = _connections.FirstOrDefault(c => c.Id == connection.Id) ?? connection;
 
+        var userDatabase = DatabaseTextBox.Text?.Trim() ?? string.Empty;
+        var activeDb = !string.IsNullOrWhiteSpace(userDatabase)
+            ? userDatabase
+            : toolConnection.ActiveDatabase;
+
         return new ToolRunRequest
         {
             ConnectionId = connection.Id,
             ConnectionName = connection.Name,
             ActiveConnectionString = toolConnection.ActiveConnectionString,
-            ActiveDatabase = toolConnection.ActiveDatabase,
+            ActiveDatabase = activeDb,
+            DatabaseName = userDatabase,
             DisplayName = toolConnection.DisplayName,
             ToolName = GetSelectedToolName(),
             SchemaName = string.IsNullOrWhiteSpace(SchemaTextBox.Text) ? "dbo" : SchemaTextBox.Text.Trim(),
@@ -267,13 +279,25 @@ public partial class ToolLabControl : UserControl
             metadata = MssqlIntelliSenseCacheReader.GetSchemaDetails(request.ConnectionId).Metadata;
         }
 
-        if (!string.IsNullOrWhiteSpace(request.ActiveDatabase))
+        var dbFilter = !string.IsNullOrWhiteSpace(request.DatabaseName)
+            ? request.DatabaseName
+            : request.ActiveDatabase;
+
+        if (!string.IsNullOrWhiteSpace(dbFilter))
         {
-            metadata = MssqlIntelliSenseCacheReader.FilterByDatabase(metadata, request.ActiveDatabase!);
+            metadata = MssqlIntelliSenseCacheReader.FilterByDatabase(metadata, dbFilter!);
         }
 
         var arguments = JsonSerializer.Serialize(
-            new { schemaName = request.SchemaName, tableName = request.TableName, query = request.Query, columnName = request.Query },
+            new
+            {
+                database = dbFilter ?? string.Empty,
+                databaseName = dbFilter ?? string.Empty,
+                schemaName = request.SchemaName,
+                tableName = request.TableName,
+                query = request.Query,
+                columnName = request.Query
+            },
             JsonOptions);
         using var doc = JsonDocument.Parse(arguments);
         var output = await SqlMetadataToolExecutorBridge.ExecuteToolAsync(
@@ -282,7 +306,7 @@ public partial class ToolLabControl : UserControl
             metadata,
             query => SqlReadOnlyQueryExecutor.ExecuteAsync(
                 request.ActiveConnectionString ?? string.Empty,
-                request.ActiveDatabase,
+                dbFilter,
                 query));
         var previewRows = SqlMetadataToolExecutor.BuildPreviewRows(
                 request.ToolName,
