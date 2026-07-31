@@ -116,51 +116,27 @@
         <Border Grid.Row="0"
                 BorderBrush="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowBorderBrushKey}}"
                 BorderThickness="0,0,0,1"
-                Padding="2,0,2,8"
-                Margin="0,0,0,8">
-            <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
+                Padding="2,0,2,6"
+                Margin="0,0,0,6">
+            <DockPanel LastChildFill="True">
+                <Button x:Name="ClearChatButton"
+                        DockPanel.Dock="Right"
+                        Click="ClearChatButton_Click"
+                        Style="{StaticResource IconCommandButtonStyle}"
+                        ToolTip="Clear conversation history">
+                    <TextBlock Text="&#xE74D;" Style="{StaticResource IconGlyphStyle}" />
+                </Button>
 
-                <TextBlock Grid.Row="0"
-                           Text="SQL AI Agent"
+                <TextBlock Text="SQL AI Agent"
                            FontWeight="SemiBold"
                            FontSize="13"
+                           VerticalAlignment="Center"
                            TextTrimming="CharacterEllipsis"
                            Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowTextBrushKey}}" />
 
-                <DockPanel Grid.Row="1" Margin="0,8,0,0">
-                    <TextBlock x:Name="ToolSelectionSummaryText"
-                               Text="Tools: 8 enabled"
-                               DockPanel.Dock="Left"
-                               VerticalAlignment="Center"
-                               FontSize="11"
-                               Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.PanelTextBrushKey}}"
-                               Margin="0,0,8,0" />
-
-                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                        <Button x:Name="ToolMenuButton"
-                                Click="ToolMenuButton_Click"
-                                Margin="0,0,6,0"
-                                Style="{StaticResource IconCommandButtonStyle}"
-                                ToolTip="Configure active chat tools">
-                            <TextBlock Text="&#xE713;" Style="{StaticResource IconGlyphStyle}" />
-                        </Button>
-
-                        <Button x:Name="ClearChatButton"
-                                Click="ClearChatButton_Click"
-                                Style="{StaticResource IconCommandButtonStyle}"
-                                ToolTip="Clear conversation history">
-                            <TextBlock Text="&#xE74D;" Style="{StaticResource IconGlyphStyle}" />
-                        </Button>
-                    </StackPanel>
-                </DockPanel>
-
                 <Popup x:Name="ToolMenuPopup"
                        PlacementTarget="{Binding ElementName=ToolMenuButton}"
-                       Placement="Bottom"
+                       Placement="Top"
                        StaysOpen="False"
                        AllowsTransparency="True">
                     <Border BorderBrush="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowBorderBrushKey}}"
@@ -186,7 +162,7 @@
                         </StackPanel>
                     </Border>
                 </Popup>
-            </Grid>
+            </DockPanel>
         </Border>
 
         <!-- Chat Messages Container -->
@@ -212,40 +188,83 @@
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
-                <TextBox x:Name="ChatInputTextBox"
-                         Grid.Row="0"
-                         MinHeight="54"
-                         MaxHeight="120"
-                         Background="{DynamicResource {x:Static vsui:EnvironmentColors.ComboBoxBackgroundBrushKey}}"
-                         Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.ComboBoxTextBrushKey}}"
-                         BorderBrush="{DynamicResource {x:Static vsui:EnvironmentColors.ComboBoxBorderBrushKey}}"
-                         Padding="8,6"
-                         TextWrapping="Wrap"
-                         AcceptsReturn="True"
-                         VerticalScrollBarVisibility="Auto"
-                         FontSize="12"
-                         PreviewKeyDown="ChatInputTextBox_PreviewKeyDown" />
+                <Grid Grid.Row="0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
 
-                <DockPanel Grid.Row="1" Margin="0,6,0,0">
+                    <TextBox x:Name="ChatInputTextBox"
+                             Grid.Column="0"
+                             MinHeight="54"
+                             MaxHeight="120"
+                             Background="{DynamicResource {x:Static vsui:EnvironmentColors.ComboBoxBackgroundBrushKey}}"
+                             Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.ComboBoxTextBrushKey}}"
+                             BorderBrush="{DynamicResource {x:Static vsui:EnvironmentColors.ComboBoxBorderBrushKey}}"
+                             Padding="8,6"
+                             TextWrapping="Wrap"
+                             AcceptsReturn="True"
+                             VerticalScrollBarVisibility="Auto"
+                             FontSize="12"
+                             PreviewKeyDown="ChatInputTextBox_PreviewKeyDown" />
+
+                    <StackPanel Grid.Column="1"
+                                VerticalAlignment="Bottom"
+                                Margin="6,0,0,0">
+                        <Button x:Name="ToolMenuButton"
+                                Click="ToolMenuButton_Click"
+                                Margin="0,0,0,3"
+                                Style="{StaticResource IconCommandButtonStyle}"
+                                Width="30"
+                                MinWidth="30"
+                                Height="26"
+                                MinHeight="26"
+                                ToolTip="Configure active chat tools">
+                            <Grid Width="24" Height="22">
+                                <TextBlock Text="&#xE713;" Style="{StaticResource IconGlyphStyle}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                <Border x:Name="ToolBadgeBorder"
+                                        Background="{DynamicResource {x:Static vsui:EnvironmentColors.SystemHighlightBrushKey}}"
+                                        CornerRadius="5"
+                                        MinWidth="12"
+                                        Height="12"
+                                        Padding="2,0"
+                                        HorizontalAlignment="Right"
+                                        VerticalAlignment="Top"
+                                        Margin="0,-2,-2,0"
+                                        IsHitTestVisible="False">
+                                    <TextBlock x:Name="ToolBadgeText"
+                                               Text="8"
+                                               FontSize="8.5"
+                                               FontWeight="Bold"
+                                               Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.SystemHighlightTextBrushKey}}"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center" />
+                                </Border>
+                            </Grid>
+                        </Button>
+
+                        <Button x:Name="SendChatButton"
+                                Click="SendChatButton_Click"
+                                Style="{StaticResource PrimaryCommandButtonStyle}"
+                                Width="30"
+                                MinWidth="30"
+                                Height="26"
+                                MinHeight="26"
+                                Padding="0"
+                                FontWeight="SemiBold"
+                                IsDefault="True"
+                                ToolTip="Send message">
+                            <TextBlock Text="&#xE724;" Style="{StaticResource IconGlyphStyle}" />
+                        </Button>
+                    </StackPanel>
+                </Grid>
+
+                <DockPanel Grid.Row="1" Margin="0,4,0,0">
                     <TextBlock Text="Ctrl + Enter to send"
                                DockPanel.Dock="Left"
                                VerticalAlignment="Center"
                                FontSize="10.5"
                                Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.PanelTextBrushKey}}" />
-
-                    <Button x:Name="SendChatButton"
-                            DockPanel.Dock="Right"
-                            Click="SendChatButton_Click"
-                            Style="{StaticResource PrimaryCommandButtonStyle}"
-                            Width="34"
-                            MinWidth="34"
-                            Height="28"
-                            Padding="0"
-                            FontWeight="SemiBold"
-                            IsDefault="True"
-                            ToolTip="Send message">
-                        <TextBlock Text="&#xE724;" Style="{StaticResource IconGlyphStyle}" />
-                    </Button>
                 </DockPanel>
             </Grid>
         </Border>

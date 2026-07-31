@@ -140,15 +140,16 @@ public partial class ChatAgentControl : UserControl
 
     private void UpdateToolSelectionSummary()
     {
-        if (ToolSelectionSummaryText == null)
+        var count = GetAllowedToolNamesFromUi().Count;
+        if (ToolBadgeText != null)
         {
-            return;
+            ToolBadgeText.Text = count.ToString();
         }
 
-        var count = GetAllowedToolNamesFromUi().Count;
-        ToolSelectionSummaryText.Text = count == 1
-            ? "Tools: 1 enabled"
-            : $"Tools: {count} enabled";
+        if (ToolMenuButton != null)
+        {
+            ToolMenuButton.ToolTip = $"Configure active chat tools ({count} enabled)";
+        }
     }
 
     private async Task SendChatAsync(string message, CancellationToken cancellationToken)
