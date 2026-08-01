@@ -43,8 +43,11 @@ public sealed record ProcedureMetadata(string Schema, string Name)
     public int ConnectionId { get; init; } = 0;
     public IReadOnlyList<FunctionParameterMetadata> Parameters { get; init; }
         = Array.Empty<FunctionParameterMetadata>();
+    public string ExtendedDescription { get; init; } = "";
 
-    public string Description => $"Stored procedure {Schema}.{Name} trong database {Database}. Tham số: {(Parameters.Count > 0 ? string.Join(", ", Parameters.Select(p => $"{p.Name} ({p.DataType})")) : "Không có")}.";
+    public string Description => string.IsNullOrWhiteSpace(ExtendedDescription)
+        ? $"Stored procedure {Schema}.{Name} trong database {Database}. Tham số: {(Parameters.Count > 0 ? string.Join(", ", Parameters.Select(p => $"{p.Name} ({p.DataType})")) : "Không có")}."
+        : ExtendedDescription;
     public string Keywords => $"procedure,stored-procedure,proc,{Schema},{Name},{string.Join(",", Parameters.Select(p => p.Name.TrimStart('@').ToLowerInvariant()))}";
 }
 
@@ -135,8 +138,11 @@ public sealed record FunctionMetadata(string Schema, string Name)
         = Array.Empty<FunctionParameterMetadata>();
     public string Connection { get; init; } = "";
     public int ConnectionId { get; init; } = 0;
+    public string ExtendedDescription { get; init; } = "";
 
-    public string Description => $"Function {Schema}.{Name} ({FunctionType}) trong database {Database}. Kiểu trả về: {ReturnType}. Tham số: {(Parameters.Count > 0 ? string.Join(", ", Parameters.Select(p => $"{p.Name} ({p.DataType})")) : "Không có")}.";
+    public string Description => string.IsNullOrWhiteSpace(ExtendedDescription)
+        ? $"Function {Schema}.{Name} ({FunctionType}) trong database {Database}. Kiểu trả về: {ReturnType}. Tham số: {(Parameters.Count > 0 ? string.Join(", ", Parameters.Select(p => $"{p.Name} ({p.DataType})")) : "Không có")}."
+        : ExtendedDescription;
     public string Keywords => $"function,func,fn,{Schema},{Name},{ReturnType.ToLowerInvariant()},{string.Join(",", Parameters.Select(p => p.Name.TrimStart('@').ToLowerInvariant()))}";
 }
 

@@ -31,6 +31,7 @@ internal static class TestMetadata
             new ProcedureMetadata("dbo", "GetUser")
             {
                 Database = "TestDb",
+                ExtendedDescription = "Returns a user profile for application authentication.",
                 Definition = "CREATE PROCEDURE [dbo].[GetUser]\n    @UserId int,\n    @IncludeInactive bit\nAS\nSELECT * FROM dbo.Users",
                 Parameters =
                 [
@@ -45,6 +46,7 @@ internal static class TestMetadata
             new FunctionMetadata("dbo", "NormalizeEmail")
             {
                 Database = "TestDb",
+                ExtendedDescription = "Normalizes email addresses before identity matching.",
                 ReturnType = "nvarchar",
                 Definition = "CREATE FUNCTION [dbo].[NormalizeEmail](@value nvarchar(320))\nRETURNS nvarchar(320)\nAS\nBEGIN\n    RETURN LOWER(@value);\nEND"
             }

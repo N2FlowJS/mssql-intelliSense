@@ -186,7 +186,7 @@ public sealed class SqlServerMetadataProvider : IMetadataProvider
                 if (scope.HasFlag(MetadataScanScope.Programmability))
                 {
                 progress?.Report($"[CSDL: {dbName}] Đang quét Thủ tục lưu trữ (Procedures)...");
-                var procRows = new List<(string Schema, string Name, string Type, string Definition, string? ParamName, string? ParamType, bool IsOutput, int ParamOrdinal)>();
+                var procRows = new List<(string Schema, string Name, string Type, string Definition, string? ParamName, string? ParamType, bool IsOutput, int ParamOrdinal, string ObjectDescription)>();
                 try
                 {
                     using (var command = CreateCommand(connection, ProceduresSql))
@@ -201,12 +201,13 @@ public sealed class SqlServerMetadataProvider : IMetadataProvider
                                     reader.IsDBNull(4) ? null : reader.GetString(4),
                                     reader.IsDBNull(5) ? null : reader.GetString(5),
                                     !reader.IsDBNull(6) && reader.GetBoolean(6),
-                                    reader.IsDBNull(7) ? 0 : reader.GetInt32(7)
+                                    reader.IsDBNull(7) ? 0 : reader.GetInt32(7),
+                                    reader.IsDBNull(8) ? "" : reader.GetString(8)
                                 ));
                     }
 
                     procedures.AddRange(procRows
-                        .GroupBy(row => (row.Schema, row.Name, row.Type, row.Definition))
+                        .GroupBy(row => (row.Schema, row.Name, row.Type, row.Definition, row.ObjectDescription))
                         .Select(group =>
                         {
                             var parameters = group
@@ -218,6 +219,7 @@ public sealed class SqlServerMetadataProvider : IMetadataProvider
                                 Database = dbName,
                                 ObjectType = group.Key.Type,
                                 Definition = group.Key.Definition,
+                                ExtendedDescription = group.Key.ObjectDescription,
                                 Parameters = parameters
                             };
                         }));
@@ -258,7 +260,7 @@ public sealed class SqlServerMetadataProvider : IMetadataProvider
 
                 // ── Functions (Scalar / TVF / CLR) ────────────────────────
                 progress?.Report($"[CSDL: {dbName}] Đang quét các Hàm (Functions)...");
-                var fnRows = new List<(string Schema, string Name, string FnType, string Definition, string ReturnType, string ParamName, string ParamType, bool IsOutput, int ParamOrdinal)>();
+                var fnRows = new List<(string Schema, string Name, string FnType, string Definition, string ReturnType, string ParamName, string ParamType, bool IsOutput, int ParamOrdinal, string ObjectDescription)>();
                 try
                 {
                     using (var command = CreateCommand(connection, FunctionsSql))
@@ -271,7 +273,8 @@ public sealed class SqlServerMetadataProvider : IMetadataProvider
                                     reader.IsDBNull(5) ? "" : reader.GetString(5),
                                     reader.IsDBNull(6) ? "" : reader.GetString(6),
                                     !reader.IsDBNull(7) && reader.GetBoolean(7),
-                                    reader.IsDBNull(8) ? 0 : System.Convert.ToInt32(reader.GetValue(8))));
+                                    reader.IsDBNull(8) ? 0 : System.Convert.ToInt32(reader.GetValue(8)),
+                                    reader.IsDBNull(9) ? "" : reader.GetString(9)));
                     }
                 }
                 catch (Exception ex)
@@ -280,7 +283,7 @@ public sealed class SqlServerMetadataProvider : IMetadataProvider
                 }
 
                 functions.AddRange(fnRows
-                    .GroupBy(row => (row.Schema, row.Name, row.FnType, row.Definition, row.ReturnType))
+                    .GroupBy(row => (row.Schema, row.Name, row.FnType, row.Definition, row.ReturnType, row.ObjectDescription))
                     .Select(group =>
                     {
                         var parameters = group
@@ -293,6 +296,7 @@ public sealed class SqlServerMetadataProvider : IMetadataProvider
                             FunctionType = group.Key.FnType,
                             Definition   = group.Key.Definition,
                             ReturnType   = group.Key.ReturnType,
+                            ExtendedDescription = group.Key.ObjectDescription,
                             Parameters   = parameters
                         };
                     }));
@@ -611,11 +615,13 @@ public sealed class SqlServerMetadataProvider : IMetadataProvider
             p.name                      AS [param_name],
             pty.name                    AS [param_type],
             p.is_output                 AS [is_output],
-            p.parameter_id              AS [param_ordinal]
+            p.parameter_id              AS [param_ordinal],
+            CONVERT(nvarchar(max), ep.value) AS [object_description]
         FROM sys.objects o
         JOIN sys.schemas s ON s.schema_id = o.schema_id
         LEFT JOIN sys.parameters p ON p.object_id = o.object_id AND p.parameter_id > 0
         LEFT JOIN sys.types pty ON pty.user_type_id = p.user_type_id
+        LEFT JOIN sys.extended_properties ep ON ep.class = 1 AND ep.major_id = o.object_id AND ep.minor_id = 0 AND ep.name = N'MS_Description'
         WHERE o.type = 'P'
         ORDER BY s.name, o.name, p.parameter_id;
         """;
@@ -630,13 +636,15 @@ public sealed class SqlServerMetadataProvider : IMetadataProvider
             p.name                      AS [param_name],
             pty.name                    AS [param_type],
             p.is_output                 AS [is_output],
-            p.parameter_id              AS [param_ordinal]
+            p.parameter_id              AS [param_ordinal],
+            CONVERT(nvarchar(max), ep.value) AS [object_description]
         FROM sys.objects o
         JOIN sys.schemas s ON s.schema_id = o.schema_id
         LEFT JOIN sys.parameters p ON p.object_id = o.object_id AND p.parameter_id > 0
         LEFT JOIN sys.types pty ON pty.user_type_id = p.user_type_id
         LEFT JOIN sys.parameters ret ON ret.object_id = o.object_id AND ret.parameter_id = 0
         LEFT JOIN sys.types tp ON tp.user_type_id = ret.user_type_id
+        LEFT JOIN sys.extended_properties ep ON ep.class = 1 AND ep.major_id = o.object_id AND ep.minor_id = 0 AND ep.name = N'MS_Description'
         WHERE o.type IN ('FN', 'TF', 'IF', 'FS', 'FT', 'AF')
         ORDER BY s.name, o.name, p.parameter_id;
         """;

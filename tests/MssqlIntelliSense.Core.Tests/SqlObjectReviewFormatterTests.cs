@@ -38,6 +38,7 @@ public sealed class SqlObjectReviewFormatterTests
         review.Definition.Should().Contain("CREATE PROCEDURE [dbo].[GetUser]");
         review.Definition.Should().Contain("@IncludeInactive bit");
         review.Details.Should().Contain("- @UserId: int");
+        review.Details.Should().Contain("Returns a user profile for application authentication.");
     }
 
     [Fact]
@@ -55,6 +56,7 @@ public sealed class SqlObjectReviewFormatterTests
         review.Definition.Should().Contain("CREATE FUNCTION [dbo].[NormalizeEmail]");
         review.Definition.Should().Contain("RETURN LOWER(@value);");
         review.Details.Should().Contain("Return type: nvarchar");
+        review.Details.Should().Contain("Normalizes email addresses before identity matching.");
     }
 
     [Fact]

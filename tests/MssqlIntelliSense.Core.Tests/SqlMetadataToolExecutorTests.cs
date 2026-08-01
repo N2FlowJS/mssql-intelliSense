@@ -137,6 +137,38 @@ public sealed class SqlMetadataToolExecutorTests
     }
 
     [Fact]
+    public async Task ExecuteToolAsync_SearchObjects_UsesProcedureAndFunctionDescriptions()
+    {
+        var metadata = new DatabaseMetadata([], [], [], ["TestDb"], [])
+        {
+            Procedures =
+            [
+                new ProcedureMetadata("dbo", "ReconcilePayment")
+                {
+                    Database = "TestDb",
+                    ExtendedDescription = "Reconciles settled payment batches with financial ledger entries."
+                }
+            ],
+            Functions =
+            [
+                new FunctionMetadata("dbo", "NormalizeCustomerIdentity")
+                {
+                    Database = "TestDb",
+                    ExtendedDescription = "Normalizes customer identity values before matching duplicate records."
+                }
+            ]
+        };
+        using var procedureArgs = JsonDocument.Parse("{\"query\":\"payment batches\"}");
+        using var functionArgs = JsonDocument.Parse("{\"query\":\"duplicate records\"}");
+
+        var procedureJson = await SqlMetadataToolExecutor.ExecuteToolAsync(SqlMetadataToolExecutor.SearchObjectsToolName, procedureArgs.RootElement, metadata);
+        var functionJson = await SqlMetadataToolExecutor.ExecuteToolAsync(SqlMetadataToolExecutor.SearchObjectsToolName, functionArgs.RootElement, metadata);
+
+        procedureJson.Should().Contain("ReconcilePayment").And.Contain("financial ledger entries");
+        functionJson.Should().Contain("NormalizeCustomerIdentity").And.Contain("duplicate records");
+    }
+
+    [Fact]
     public async Task ExecuteToolAsync_SearchObjects_UsesSqlDefinitionText()
     {
         var metadata = TestMetadata.Create();

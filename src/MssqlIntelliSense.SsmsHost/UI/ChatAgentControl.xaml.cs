@@ -1632,6 +1632,23 @@ public partial class ChatAgentControl : UserControl
                 foreach (var proc in metadata.Procedures.Take(20))
                 {
                     sb.AppendLine($"- {proc.Schema}.{proc.Name} (Database: {proc.Database})");
+                    if (!string.IsNullOrWhiteSpace(proc.ExtendedDescription))
+                    {
+                        sb.AppendLine($"  Description: {proc.ExtendedDescription}");
+                    }
+                }
+            }
+
+            if (metadata.Functions.Count > 0)
+            {
+                sb.AppendLine("\nFunctions:");
+                foreach (var function in metadata.Functions.Take(20))
+                {
+                    sb.AppendLine($"- {function.Schema}.{function.Name} (Database: {function.Database})");
+                    if (!string.IsNullOrWhiteSpace(function.ExtendedDescription))
+                    {
+                        sb.AppendLine($"  Description: {function.ExtendedDescription}");
+                    }
                 }
             }
         }

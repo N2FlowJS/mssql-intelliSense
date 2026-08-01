@@ -173,6 +173,10 @@ public static class SqlObjectReviewFormatter
     {
         var details = new StringBuilder();
         AppendCommon(details, "Stored procedure", proc.Database, proc.Schema, proc.Name);
+        if (!string.IsNullOrWhiteSpace(proc.ExtendedDescription))
+        {
+            details.AppendLine($"Description: {proc.ExtendedDescription}");
+        }
         details.AppendLine($"Object type: {proc.ObjectType}");
         details.AppendLine();
         AppendParameters(details, proc.Parameters);
@@ -193,6 +197,10 @@ public static class SqlObjectReviewFormatter
     {
         var details = new StringBuilder();
         AppendCommon(details, "Function", fn.Database, fn.Schema, fn.Name);
+        if (!string.IsNullOrWhiteSpace(fn.ExtendedDescription))
+        {
+            details.AppendLine($"Description: {fn.ExtendedDescription}");
+        }
         details.AppendLine($"Function type: {fn.FunctionType}");
         details.AppendLine($"Return type: {(string.IsNullOrWhiteSpace(fn.ReturnType) ? "(unknown)" : fn.ReturnType)}");
         details.AppendLine();

@@ -163,10 +163,12 @@ public class JsonCacheTests : IDisposable
             v.Definition.Contains("WHERE IsActive = 1"));
         metadata.Procedures.Should().ContainSingle(p =>
             p.Name == "GetUser" &&
+            p.ExtendedDescription == "Returns a user profile for application authentication." &&
             p.Definition.Contains("CREATE PROCEDURE [dbo].[GetUser]") &&
             p.Definition.Contains("@IncludeInactive bit"));
         metadata.Functions.Should().ContainSingle(f =>
             f.Name == "NormalizeEmail" &&
+            f.ExtendedDescription == "Normalizes email addresses before identity matching." &&
             f.Definition.Contains("CREATE FUNCTION [dbo].[NormalizeEmail]") &&
             f.Definition.Contains("RETURN LOWER(@value);"));
     }

@@ -58,4 +58,22 @@ public sealed class SqlServerMetadataProviderTests
 
         sql.Should().Contain("HAS_DBACCESS(name) = 1");
     }
+
+    [Theory]
+    [InlineData("ProceduresSql")]
+    [InlineData("FunctionsSql")]
+    public void ProgrammabilitySql_ReadsObjectMsDescription(string fieldName)
+    {
+        var field = typeof(SqlServerMetadataProvider).GetField(
+            fieldName,
+            BindingFlags.Static | BindingFlags.NonPublic);
+
+        field.Should().NotBeNull();
+        var sql = (string)field!.GetValue(null)!;
+
+        sql.Should().Contain("sys.extended_properties ep");
+        sql.Should().Contain("ep.minor_id = 0");
+        sql.Should().Contain("N'MS_Description'");
+        sql.Should().Contain("AS [object_description]");
+    }
 }
