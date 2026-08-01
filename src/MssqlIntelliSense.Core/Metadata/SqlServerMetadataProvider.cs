@@ -100,7 +100,7 @@ public sealed class SqlServerMetadataProvider : IMetadataProvider
                 if (scope.HasFlag(MetadataScanScope.Tables))
                 {
                 progress?.Report($"[CSDL: {dbName}] Đang quét Bảng & Cột...");
-                var tableRows = new List<(string Schema, string Table, string Column, string Type, bool Nullable, int Ordinal, bool PrimaryKey)>();
+                var tableRows = new List<(string Schema, string Table, string Column, string Type, bool Nullable, int Ordinal, bool PrimaryKey, string Description, string ObjectDescription)>();
                 try
                 {
                     using (var command = CreateCommand(connection, TablesSql))
@@ -109,7 +109,9 @@ public sealed class SqlServerMetadataProvider : IMetadataProvider
                             while (await reader.ReadAsync(cancellationToken))
                                 tableRows.Add((reader.GetString(0), reader.GetString(1), reader.GetString(2),
                                     reader.GetString(3), reader.GetBoolean(4),
-                                    System.Convert.ToInt32(reader.GetValue(5)), reader.GetBoolean(6)));
+                                    System.Convert.ToInt32(reader.GetValue(5)), reader.GetBoolean(6),
+                                    reader.IsDBNull(7) ? "" : reader.GetString(7),
+                                    reader.IsDBNull(8) ? "" : reader.GetString(8)));
                     }
                 }
                 catch (Exception ex)
@@ -118,12 +120,12 @@ public sealed class SqlServerMetadataProvider : IMetadataProvider
                 }
 
                 var dbTables = tableRows
-                    .GroupBy(row => (row.Schema, row.Table))
+                    .GroupBy(row => (row.Schema, row.Table, row.ObjectDescription))
                     .Select(group => new TableMetadata(
                         group.Key.Schema, group.Key.Table,
-                        group.OrderBy(r => r.Ordinal).Select(r => new ColumnMetadata(r.Column, r.Type, r.Nullable, r.Ordinal)).ToArray(),
+                        group.OrderBy(r => r.Ordinal).Select(r => new ColumnMetadata(r.Column, r.Type, r.Nullable, r.Ordinal, r.Description)).ToArray(),
                         group.Where(r => r.PrimaryKey).OrderBy(r => r.Ordinal).Select(r => r.Column).ToArray())
-                    { Database = dbName })
+                    { Database = dbName, ExtendedDescription = group.Key.ObjectDescription })
                     .ToArray();
                 tables.AddRange(dbTables);
                 }
@@ -227,7 +229,7 @@ public sealed class SqlServerMetadataProvider : IMetadataProvider
 
                 // ── Views ─────────────────────────────────────────────────
                 progress?.Report($"[CSDL: {dbName}] Đang quét Khung nhìn (Views)...");
-                var viewRows = new List<(string Schema, string View, string Definition, string Column, string Type, bool Nullable, int Ordinal, bool IsIndexed)>();
+                var viewRows = new List<(string Schema, string View, string Definition, string Column, string Type, bool Nullable, int Ordinal, bool IsIndexed, string Description, string ObjectDescription)>();
                 try
                 {
                     using (var command = CreateCommand(connection, ViewsSql))
@@ -237,7 +239,9 @@ public sealed class SqlServerMetadataProvider : IMetadataProvider
                                 viewRows.Add((reader.GetString(0), reader.GetString(1),
                                     reader.IsDBNull(2) ? "" : reader.GetString(2),
                                     reader.GetString(3), reader.GetString(4), reader.GetBoolean(5),
-                                    System.Convert.ToInt32(reader.GetValue(6)), reader.GetBoolean(7)));
+                                    System.Convert.ToInt32(reader.GetValue(6)), reader.GetBoolean(7),
+                                    reader.IsDBNull(8) ? "" : reader.GetString(8),
+                                    reader.IsDBNull(9) ? "" : reader.GetString(9)));
                     }
                 }
                 catch (Exception ex)
@@ -246,11 +250,11 @@ public sealed class SqlServerMetadataProvider : IMetadataProvider
                 }
 
                 views.AddRange(viewRows
-                    .GroupBy(row => (row.Schema, row.View, row.Definition, row.IsIndexed))
+                    .GroupBy(row => (row.Schema, row.View, row.Definition, row.IsIndexed, row.ObjectDescription))
                     .Select(group => new ViewMetadata(
                         group.Key.Schema, group.Key.View,
-                        group.OrderBy(r => r.Ordinal).Select(r => new ColumnMetadata(r.Column, r.Type, r.Nullable, r.Ordinal)).ToArray())
-                    { Database = dbName, IsIndexed = group.Key.IsIndexed, Definition = group.Key.Definition }));
+                        group.OrderBy(r => r.Ordinal).Select(r => new ColumnMetadata(r.Column, r.Type, r.Nullable, r.Ordinal, r.Description)).ToArray())
+                    { Database = dbName, IsIndexed = group.Key.IsIndexed, Definition = group.Key.Definition, ExtendedDescription = group.Key.ObjectDescription }));
 
                 // ── Functions (Scalar / TVF / CLR) ────────────────────────
                 progress?.Report($"[CSDL: {dbName}] Đang quét các Hàm (Functions)...");
@@ -530,8 +534,10 @@ public sealed class SqlServerMetadataProvider : IMetadataProvider
         """;
 
     private const string TablesSql = """
-        SELECT s.name, o.name, c.name, ty.name, c.is_nullable, c.column_id,
-               CONVERT(bit, CASE WHEN pk.column_id IS NULL THEN 0 ELSE 1 END)
+         SELECT s.name, o.name, c.name, ty.name, c.is_nullable, c.column_id,
+             CONVERT(bit, CASE WHEN pk.column_id IS NULL THEN 0 ELSE 1 END),
+             CONVERT(nvarchar(max), ep.value) AS column_description,
+             CONVERT(nvarchar(max), object_ep.value) AS object_description
         FROM sys.tables o
         JOIN sys.schemas s ON s.schema_id = o.schema_id
         JOIN sys.columns c ON c.object_id = o.object_id
@@ -542,12 +548,20 @@ public sealed class SqlServerMetadataProvider : IMetadataProvider
               ON ic.object_id = i.object_id AND ic.index_id = i.index_id
             WHERE i.is_primary_key = 1
         ) pk ON pk.object_id = c.object_id AND pk.column_id = c.column_id
+                LEFT JOIN sys.extended_properties ep
+                    ON ep.class = 1 AND ep.major_id = c.object_id AND ep.minor_id = c.column_id
+                 AND ep.name = N'MS_Description'
+                LEFT JOIN sys.extended_properties object_ep
+                    ON object_ep.class = 1 AND object_ep.major_id = o.object_id AND object_ep.minor_id = 0
+                 AND object_ep.name = N'MS_Description'
         ORDER BY s.name, o.name, c.column_id;
         """;
 
     private const string ViewsSql = """
-        SELECT s.name, v.name, OBJECT_DEFINITION(v.object_id) AS [definition], c.name, ty.name, c.is_nullable, c.column_id,
-               CONVERT(bit, CASE WHEN idx.object_id IS NOT NULL THEN 1 ELSE 0 END) AS is_indexed
+         SELECT s.name, v.name, OBJECT_DEFINITION(v.object_id) AS [definition], c.name, ty.name, c.is_nullable, c.column_id,
+             CONVERT(bit, CASE WHEN idx.object_id IS NOT NULL THEN 1 ELSE 0 END) AS is_indexed,
+             CONVERT(nvarchar(max), ep.value) AS column_description,
+             CONVERT(nvarchar(max), object_ep.value) AS object_description
         FROM sys.views v
         JOIN sys.schemas s ON s.schema_id = v.schema_id
         JOIN sys.columns c ON c.object_id = v.object_id
@@ -555,6 +569,12 @@ public sealed class SqlServerMetadataProvider : IMetadataProvider
         LEFT JOIN (
             SELECT DISTINCT object_id FROM sys.indexes WHERE index_id = 1 AND type IN (1,5)
         ) idx ON idx.object_id = v.object_id
+                LEFT JOIN sys.extended_properties ep
+                    ON ep.class = 1 AND ep.major_id = c.object_id AND ep.minor_id = c.column_id
+                 AND ep.name = N'MS_Description'
+                LEFT JOIN sys.extended_properties object_ep
+                    ON object_ep.class = 1 AND object_ep.major_id = v.object_id AND object_ep.minor_id = 0
+                 AND object_ep.name = N'MS_Description'
         ORDER BY s.name, v.name, c.column_id;
         """;
 

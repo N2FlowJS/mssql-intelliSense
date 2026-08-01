@@ -188,7 +188,7 @@ public sealed class ObjectReviewWindow : Window
                 Name = column.Name,
                 DataType = column.DataType,
                 Nullable = column.IsNullable ? "Yes" : "No",
-                Description = description ?? string.Empty
+                Description = string.IsNullOrWhiteSpace(description) ? column.Description : description
             });
         }
 

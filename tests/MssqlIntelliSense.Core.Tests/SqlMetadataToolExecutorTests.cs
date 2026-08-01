@@ -60,6 +60,20 @@ public sealed class SqlMetadataToolExecutorTests
     }
 
     [Fact]
+    public async Task ExecuteToolAsync_GetTableSchema_IncludesDatabaseColumnDescription()
+    {
+        var metadata = new DatabaseMetadata(
+            [new TableMetadata("dbo", "Accounts", [new ColumnMetadata("AccountNumber", "nvarchar", false, 1, "External account identifier used for reconciliation.")], ["AccountNumber"])
+            { Database = "TestDb" }],
+            [], [], ["TestDb"], []);
+        using var args = JsonDocument.Parse("{\"schemaName\":\"dbo\",\"tableName\":\"Accounts\"}");
+
+        var json = await SqlMetadataToolExecutor.ExecuteToolAsync(SqlMetadataToolExecutor.TableSchemaToolName, args.RootElement, metadata);
+
+        json.Should().Contain("External account identifier used for reconciliation.");
+    }
+
+    [Fact]
     public async Task ExecuteToolAsync_GetTableRelations_ReturnsForeignKeys()
     {
         var metadata = TestMetadata.Create();
@@ -105,6 +119,21 @@ public sealed class SqlMetadataToolExecutorTests
             Environment.SetEnvironmentVariable("MSSQL_INTELLISENSE_APPDATA", previous);
             DeleteDirectoryWithRetry(tempFolder);
         }
+    }
+
+    [Fact]
+    public async Task ExecuteToolAsync_SearchObjects_UsesDatabaseObjectDescription()
+    {
+        var metadata = new DatabaseMetadata(
+            [new TableMetadata("dbo", "Invoices", Array.Empty<ColumnMetadata>(), Array.Empty<string>())
+            { Database = "TestDb", ExtendedDescription = "Financial billing documents used for payment reconciliation." }],
+            [], [], ["TestDb"], []);
+        using var args = JsonDocument.Parse("{\"query\":\"payment reconciliation\"}");
+
+        var json = await SqlMetadataToolExecutor.ExecuteToolAsync(SqlMetadataToolExecutor.SearchObjectsToolName, args.RootElement, metadata);
+
+        json.Should().Contain("Invoices");
+        json.Should().Contain("Financial billing documents used for payment reconciliation.");
     }
 
     [Fact]

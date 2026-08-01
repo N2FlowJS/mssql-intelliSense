@@ -190,6 +190,7 @@ public static class SqlMetadataToolExecutor
                     dataType = c.DataType,
                     isNullable = c.IsNullable,
                     ordinal = c.Ordinal,
+                    description = c.Description,
                     agentGuidance = GetColumnGuidance(descriptions, objectKey, c.Name)
                 }).ToList(),
                 primaryKeyColumns = table.PrimaryKeyColumns,
@@ -389,6 +390,7 @@ public static class SqlMetadataToolExecutor
                     column = c.Name,
                     dataType = c.DataType,
                     isNullable = c.IsNullable,
+                    description = c.Description,
                     agentGuidance = GetColumnGuidance(descriptions, objectKey, c.Name)
                 };
             }));
@@ -406,6 +408,7 @@ public static class SqlMetadataToolExecutor
                     column = c.Name,
                     dataType = c.DataType,
                     isNullable = c.IsNullable,
+                    description = c.Description,
                     agentGuidance = GetColumnGuidance(descriptions, objectKey, c.Name)
                 };
             }));

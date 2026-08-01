@@ -778,6 +778,7 @@ public partial class MssqlIntelliSenseWindow : Window
                 AddFormField("Data Type", col.DataType, "Kiểu dữ liệu SQL Server.", "data-type,column,type");
                 AddFormField("Nullable", col.IsNullable ? "Yes" : "No", "Cho biết cột có cho phép NULL hay không.", "nullable,null,required");
                 AddFormField("Ordinal", col.Ordinal.ToString(), "Thứ tự cột trong object.", "ordinal,column-order,metadata");
+                AddFormField("MS_Description", col.Description, "Mô tả lấy từ SQL Server extended property MS_Description.", "ms-description,extended-property,column-documentation");
             }
             else if (node.Tag is UserMetadata user)
             {
@@ -905,8 +906,10 @@ public partial class MssqlIntelliSenseWindow : Window
             AddFormField(
                 $"Column {column.Ordinal}",
                 $"{column.Name} : {column.DataType} ({(column.IsNullable ? "NULL" : "NOT NULL")})",
-                "Column metadata dùng cho autocomplete, AI context và schema search.",
-                $"column,{column.Name},{column.DataType},nullable-{column.IsNullable}");
+                string.IsNullOrWhiteSpace(column.Description)
+                    ? "Column metadata dùng cho autocomplete, AI context và schema search."
+                    : column.Description,
+                $"column,{column.Name},{column.DataType},nullable-{column.IsNullable},ms-description");
         }
     }
 

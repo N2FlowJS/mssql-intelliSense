@@ -57,13 +57,21 @@ public sealed record TableMetadata(
     public string Database { get; init; } = "";
     public string Connection { get; init; } = "";
     public int ConnectionId { get; init; } = 0;
+    public string ExtendedDescription { get; init; } = "";
     public string PrimaryKeyColumnsString => string.Join(", ", PrimaryKeyColumns);
 
-    public string Description => $"Bảng {Schema}.{Name} trong database {Database}. Chứa các cột: {string.Join(", ", Columns.Select(c => c.Name))}.";
+    public string Description => string.IsNullOrWhiteSpace(ExtendedDescription)
+        ? $"Bảng {Schema}.{Name} trong database {Database}. Chứa các cột: {string.Join(", ", Columns.Select(c => c.Name))}."
+        : ExtendedDescription;
     public string Keywords => $"table,{Schema},{Name},{string.Join(",", Columns.Select(c => c.Name.ToLowerInvariant()))}";
 }
 
-public sealed record ColumnMetadata(string Name, string DataType, bool IsNullable, int Ordinal);
+public sealed record ColumnMetadata(
+    string Name,
+    string DataType,
+    bool IsNullable,
+    int Ordinal,
+    string Description = "");
 
 public sealed record ForeignKeyMetadata(
     string Name,
@@ -105,8 +113,11 @@ public sealed record ViewMetadata(
     public string Definition { get; init; } = "";
     public string Connection { get; init; } = "";
     public int ConnectionId { get; init; } = 0;
+    public string ExtendedDescription { get; init; } = "";
 
-    public string Description => $"View {Schema}.{Name} trong database {Database}. Chứa các cột: {string.Join(", ", Columns.Select(c => c.Name))}.";
+    public string Description => string.IsNullOrWhiteSpace(ExtendedDescription)
+        ? $"View {Schema}.{Name} trong database {Database}. Chứa các cột: {string.Join(", ", Columns.Select(c => c.Name))}."
+        : ExtendedDescription;
     public string Keywords => $"view,{Schema},{Name},{string.Join(",", Columns.Select(c => c.Name.ToLowerInvariant()))}";
 }
 
