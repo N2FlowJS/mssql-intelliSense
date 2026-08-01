@@ -200,37 +200,35 @@ internal sealed class SqlCompletionCommandFilter : IOleCommandTarget
 
     private void OnLongClickTimerTick(object? sender, EventArgs e)
     {
+        ThreadHelper.ThrowIfNotOnUIThread();
+
         _longClickTimer.Stop();
         _isLongClickHandled = true;
 
-        ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
+        try
         {
-            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-            try
+            if (_currentSession != null)
             {
-                if (_currentSession != null && _currentSession.SelectedCompletionSet != null && _currentSession.SelectedCompletionSet.SelectionStatus.IsSelected)
+                var selectedCompletion = GetCurrentCompletion(_currentSession);
+                if (selectedCompletion != null)
                 {
-                    var selectedCompletion = _currentSession.SelectedCompletionSet.SelectionStatus.Completion;
-                    if (selectedCompletion != null)
-                    {
-                        var match = GetCompletionItem(_currentSession, selectedCompletion);
-                        _currentSession.Properties.TryGetProperty(
-                            SqlCompletionSource.CompletionMetadataPropertyKey,
-                            out DatabaseMetadata? metadata);
-                        TryOpenObjectReview(match, metadata);
-                        return;
-                    }
+                    var match = GetCompletionItem(_currentSession, selectedCompletion);
+                    _currentSession.Properties.TryGetProperty(
+                        SqlCompletionSource.CompletionMetadataPropertyKey,
+                        out DatabaseMetadata? metadata);
+                    TryOpenObjectReview(match, metadata);
+                    return;
                 }
+            }
 
-                var caretPos = _textView.Caret.Position.BufferPosition;
-                var sql = _textView.TextSnapshot.GetText();
-                SqlCompletionSource.TryOpenObjectReviewFromSql(sql, caretPos.Position);
-            }
-            catch (Exception ex)
-            {
-                MssqlIntelliSensePackage.Log($"[Autocomplete LongClick Error] {ex.Message}");
-            }
-        });
+            var caretPos = _textView.Caret.Position.BufferPosition;
+            var sql = _textView.TextSnapshot.GetText();
+            SqlCompletionSource.TryOpenObjectReviewFromSql(sql, caretPos.Position);
+        }
+        catch (Exception ex)
+        {
+            MssqlIntelliSensePackage.Log($"[Autocomplete LongClick Error] {ex.Message}");
+        }
     }
 
     public int QueryStatus(ref Guid pguidCmdGroup, uint cCmds, OLECMD[] prgCmds, IntPtr pCmdText)
@@ -436,8 +434,13 @@ internal sealed class SqlCompletionCommandFilter : IOleCommandTarget
     private void OnSessionCommitted(object sender, EventArgs e)
     {
         ThreadHelper.ThrowIfNotOnUIThread();
-        if (sender is not ICompletionSession session ||
-            session.SelectedCompletionSet?.SelectionStatus.Completion is not { } selected)
+        if (sender is not ICompletionSession session)
+        {
+            return;
+        }
+
+        var selected = GetCurrentCompletion(session);
+        if (selected == null)
         {
             return;
         }
@@ -453,6 +456,23 @@ internal sealed class SqlCompletionCommandFilter : IOleCommandTarget
             _currentSession.Dismissed -= OnSessionDismissed;
             _currentSession = null;
         }
+    }
+
+    private static Completion? GetCurrentCompletion(ICompletionSession session)
+    {
+        var completionSet = session.SelectedCompletionSet;
+        if (completionSet == null)
+        {
+            return null;
+        }
+
+        var selectedCompletion = completionSet.SelectionStatus.Completion;
+        if (selectedCompletion != null)
+        {
+            return selectedCompletion;
+        }
+
+        return completionSet.Completions.FirstOrDefault();
     }
 
     private static SqlCompletionItem? GetCompletionItem(ICompletionSession session, Completion selected)

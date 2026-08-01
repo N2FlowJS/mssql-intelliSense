@@ -270,23 +270,38 @@ public partial class ChatAgentControl : UserControl
             }
         }, cancellationToken);
 
+        var hasSchemaMetadata = HasSchemaMetadata(metadata);
+        if (!hasSchemaMetadata)
+        {
+            metadata = null;
+            await MssqlIntelliSensePackage.SwitchToMainThreadAsync(cancellationToken);
+            AddChatMessage(
+                "Schema",
+                string.IsNullOrWhiteSpace(chatConnection.DisplayName)
+                    ? "No cached schema is available. The assistant can provide general SQL guidance, but cannot verify database objects."
+                    : "Schema has not been scanned for this connection. Scan the schema before asking the assistant to verify tables, columns, relationships, or indexes.",
+                isUser: false);
+        }
+
         Border? statusBorder = null;
-        if (allowedToolNames.Count > 0)
+        if (hasSchemaMetadata && allowedToolNames.Count > 0)
         {
             await MssqlIntelliSensePackage.SwitchToMainThreadAsync(cancellationToken);
             statusBorder = AddChatMessage("Assistant", "Checking available actions...", isUser: false, isStreaming: true);
         }
 
-        var toolContext = await ResolveApprovedToolContextAsync(
-            endpoint: options.Endpoint,
-            apiKey: options.ApiKey,
-            model: string.IsNullOrWhiteSpace(options.Model) ? "gpt-4o" : options.Model,
-            userMessage: message,
-            metadata: metadata,
-            chatConnection: chatConnection,
-            allowedToolNames: allowedToolNames,
-            statusBorder: statusBorder,
-            cancellationToken: cancellationToken);
+        var toolContext = hasSchemaMetadata
+            ? await ResolveApprovedToolContextAsync(
+                endpoint: options.Endpoint,
+                apiKey: options.ApiKey,
+                model: string.IsNullOrWhiteSpace(options.Model) ? "gpt-4o" : options.Model,
+                userMessage: message,
+                metadata: metadata,
+                chatConnection: chatConnection,
+                allowedToolNames: allowedToolNames,
+                statusBorder: statusBorder,
+                cancellationToken: cancellationToken)
+            : "Schema cache is unavailable. Do not assume or invent tables, columns, relationships, indexes, procedures, or views. Ask the user to scan the schema when object-specific information is required.";
 
         if (statusBorder != null)
         {
@@ -318,6 +333,16 @@ public partial class ChatAgentControl : UserControl
         _chatHistory.Add(new ChatTurn("assistant", reply));
         TrimChatHistory();
     }
+
+    private static bool HasSchemaMetadata(DatabaseMetadata? metadata) =>
+        metadata != null &&
+        !ReferenceEquals(metadata, DatabaseMetadata.Empty) &&
+        (metadata.Tables.Count > 0 ||
+         metadata.Views.Count > 0 ||
+         metadata.Procedures.Count > 0 ||
+         metadata.Functions.Count > 0 ||
+         metadata.UserTypes.Count > 0 ||
+         metadata.Synonyms.Count > 0);
 
     private ChatConnectionContext ResolveChatConnectionContext()
     {

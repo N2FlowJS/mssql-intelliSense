@@ -1,7 +1,10 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
 using System.Windows.Media;
 using Microsoft.VisualStudio.PlatformUI;
 using MssqlIntelliSense.Core.Completion;
@@ -15,14 +18,33 @@ public sealed class ObjectReviewWindow : Window
     private readonly string _copyDefinition;
     private readonly string _copyAll;
     private readonly string _objectKey;
+    private readonly IReadOnlyList<ColumnMetadata> _columns;
     private TextBox? _customDescriptionTextBox;
+    private readonly List<ColumnGuidanceRow> _columnGuidanceRows = new();
 
-    private ObjectReviewWindow(string title, string subtitle, string details, string definition, string objectKey, string customDescription)
+    private sealed class ColumnGuidanceRow
+    {
+        public string Key { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+        public string DataType { get; set; } = string.Empty;
+        public string Nullable { get; set; } = string.Empty;
+        public string Description { get; set; } = string.Empty;
+    }
+
+    private ObjectReviewWindow(
+        string title,
+        string subtitle,
+        string details,
+        string definition,
+        string objectKey,
+        string customDescription,
+        IReadOnlyList<ColumnMetadata> columns)
     {
         _copyName = subtitle;
         _copyDefinition = definition;
         _copyAll = details + Environment.NewLine + Environment.NewLine + definition;
         _objectKey = objectKey;
+        _columns = columns;
 
         Title = "MSSQL IntelliSense Object Review";
         Width = 720;
@@ -45,7 +67,8 @@ public sealed class ObjectReviewWindow : Window
         try
         {
             var (title, subtitle, details, definition, objectKey, customDescription) = BuildReviewText(item, metadata);
-            var window = new ObjectReviewWindow(title, subtitle, details, definition, objectKey, customDescription);
+            var columns = GetColumns(item, metadata);
+            var window = new ObjectReviewWindow(title, subtitle, details, definition, objectKey, customDescription, columns);
             window.Show();
             window.Activate();
         }
@@ -59,19 +82,15 @@ public sealed class ObjectReviewWindow : Window
     {
         var root = new Grid { Margin = new Thickness(16) };
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
-        var header = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 0, 0, 14) };
+        var header = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 0, 0, 10) };
         var actions = new StackPanel
         {
             Orientation = Orientation.Horizontal,
             HorizontalAlignment = HorizontalAlignment.Right
         };
-        actions.Children.Add(CreateButton("Copy name", (_, _) => CopyText(_copyName)));
-        actions.Children.Add(CreateButton("Copy definition", (_, _) => CopyText(_copyDefinition)));
-        actions.Children.Add(CreateButton("Copy all", (_, _) => CopyText(_copyAll)));
+        actions.Children.Add(CreateButton("Copy", "Copy object summary and definition", (_, _) => CopyText(_copyAll)));
         DockPanel.SetDock(actions, Dock.Right);
         header.Children.Add(actions);
 
@@ -93,46 +112,130 @@ public sealed class ObjectReviewWindow : Window
         header.Children.Add(titleStack);
         root.Children.Add(header);
 
-        var infoBox = CreateTextBox(details, acceptsReturn: true);
-        infoBox.MinHeight = 120;
-        infoBox.MaxHeight = 220;
-        Grid.SetRow(infoBox, 1);
-        root.Children.Add(infoBox);
+        var tabs = new TabControl();
+        tabs.Items.Add(BuildOverviewTab(details, customDescription));
+        if (_columns.Count > 0)
+        {
+            tabs.Items.Add(BuildColumnsTab());
+        }
+        tabs.Items.Add(BuildDefinitionTab(definition));
+        Grid.SetRow(tabs, 1);
+        root.Children.Add(tabs);
 
-        var customPanel = new Grid { Margin = new Thickness(0, 12, 0, 0) };
+        return root;
+    }
+
+    private TabItem BuildOverviewTab(string details, string customDescription)
+    {
+        var content = new Grid { Margin = new Thickness(0, 10, 0, 0) };
+        content.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+        var infoBox = CreateTextBox(details, acceptsReturn: true);
+        infoBox.TextWrapping = TextWrapping.Wrap;
+        content.Children.Add(infoBox);
+
+        var customPanel = new Grid { Margin = new Thickness(0, 10, 0, 0) };
         customPanel.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         customPanel.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         customPanel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         customPanel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         customPanel.Children.Add(new TextBlock
         {
-            Text = "Agent description",
+            Text = "Object guidance",
             FontWeight = FontWeights.SemiBold,
             Margin = new Thickness(0, 0, 0, 6)
         });
-        var saveDescriptionButton = CreateButton("Save", (_, _) => SaveCustomDescription());
+        var saveDescriptionButton = CreateButton("Save", "Save object and column guidance", (_, _) => SaveCustomDescription());
         Grid.SetColumn(saveDescriptionButton, 1);
         customPanel.Children.Add(saveDescriptionButton);
 
         _customDescriptionTextBox = CreateTextBox(customDescription, acceptsReturn: true);
-        _customDescriptionTextBox.MinHeight = 70;
+        _customDescriptionTextBox.MinHeight = 60;
         _customDescriptionTextBox.TextWrapping = TextWrapping.Wrap;
         _customDescriptionTextBox.IsReadOnly = false;
+        _customDescriptionTextBox.ToolTip = "Describe the business purpose, data owner, common use cases, and important constraints for this object.";
         Grid.SetRow(_customDescriptionTextBox, 1);
         Grid.SetColumnSpan(_customDescriptionTextBox, 2);
         customPanel.Children.Add(_customDescriptionTextBox);
-        Grid.SetRow(customPanel, 2);
-        root.Children.Add(customPanel);
+        Grid.SetRow(customPanel, 1);
+        content.Children.Add(customPanel);
 
-        var definitionBox = CreateTextBox(definition, acceptsReturn: true);
-        definitionBox.Margin = new Thickness(0, 12, 0, 0);
-        definitionBox.FontFamily = new FontFamily("Consolas");
-        definitionBox.HorizontalScrollBarVisibility = ScrollBarVisibility.Auto;
-        definitionBox.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
-        Grid.SetRow(definitionBox, 3);
-        root.Children.Add(definitionBox);
+        return new TabItem { Header = "Overview", Content = content };
+    }
 
-        return root;
+    private TabItem BuildColumnsTab()
+    {
+        var content = new Grid { Margin = new Thickness(0, 10, 0, 0) };
+        content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        content.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+
+        content.Children.Add(new TextBlock
+        {
+            Text = "Describe the business meaning, valid values, data sensitivity, relationships, and examples that help the agent use each column correctly.",
+            Foreground = GetBrush(EnvironmentColors.ToolWindowTextBrushKey, Color.FromRgb(190, 190, 190)),
+            Margin = new Thickness(0, 0, 0, 6)
+        });
+
+        var descriptions = ObjectDescriptionStore.LoadAll();
+        foreach (var column in _columns.OrderBy(column => column.Ordinal))
+        {
+            var key = ObjectDescriptionStore.BuildColumnKey(_objectKey, column.Name);
+            descriptions.TryGetValue(key, out var description);
+            _columnGuidanceRows.Add(new ColumnGuidanceRow
+            {
+                Key = key,
+                Name = column.Name,
+                DataType = column.DataType,
+                Nullable = column.IsNullable ? "Yes" : "No",
+                Description = description ?? string.Empty
+            });
+        }
+
+        var grid = new DataGrid
+        {
+            ItemsSource = _columnGuidanceRows,
+            AutoGenerateColumns = false,
+            CanUserAddRows = false,
+            CanUserDeleteRows = false,
+            CanUserReorderColumns = false,
+            IsReadOnly = false,
+            HeadersVisibility = DataGridHeadersVisibility.Column,
+            GridLinesVisibility = DataGridGridLinesVisibility.Horizontal,
+            SelectionUnit = DataGridSelectionUnit.CellOrRowHeader,
+            Margin = new Thickness(0)
+        };
+        grid.Columns.Add(new DataGridTextColumn
+        {
+            Header = "Column",
+            Binding = new Binding("Name"),
+            IsReadOnly = true,
+            Width = new DataGridLength(150)
+        });
+        grid.Columns.Add(new DataGridTextColumn
+        {
+            Header = "Type",
+            Binding = new Binding("DataType"),
+            IsReadOnly = true,
+            Width = new DataGridLength(120)
+        });
+        grid.Columns.Add(new DataGridTextColumn
+        {
+            Header = "Nullable",
+            Binding = new Binding("Nullable"),
+            IsReadOnly = true,
+            Width = new DataGridLength(70)
+        });
+        grid.Columns.Add(new DataGridTextColumn
+        {
+            Header = "Business guidance / rules",
+            Binding = new Binding("Description") { UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged },
+            Width = new DataGridLength(1, DataGridLengthUnitType.Star)
+        });
+        Grid.SetRow(grid, 1);
+        content.Children.Add(grid);
+
+        return new TabItem { Header = "Columns", Content = content };
     }
 
     private static (string Title, string Subtitle, string Details, string Definition, string ObjectKey, string CustomDescription) BuildReviewText(
@@ -143,17 +246,54 @@ public sealed class ObjectReviewWindow : Window
         return (review.Title, review.Subtitle, review.Details, review.Definition, review.ObjectKey, review.CustomDescription);
     }
 
-    private Button CreateButton(string text, RoutedEventHandler handler)
+    private static IReadOnlyList<ColumnMetadata> GetColumns(SqlCompletionItem item, DatabaseMetadata metadata)
+    {
+        var nameParts = item.Label.Replace("[", string.Empty).Replace("]", string.Empty).Split('.');
+        var name = nameParts[nameParts.Length - 1];
+        var schema = nameParts.Length > 1 ? nameParts[nameParts.Length - 2] : null;
+
+        if (item.Kind == SqlCompletionKind.Table)
+        {
+            return metadata.Tables.FirstOrDefault(table =>
+                table.Name.Equals(name, StringComparison.OrdinalIgnoreCase) &&
+                (string.IsNullOrWhiteSpace(schema) || table.Schema.Equals(schema, StringComparison.OrdinalIgnoreCase)))?.Columns
+                ?? Array.Empty<ColumnMetadata>();
+        }
+
+        if (item.Kind == SqlCompletionKind.View)
+        {
+            return metadata.Views.FirstOrDefault(view =>
+                view.Name.Equals(name, StringComparison.OrdinalIgnoreCase) &&
+                (string.IsNullOrWhiteSpace(schema) || view.Schema.Equals(schema, StringComparison.OrdinalIgnoreCase)))?.Columns
+                ?? Array.Empty<ColumnMetadata>();
+        }
+
+        return Array.Empty<ColumnMetadata>();
+    }
+
+    private TabItem BuildDefinitionTab(string definition)
+    {
+        var definitionBox = CreateTextBox(definition, acceptsReturn: true);
+        definitionBox.Margin = new Thickness(0, 10, 0, 0);
+        definitionBox.FontFamily = new FontFamily("Consolas");
+        definitionBox.HorizontalScrollBarVisibility = ScrollBarVisibility.Auto;
+        definitionBox.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
+        return new TabItem { Header = "Definition", Content = definitionBox };
+    }
+
+    private Button CreateButton(string text, string tooltip, RoutedEventHandler handler)
     {
         var button = new Button
         {
             Content = text,
-            Padding = new Thickness(10, 5, 10, 5),
+            Padding = new Thickness(10, 4, 10, 4),
             Margin = new Thickness(6, 0, 0, 0),
-            MinWidth = 82,
+            MinWidth = 54,
+            MinHeight = 30,
             Background = GetBrush(EnvironmentColors.SystemButtonFaceBrushKey, Color.FromRgb(45, 45, 48)),
             Foreground = GetBrush(EnvironmentColors.SystemButtonTextBrushKey, Colors.White),
-            BorderBrush = GetBrush(EnvironmentColors.ToolWindowBorderBrushKey, Color.FromRgb(63, 63, 70))
+            BorderBrush = GetBrush(EnvironmentColors.ToolWindowBorderBrushKey, Color.FromRgb(63, 63, 70)),
+            ToolTip = tooltip
         };
         button.Click += handler;
         return button;
@@ -203,6 +343,10 @@ public sealed class ObjectReviewWindow : Window
         try
         {
             ObjectDescriptionStore.SaveDescription(_objectKey, _customDescriptionTextBox?.Text ?? string.Empty);
+            foreach (var row in _columnGuidanceRows)
+            {
+                ObjectDescriptionStore.SaveDescription(row.Key, row.Description ?? string.Empty);
+            }
             Title = "MSSQL IntelliSense Object Review - saved";
         }
         catch (Exception ex)

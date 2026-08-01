@@ -815,6 +815,28 @@ public sealed class SqlCompletionProviderTests
     }
 
     [Fact]
+    public void GetCompletions_OnClauseSuggestsOnlyCurrentJoinForeignKeys()
+    {
+        var metadata = new DatabaseMetadata(
+            [
+                new TableMetadata("dbo", "Users", [new("Id", "int", false, 1)], ["Id"]),
+                new TableMetadata("sales", "Orders", [new("Id", "int", false, 1), new("UserId", "int", false, 2)], ["Id"]),
+                new TableMetadata("sales", "OrderDetails", [new("Id", "int", false, 1), new("OrderId", "int", false, 2)], ["Id"])
+            ],
+            [
+                new ForeignKeyMetadata("FK_Orders_Users", "sales", "Orders", "UserId", "dbo", "Users", "Id", 1),
+                new ForeignKeyMetadata("FK_OrderDetails_Orders", "sales", "OrderDetails", "OrderId", "sales", "Orders", "Id", 1)
+            ],
+            [], [], []);
+
+        var sql = "SELECT * FROM dbo.Users u JOIN sales.Orders o ON o.UserId = u.Id JOIN sales.OrderDetails od ON ";
+        var items = _provider.GetCompletions(sql, sql.Length, metadata);
+
+        items.Should().Contain(item => item.Label == "od.OrderId = o.Id");
+        items.Should().NotContain(item => item.Label == "o.UserId = u.Id");
+    }
+
+    [Fact]
     public void GetCompletions_ColumnCompletionsUnderSchemaQualifiedTables()
     {
         var sql = "SELECT dbo.Users. FROM dbo.Users";

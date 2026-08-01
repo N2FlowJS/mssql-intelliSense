@@ -33,6 +33,33 @@ public sealed class SqlMetadataToolExecutorTests
     }
 
     [Fact]
+    public async Task ExecuteToolAsync_GetTableSchema_IncludesObjectAndColumnGuidance()
+    {
+        var previous = Environment.GetEnvironmentVariable("MSSQL_INTELLISENSE_APPDATA");
+        var tempFolder = Path.Combine(Path.GetTempPath(), "mssql-intellisense-tests-" + Guid.NewGuid().ToString("N"));
+        Environment.SetEnvironmentVariable("MSSQL_INTELLISENSE_APPDATA", tempFolder);
+        try
+        {
+            var objectKey = ObjectDescriptionStore.BuildKey("table", "TestDb", "dbo", "Users");
+            ObjectDescriptionStore.SaveDescription(objectKey, "Represents authenticated application users.");
+            ObjectDescriptionStore.SaveDescription(
+                ObjectDescriptionStore.BuildColumnKey(objectKey, "Email"),
+                "Primary login email. Treat as personally identifiable information.");
+            using var args = JsonDocument.Parse("{\"schemaName\":\"dbo\",\"tableName\":\"Users\"}");
+
+            var json = await SqlMetadataToolExecutor.ExecuteToolAsync(SqlMetadataToolExecutor.TableSchemaToolName, args.RootElement, TestMetadata.Create());
+
+            json.Should().Contain("Represents authenticated application users.");
+            json.Should().Contain("Primary login email. Treat as personally identifiable information.");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("MSSQL_INTELLISENSE_APPDATA", previous);
+            DeleteDirectoryWithRetry(tempFolder);
+        }
+    }
+
+    [Fact]
     public async Task ExecuteToolAsync_GetTableRelations_ReturnsForeignKeys()
     {
         var metadata = TestMetadata.Create();
@@ -101,6 +128,32 @@ public sealed class SqlMetadataToolExecutorTests
         var json = await SqlMetadataToolExecutor.ExecuteToolAsync(SqlMetadataToolExecutor.FindColumnToolName, args.RootElement, metadata);
 
         json.Should().Contain("UserId").And.Contain("Orders");
+    }
+
+    [Fact]
+    public async Task ExecuteToolAsync_FindColumn_SearchesColumnGuidance()
+    {
+        var previous = Environment.GetEnvironmentVariable("MSSQL_INTELLISENSE_APPDATA");
+        var tempFolder = Path.Combine(Path.GetTempPath(), "mssql-intellisense-tests-" + Guid.NewGuid().ToString("N"));
+        Environment.SetEnvironmentVariable("MSSQL_INTELLISENSE_APPDATA", tempFolder);
+        try
+        {
+            var objectKey = ObjectDescriptionStore.BuildKey("table", "TestDb", "dbo", "Users");
+            ObjectDescriptionStore.SaveDescription(
+                ObjectDescriptionStore.BuildColumnKey(objectKey, "Email"),
+                "Primary login email for password recovery.");
+            using var args = JsonDocument.Parse("{\"query\":\"password recovery\"}");
+
+            var json = await SqlMetadataToolExecutor.ExecuteToolAsync(SqlMetadataToolExecutor.FindColumnToolName, args.RootElement, TestMetadata.Create());
+
+            json.Should().Contain("Email");
+            json.Should().Contain("Primary login email for password recovery.");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("MSSQL_INTELLISENSE_APPDATA", previous);
+            DeleteDirectoryWithRetry(tempFolder);
+        }
     }
 
     [Fact]

@@ -139,8 +139,6 @@ public partial class MssqlIntelliSenseWindow : Window
         {
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
 
-            SettingsNavIcon.Source = SchemaExplorerIconProvider.GetIcon(SchemaExplorerIcon.Settings);
-            AboutNavIcon.Source = SchemaExplorerIconProvider.GetIcon(SchemaExplorerIcon.Information);
             await RefreshConnectionsTreeAsync();
         });
     }

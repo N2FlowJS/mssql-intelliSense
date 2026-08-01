@@ -21,10 +21,19 @@ public static class JoinConditionCompletionHelper
         var sources = SqlContextAnalyzer.FindSources(sql, metadata);
         if (sources.Count < 2) return;
 
-        var sourcePairs = sources
-            .SelectMany((left, leftIndex) => sources
-                .Skip(leftIndex + 1)
-                .Select(right => (left, right)));
+        var joinTarget = sources[^1];
+        var priorSources = sources.Take(sources.Count - 1).ToList();
+        var sourcePairs = priorSources
+            .Where(source => HasForeignKeyRelationship(metadata, source, joinTarget))
+            .Select(source => (source, joinTarget))
+            .ToList();
+
+        // When metadata has no FK for the current join, retain a useful heuristic
+        // without surfacing conditions from unrelated, earlier joins.
+        if (sourcePairs.Count == 0)
+        {
+            sourcePairs.Add((priorSources[^1], joinTarget));
+        }
 
         foreach (var (left, right) in sourcePairs)
         {
@@ -34,6 +43,16 @@ public static class JoinConditionCompletionHelper
             }
         }
     }
+
+    private static bool HasForeignKeyRelationship(
+        DatabaseMetadata metadata,
+        VisibleSource left,
+        VisibleSource right) =>
+        metadata.ForeignKeys.Any(fk =>
+            (MatchesTable(fk.FromSchema, fk.FromTable, left) &&
+             MatchesTable(fk.ToSchema, fk.ToTable, right)) ||
+            (MatchesTable(fk.FromSchema, fk.FromTable, right) &&
+             MatchesTable(fk.ToSchema, fk.ToTable, left)));
 
     private static IEnumerable<SqlCompletionItem> CreateConditionItems(
         DatabaseMetadata metadata,

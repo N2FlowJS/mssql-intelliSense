@@ -111,7 +111,7 @@
         </Style>
     </UserControl.Resources>
 
-    <Grid Margin="8">
+    <Grid Margin="6">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
@@ -124,10 +124,10 @@
                    Text="Tool Lab"
                    FontSize="14"
                    FontWeight="SemiBold"
-                   Margin="0,0,0,6"
+                   Margin="0,0,0,4"
                    Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowTextBrushKey}}" />
 
-        <Grid x:Name="ConnectionSelectorPanel" Grid.Row="1" Margin="0,0,0,8">
+        <Grid x:Name="ConnectionSelectorPanel" Grid.Row="1" Margin="0,0,0,6">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" MinWidth="80" />
@@ -164,7 +164,7 @@
         </Grid>
 
         <!-- Tool Form -->
-        <Grid Grid.Row="2" Margin="0,0,0,8">
+        <Grid Grid.Row="2" Margin="0,0,0,6">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
@@ -186,7 +186,7 @@
                 <ComboBoxItem Content="execute" Tag="execute" />
             </ComboBox>
 
-            <Grid Grid.Row="2" Margin="0,8,0,0">
+            <Grid Grid.Row="2" Margin="0,6,0,0">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" MinWidth="70" />
                     <ColumnDefinition Width="6" />
@@ -246,7 +246,7 @@
                     Style="{StaticResource PrimaryCommandButtonStyle}"
                     FontWeight="SemiBold"
                     HorizontalAlignment="Stretch"
-                    Margin="0,8,0,0"
+                    Margin="0,6,0,0"
                     ToolTip="Run selected tool">
                 <TextBlock Text="&#xE768;" Style="{StaticResource IconGlyphStyle}" />
             </Button>

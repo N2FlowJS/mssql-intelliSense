@@ -116,8 +116,8 @@
         <Border Grid.Row="0"
                 BorderBrush="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowBorderBrushKey}}"
                 BorderThickness="0,0,0,1"
-                Padding="2,0,2,6"
-                Margin="0,0,0,6">
+                Padding="2,0,2,4"
+                Margin="0,0,0,4">
             <DockPanel LastChildFill="True">
                 <Button x:Name="ClearChatButton"
                         DockPanel.Dock="Right"
@@ -179,8 +179,8 @@
         <Border Grid.Row="2"
                 BorderBrush="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowBorderBrushKey}}"
                 BorderThickness="0,1,0,0"
-                Padding="0,8,0,0"
-                Margin="0,6,0,0"
+                Padding="0,6,0,0"
+                Margin="0,4,0,0"
                 Background="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowBackgroundBrushKey}}">
             <Grid>
                 <Grid.RowDefinitions>
@@ -260,10 +260,10 @@
                 </Grid>
 
                 <DockPanel Grid.Row="1" Margin="0,4,0,0">
-                    <TextBlock Text="Ctrl + Enter to send"
+                    <TextBlock Text="Ctrl + Enter"
                                DockPanel.Dock="Left"
                                VerticalAlignment="Center"
-                               FontSize="10.5"
+                               FontSize="10"
                                Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.PanelTextBrushKey}}" />
                 </DockPanel>
             </Grid>

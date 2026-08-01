@@ -26,6 +26,9 @@ public static class ObjectDescriptionStore
             NormalizePart(name)
         });
 
+    public static string BuildColumnKey(string objectKey, string columnName) =>
+        $"{objectKey}|column|{NormalizePart(columnName)}";
+
     public static IReadOnlyDictionary<string, string> LoadAll()
     {
         lock (SyncRoot)

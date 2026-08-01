@@ -56,4 +56,21 @@ public sealed class SqlObjectReviewFormatterTests
         review.Definition.Should().Contain("RETURN LOWER(@value);");
         review.Details.Should().Contain("Return type: nvarchar");
     }
+
+    [Fact]
+    public void Build_Table_DefaultCustomDescription_IncludesColumnDetails()
+    {
+        var item = new SqlCompletionItem(
+            "Users",
+            "[dbo].[Users]",
+            SqlCompletionKind.Table,
+            "fallback table description");
+
+        var review = SqlObjectReviewFormatter.Build(item, TestMetadata.Create());
+
+        review.CustomDescription.Should().Contain("Columns:");
+        review.CustomDescription.Should().Contain("Id");
+        review.CustomDescription.Should().Contain("Email");
+        review.CustomDescription.Should().Contain("Primary key: Id");
+    }
 }

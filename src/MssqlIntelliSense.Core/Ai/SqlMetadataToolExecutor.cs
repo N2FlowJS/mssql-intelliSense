@@ -174,6 +174,9 @@ public static class SqlMetadataToolExecutor
             return new { error = "Table not found.", schemaName, tableName };
         }
 
+        var descriptions = ObjectDescriptionStore.LoadAll();
+        var objectKey = ObjectDescriptionStore.BuildKey("table", table.Database, table.Schema, table.Name);
+        descriptions.TryGetValue(objectKey, out var objectGuidance);
         return new
         {
             tableSchema = new
@@ -186,9 +189,11 @@ public static class SqlMetadataToolExecutor
                     name = c.Name,
                     dataType = c.DataType,
                     isNullable = c.IsNullable,
-                    ordinal = c.Ordinal
+                    ordinal = c.Ordinal,
+                    agentGuidance = GetColumnGuidance(descriptions, objectKey, c.Name)
                 }).ToList(),
-                primaryKeyColumns = table.PrimaryKeyColumns
+                primaryKeyColumns = table.PrimaryKeyColumns,
+                agentGuidance = objectGuidance ?? string.Empty
             }
         };
     }
@@ -304,6 +309,7 @@ public static class SqlMetadataToolExecutor
                 t.Keywords,
                 string.Join(" ", t.Columns.Select(c => c.Name)),
                 string.Empty,
+                BuildColumnGuidanceText(customDescriptions, "table", t.Database, t.Schema, t.Name, t.Columns.Select(c => c.Name)),
                 customDescriptions));
         var views = (metadata.Views ?? Enumerable.Empty<ViewMetadata>())
             .Select(v => CreateObjectSearchCandidate(
@@ -315,6 +321,7 @@ public static class SqlMetadataToolExecutor
                 v.Keywords,
                 string.Join(" ", v.Columns.Select(c => c.Name)),
                 v.Definition,
+                BuildColumnGuidanceText(customDescriptions, "view", v.Database, v.Schema, v.Name, v.Columns.Select(c => c.Name)),
                 customDescriptions));
         var procedures = (metadata.Procedures ?? Enumerable.Empty<ProcedureMetadata>())
             .Select(p => CreateObjectSearchCandidate(
@@ -326,6 +333,7 @@ public static class SqlMetadataToolExecutor
                 p.Keywords,
                 string.Join(" ", p.Parameters.Select(param => param.Name)),
                 p.Definition,
+                string.Empty,
                 customDescriptions));
         var functions = (metadata.Functions ?? Enumerable.Empty<FunctionMetadata>())
             .Select(f => CreateObjectSearchCandidate(
@@ -337,6 +345,7 @@ public static class SqlMetadataToolExecutor
                 f.Keywords,
                 string.Join(" ", f.Parameters.Select(param => param.Name)),
                 f.Definition,
+                string.Empty,
                 customDescriptions));
 
         return tables.Concat(views).Concat(procedures).Concat(functions)
@@ -354,6 +363,7 @@ public static class SqlMetadataToolExecutor
                 o.Candidate.name,
                 o.Candidate.description,
                 o.Candidate.customDescription,
+                o.Candidate.columnGuidance,
                 definitionSnippet = Snippet(o.Candidate.definition, 1000),
                 score = o.Score
             })
@@ -365,32 +375,43 @@ public static class SqlMetadataToolExecutor
     {
         if (metadata == null) return Array.Empty<object>();
 
+        var descriptions = ObjectDescriptionStore.LoadAll();
         var tableColumns = (metadata.Tables ?? Enumerable.Empty<TableMetadata>())
-            .SelectMany(t => (t.Columns ?? Enumerable.Empty<ColumnMetadata>()).Select(c => new
+            .SelectMany(t => (t.Columns ?? Enumerable.Empty<ColumnMetadata>()).Select(c =>
             {
-                kind = "table",
-                database = t.Database,
-                schema = t.Schema,
-                objectName = t.Name,
-                column = c.Name,
-                dataType = c.DataType,
-                isNullable = c.IsNullable
+                var objectKey = ObjectDescriptionStore.BuildKey("table", t.Database, t.Schema, t.Name);
+                return new
+                {
+                    kind = "table",
+                    database = t.Database,
+                    schema = t.Schema,
+                    objectName = t.Name,
+                    column = c.Name,
+                    dataType = c.DataType,
+                    isNullable = c.IsNullable,
+                    agentGuidance = GetColumnGuidance(descriptions, objectKey, c.Name)
+                };
             }));
 
         var viewColumns = (metadata.Views ?? Enumerable.Empty<ViewMetadata>())
-            .SelectMany(v => (v.Columns ?? Enumerable.Empty<ColumnMetadata>()).Select(c => new
+            .SelectMany(v => (v.Columns ?? Enumerable.Empty<ColumnMetadata>()).Select(c =>
             {
-                kind = "view",
-                database = v.Database,
-                schema = v.Schema,
-                objectName = v.Name,
-                column = c.Name,
-                dataType = c.DataType,
-                isNullable = c.IsNullable
+                var objectKey = ObjectDescriptionStore.BuildKey("view", v.Database, v.Schema, v.Name);
+                return new
+                {
+                    kind = "view",
+                    database = v.Database,
+                    schema = v.Schema,
+                    objectName = v.Name,
+                    column = c.Name,
+                    dataType = c.DataType,
+                    isNullable = c.IsNullable,
+                    agentGuidance = GetColumnGuidance(descriptions, objectKey, c.Name)
+                };
             }));
 
         return tableColumns.Concat(viewColumns)
-            .Where(c => Matches(c.column, query))
+            .Where(c => Matches(c.column, query) || Matches(c.agentGuidance, query))
             .OrderBy(c => c.schema)
             .ThenBy(c => c.objectName)
             .ThenBy(c => c.column)
@@ -474,6 +495,7 @@ public static class SqlMetadataToolExecutor
         string name,
         string description,
         string customDescription,
+        string columnGuidance,
         string searchableText,
         string definition);
 
@@ -486,6 +508,7 @@ public static class SqlMetadataToolExecutor
         string keywords,
         string secondaryText,
         string definition,
+        string columnGuidance,
         IReadOnlyDictionary<string, string> customDescriptions)
     {
         var key = ObjectDescriptionStore.BuildKey(kind, database, schema, name);
@@ -501,6 +524,7 @@ public static class SqlMetadataToolExecutor
             schema + "." + name,
             description,
             customDescription,
+            columnGuidance,
             keywords,
             secondaryText,
             definition
@@ -513,8 +537,36 @@ public static class SqlMetadataToolExecutor
             name,
             string.IsNullOrWhiteSpace(customDescription) ? description : customDescription,
             customDescription,
+            columnGuidance,
             searchableText,
             definition);
+    }
+
+    private static string GetColumnGuidance(
+        IReadOnlyDictionary<string, string> descriptions,
+        string objectKey,
+        string columnName)
+    {
+        descriptions.TryGetValue(ObjectDescriptionStore.BuildColumnKey(objectKey, columnName), out var guidance);
+        return guidance ?? string.Empty;
+    }
+
+    private static string BuildColumnGuidanceText(
+        IReadOnlyDictionary<string, string> descriptions,
+        string kind,
+        string database,
+        string schema,
+        string name,
+        IEnumerable<string> columnNames)
+    {
+        var objectKey = ObjectDescriptionStore.BuildKey(kind, database, schema, name);
+        return string.Join(" ", columnNames
+            .Select(columnName =>
+            {
+                var guidance = GetColumnGuidance(descriptions, objectKey, columnName);
+                return string.IsNullOrWhiteSpace(guidance) ? string.Empty : $"{columnName}: {guidance}";
+            })
+            .Where(guidance => !string.IsNullOrWhiteSpace(guidance)));
     }
 
     private static int ScoreObjectSearch(ObjectSearchCandidate candidate, string query)
