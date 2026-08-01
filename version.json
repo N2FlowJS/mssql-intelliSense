@@ -1,5 +1,5 @@
 {
-  "version": "0.2.126",
+  "version": "0.2.128",
   "url": "http://localhost:5100",
   "changelog": "Render SQL AI Agent responses as Markdown."
 }

@@ -412,6 +412,49 @@ public partial class MainWindow : Window
         _ = TriggerCompletionAsync();
     }
 
+    private readonly System.Windows.Threading.DispatcherTimer _gridLongClickTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
+    private System.Windows.Point _gridMouseDownPoint;
+    private bool _gridLongClickHandled;
+
+    private void CompletionResultsDataGrid_PreviewMouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        _gridMouseDownPoint = e.GetPosition(CompletionResultsDataGrid);
+        _gridLongClickHandled = false;
+        _gridLongClickTimer.Stop();
+        _gridLongClickTimer.Tick -= OnGridLongClickTimerTick;
+        _gridLongClickTimer.Tick += OnGridLongClickTimerTick;
+        _gridLongClickTimer.Start();
+    }
+
+    private void CompletionResultsDataGrid_PreviewMouseMove(object sender, System.Windows.Input.MouseEventArgs e)
+    {
+        if (_gridLongClickTimer.IsEnabled)
+        {
+            var currentPoint = e.GetPosition(CompletionResultsDataGrid);
+            if (Math.Abs(currentPoint.X - _gridMouseDownPoint.X) > 8 || Math.Abs(currentPoint.Y - _gridMouseDownPoint.Y) > 8)
+            {
+                _gridLongClickTimer.Stop();
+            }
+        }
+    }
+
+    private void CompletionResultsDataGrid_PreviewMouseLeftButtonUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        _gridLongClickTimer.Stop();
+        if (_gridLongClickHandled)
+        {
+            _gridLongClickHandled = false;
+            e.Handled = true;
+        }
+    }
+
+    private void OnGridLongClickTimerTick(object? sender, EventArgs e)
+    {
+        _gridLongClickTimer.Stop();
+        _gridLongClickHandled = true;
+        OpenSelectedCompletionReview();
+    }
+
     private void ReviewCompletionButton_Click(object sender, RoutedEventArgs e)
     {
         OpenSelectedCompletionReview();

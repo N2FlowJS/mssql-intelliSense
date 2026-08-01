@@ -454,7 +454,7 @@
 
                         <TextBlock Grid.Row="2" Text="Suggestions" FontWeight="SemiBold" Foreground="{StaticResource AppTextBrush}" Margin="0,8,0,4" />
 
-                        <DataGrid Grid.Row="3" x:Name="CompletionResultsDataGrid" AutoGenerateColumns="False" IsReadOnly="True" SelectionChanged="CompletionResultsDataGrid_SelectionChanged" MouseDoubleClick="CompletionResultsDataGrid_MouseDoubleClick">
+                        <DataGrid Grid.Row="3" x:Name="CompletionResultsDataGrid" AutoGenerateColumns="False" IsReadOnly="True" SelectionChanged="CompletionResultsDataGrid_SelectionChanged" MouseDoubleClick="CompletionResultsDataGrid_MouseDoubleClick" PreviewMouseLeftButtonDown="CompletionResultsDataGrid_PreviewMouseLeftButtonDown" PreviewMouseLeftButtonUp="CompletionResultsDataGrid_PreviewMouseLeftButtonUp" PreviewMouseMove="CompletionResultsDataGrid_PreviewMouseMove">
                             <DataGrid.Columns>
                                 <DataGridTextColumn Header="Kind" Binding="{Binding Kind}" Width="64" />
                                 <DataGridTextColumn Header="Label" Binding="{Binding Label}" Width="*" />

@@ -93,6 +93,9 @@ internal sealed class SqlCompletionCommandFilter : IOleCommandTarget
     private readonly IWpfTextView _textView;
     private readonly ICompletionBroker _completionBroker;
     private readonly IOleCommandTarget _nextCommandTarget;
+    private readonly System.Windows.Threading.DispatcherTimer _longClickTimer;
+    private System.Windows.Point _mouseDownPoint;
+    private bool _isLongClickHandled;
     private ICompletionSession? _currentSession;
     private string? _lastReviewedCompletionKey;
     private DateTime _lastReviewedAtUtc;
@@ -105,7 +108,89 @@ internal sealed class SqlCompletionCommandFilter : IOleCommandTarget
 
         // Add filter to the command chain
         textViewAdapter.AddCommandFilter(this, out _nextCommandTarget);
+
+        _longClickTimer = new System.Windows.Threading.DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(400)
+        };
+        _longClickTimer.Tick += OnLongClickTimerTick;
+
+        if (_textView?.VisualElement != null)
+        {
+            _textView.VisualElement.PreviewMouseLeftButtonDown += OnTextViewPreviewMouseLeftButtonDown;
+            _textView.VisualElement.PreviewMouseLeftButtonUp += OnTextViewPreviewMouseLeftButtonUp;
+            _textView.VisualElement.PreviewMouseMove += OnTextViewPreviewMouseMove;
+        }
+
         MssqlIntelliSensePackage.Log($"[Autocomplete] Command filter attached for content type: {textView.TextBuffer.ContentType.TypeName}");
+    }
+
+    private void OnTextViewPreviewMouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (_textView?.VisualElement != null)
+        {
+            _mouseDownPoint = e.GetPosition(_textView.VisualElement);
+            _isLongClickHandled = false;
+            _longClickTimer.Stop();
+            _longClickTimer.Start();
+        }
+    }
+
+    private void OnTextViewPreviewMouseMove(object sender, System.Windows.Input.MouseEventArgs e)
+    {
+        if (_longClickTimer.IsEnabled && _textView?.VisualElement != null)
+        {
+            var currentPoint = e.GetPosition(_textView.VisualElement);
+            if (Math.Abs(currentPoint.X - _mouseDownPoint.X) > 8 || Math.Abs(currentPoint.Y - _mouseDownPoint.Y) > 8)
+            {
+                _longClickTimer.Stop();
+            }
+        }
+    }
+
+    private void OnTextViewPreviewMouseLeftButtonUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        _longClickTimer.Stop();
+        if (_isLongClickHandled)
+        {
+            _isLongClickHandled = false;
+            e.Handled = true;
+        }
+    }
+
+    private void OnLongClickTimerTick(object? sender, EventArgs e)
+    {
+        _longClickTimer.Stop();
+        _isLongClickHandled = true;
+
+        ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
+        {
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+            try
+            {
+                if (_currentSession != null && _currentSession.SelectedCompletionSet != null && _currentSession.SelectedCompletionSet.SelectionStatus.IsSelected)
+                {
+                    var selectedCompletion = _currentSession.SelectedCompletionSet.SelectionStatus.Completion;
+                    if (selectedCompletion != null)
+                    {
+                        var match = GetCompletionItem(_currentSession, selectedCompletion);
+                        _currentSession.Properties.TryGetProperty(
+                            SqlCompletionSource.CompletionMetadataPropertyKey,
+                            out DatabaseMetadata? metadata);
+                        TryOpenObjectReview(match, metadata);
+                        return;
+                    }
+                }
+
+                var caretPos = _textView.Caret.Position.BufferPosition;
+                var sql = _textView.TextSnapshot.GetText();
+                SqlCompletionSource.TryOpenObjectReviewFromSql(sql, caretPos.Position);
+            }
+            catch (Exception ex)
+            {
+                MssqlIntelliSensePackage.Log($"[Autocomplete LongClick Error] {ex.Message}");
+            }
+        });
     }
 
     public int QueryStatus(ref Guid pguidCmdGroup, uint cCmds, OLECMD[] prgCmds, IntPtr pCmdText)
@@ -205,8 +290,6 @@ internal sealed class SqlCompletionCommandFilter : IOleCommandTarget
                                     var newPosition = new SnapshotPoint(_textView.TextSnapshot, startPos + match.CaretOffset);
                                     _textView.Caret.MoveTo(newPosition);
                                 }
-
-                                TryOpenObjectReview(match, completionMetadata);
 
                                 return VSConstants.S_OK;
                             }
@@ -319,11 +402,7 @@ internal sealed class SqlCompletionCommandFilter : IOleCommandTarget
             return;
         }
 
-        var match = GetCompletionItem(session, selected);
-        session.Properties.TryGetProperty(
-            SqlCompletionSource.CompletionMetadataPropertyKey,
-            out DatabaseMetadata? metadata);
-        TryOpenObjectReview(match, metadata);
+        RecordCompletionUsage(selected);
     }
 
     private void OnSessionDismissed(object sender, EventArgs e)

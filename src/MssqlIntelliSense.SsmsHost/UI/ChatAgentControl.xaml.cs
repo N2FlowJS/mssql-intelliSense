@@ -270,9 +270,12 @@ public partial class ChatAgentControl : UserControl
             }
         }, cancellationToken);
 
-        Border? assistantMessageBorder = null;
-        await MssqlIntelliSensePackage.SwitchToMainThreadAsync(cancellationToken);
-        assistantMessageBorder = AddChatMessage("Assistant", "Checking available actions...", isUser: false, isStreaming: true);
+        Border? statusBorder = null;
+        if (allowedToolNames.Count > 0)
+        {
+            await MssqlIntelliSensePackage.SwitchToMainThreadAsync(cancellationToken);
+            statusBorder = AddChatMessage("Assistant", "Checking available actions...", isUser: false, isStreaming: true);
+        }
 
         var toolContext = await ResolveApprovedToolContextAsync(
             endpoint: options.Endpoint,
@@ -282,14 +285,25 @@ public partial class ChatAgentControl : UserControl
             metadata: metadata,
             chatConnection: chatConnection,
             allowedToolNames: allowedToolNames,
-            statusBorder: assistantMessageBorder,
+            statusBorder: statusBorder,
             cancellationToken: cancellationToken);
+
+        if (statusBorder != null)
+        {
+            await MssqlIntelliSensePackage.SwitchToMainThreadAsync(cancellationToken);
+            ChatMessagesPanel.Children.Remove(statusBorder);
+            statusBorder = null;
+        }
 
         var systemPrompt = BuildSystemPrompt(metadata, toolContext);
         if (!string.IsNullOrWhiteSpace(chatConnection.DisplayName))
         {
             systemPrompt = $"Active SQL connection: {chatConnection.DisplayName}\n" + systemPrompt;
         }
+
+        Border? assistantMessageBorder = null;
+        await MssqlIntelliSensePackage.SwitchToMainThreadAsync(cancellationToken);
+        assistantMessageBorder = AddChatMessage("Assistant", string.Empty, isUser: false, isStreaming: true);
 
         var reply = await CompleteChatStreamingTextAsync(
             endpoint: options.Endpoint,
@@ -1177,12 +1191,13 @@ public partial class ChatAgentControl : UserControl
         };
 
         var container = new StackPanel { Orientation = Orientation.Vertical };
+        var timestamp = DateTime.Now.ToString("HH:mm:ss");
         container.Children.Add(new TextBlock
         {
-            Text = "Action approval",
+            Text = $"Action approval  •  {timestamp}",
             FontWeight = FontWeights.Bold,
             Foreground = textBrush,
-            FontSize = 12,
+            FontSize = 11,
             Margin = new Thickness(0, 0, 0, 6)
         });
         container.Children.Add(new TextBlock
@@ -1653,14 +1668,15 @@ public partial class ChatAgentControl : UserControl
 
         var container = new StackPanel { Orientation = Orientation.Vertical };
 
-        // Header (sender + copy button)
+        // Header (sender + timestamp + copy button)
         var headerPanel = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 5) };
+        var timestamp = DateTime.Now.ToString("HH:mm:ss");
         var senderText = new TextBlock
         {
-            Text = sender,
+            Text = $"{sender}  •  {timestamp}",
             FontWeight = FontWeights.Bold,
             Foreground = messageForeground,
-            FontSize = 12
+            FontSize = 11
         };
         headerPanel.Children.Add(senderText);
 
