@@ -14,14 +14,14 @@ public sealed class SqlObjectReviewInfo
         string details,
         string definition,
         string objectKey,
-        string customDescription)
+        string description)
     {
         Title = title;
         Subtitle = subtitle;
         Details = details;
         Definition = definition;
         ObjectKey = objectKey;
-        CustomDescription = customDescription;
+        Description = description;
     }
 
     public string Title { get; }
@@ -29,7 +29,7 @@ public sealed class SqlObjectReviewInfo
     public string Details { get; }
     public string Definition { get; }
     public string ObjectKey { get; }
-    public string CustomDescription { get; }
+    public string Description { get; }
 }
 
 public static class SqlObjectReviewFormatter
@@ -95,8 +95,7 @@ public static class SqlObjectReviewFormatter
         var fallbackTitle = $"{item.Kind}: {item.Label}";
         var fallbackDetails = $"Kind: {item.Kind}{Environment.NewLine}Label: {item.Label}{Environment.NewLine}Insert: {item.InsertText}";
         var fallbackKey = ObjectDescriptionStore.BuildKey(item.Kind.ToString(), string.Empty, string.Empty, item.Label);
-        var fallbackCustom = ObjectDescriptionStore.LoadAll().TryGetValue(fallbackKey, out var value) ? value : string.Empty;
-        return new SqlObjectReviewInfo(fallbackTitle, item.Label, fallbackDetails, item.Description, fallbackKey, fallbackCustom);
+        return new SqlObjectReviewInfo(fallbackTitle, item.Label, fallbackDetails, item.Description, fallbackKey, item.Description);
     }
 
     private static SqlObjectReviewInfo BuildTableReview(TableMetadata table, DatabaseMetadata metadata)
@@ -130,15 +129,8 @@ public static class SqlObjectReviewFormatter
         }
 
         var definition = SqlDefinitionFormatter.FormatTableDefinition(table);
-        var customDescription = BuildDefaultCustomDescription(
-            "table",
-            table.Database,
-            table.Schema,
-            table.Name,
-            details.ToString().TrimEnd(),
-            definition);
         return WithDescription("table", table.Database, table.Schema, table.Name,
-            $"Table [{table.Schema}].[{table.Name}]", $"{table.Database}.{table.Schema}.{table.Name}", details.ToString().TrimEnd(), definition, customDescription);
+            $"Table [{table.Schema}].[{table.Name}]", $"{table.Database}.{table.Schema}.{table.Name}", details.ToString().TrimEnd(), definition, table.Description);
     }
 
     private static SqlObjectReviewInfo BuildViewReview(ViewMetadata view)
@@ -158,15 +150,8 @@ public static class SqlObjectReviewFormatter
         }
 
         var definition = SqlDefinitionFormatter.FormatViewDefinition(view);
-        var customDescription = BuildDefaultCustomDescription(
-            "view",
-            view.Database,
-            view.Schema,
-            view.Name,
-            details.ToString().TrimEnd(),
-            definition);
         return WithDescription("view", view.Database, view.Schema, view.Name,
-            $"View [{view.Schema}].[{view.Name}]", $"{view.Database}.{view.Schema}.{view.Name}", details.ToString().TrimEnd(), definition, customDescription);
+            $"View [{view.Schema}].[{view.Name}]", $"{view.Database}.{view.Schema}.{view.Name}", details.ToString().TrimEnd(), definition, view.Description);
     }
 
     private static SqlObjectReviewInfo BuildProcedureReview(ProcedureMetadata proc)
@@ -182,15 +167,8 @@ public static class SqlObjectReviewFormatter
         AppendParameters(details, proc.Parameters);
 
         var definition = SqlDefinitionFormatter.FormatProcedureDefinition(proc);
-        var customDescription = BuildDefaultCustomDescription(
-            "procedure",
-            proc.Database,
-            proc.Schema,
-            proc.Name,
-            details.ToString().TrimEnd(),
-            definition);
         return WithDescription("procedure", proc.Database, proc.Schema, proc.Name,
-            $"Procedure [{proc.Schema}].[{proc.Name}]", $"{proc.Database}.{proc.Schema}.{proc.Name}", details.ToString().TrimEnd(), definition, customDescription);
+            $"Procedure [{proc.Schema}].[{proc.Name}]", $"{proc.Database}.{proc.Schema}.{proc.Name}", details.ToString().TrimEnd(), definition, proc.Description);
     }
 
     private static SqlObjectReviewInfo BuildFunctionReview(FunctionMetadata fn)
@@ -207,15 +185,8 @@ public static class SqlObjectReviewFormatter
         AppendParameters(details, fn.Parameters);
 
         var definition = SqlDefinitionFormatter.FormatFunctionDefinition(fn);
-        var customDescription = BuildDefaultCustomDescription(
-            "function",
-            fn.Database,
-            fn.Schema,
-            fn.Name,
-            details.ToString().TrimEnd(),
-            definition);
         return WithDescription("function", fn.Database, fn.Schema, fn.Name,
-            $"Function [{fn.Schema}].[{fn.Name}]", $"{fn.Database}.{fn.Schema}.{fn.Name}", details.ToString().TrimEnd(), definition, customDescription);
+            $"Function [{fn.Schema}].[{fn.Name}]", $"{fn.Database}.{fn.Schema}.{fn.Name}", details.ToString().TrimEnd(), definition, fn.Description);
     }
 
     private static SqlObjectReviewInfo BuildUserTypeReview(UserTypeMetadata type)
@@ -226,15 +197,8 @@ public static class SqlObjectReviewFormatter
         details.AppendLine($"Nullable: {(type.IsNullable ? "Yes" : "No")}");
         details.AppendLine($"Table type: {(type.IsTableType ? "Yes" : "No")}");
         var definition = SqlDefinitionFormatter.FormatUserTypeDefinition(type);
-        var customDescription = BuildDefaultCustomDescription(
-            "userType",
-            type.Database,
-            type.Schema,
-            type.Name,
-            details.ToString().TrimEnd(),
-            definition);
         return WithDescription("userType", type.Database, type.Schema, type.Name,
-            $"User type [{type.Schema}].[{type.Name}]", $"{type.Database}.{type.Schema}.{type.Name}", details.ToString().TrimEnd(), definition, customDescription);
+            $"User type [{type.Schema}].[{type.Name}]", $"{type.Database}.{type.Schema}.{type.Name}", details.ToString().TrimEnd(), definition, type.Description);
     }
 
     private static SqlObjectReviewInfo BuildSynonymReview(SynonymMetadata synonym)
@@ -243,15 +207,8 @@ public static class SqlObjectReviewFormatter
         AppendCommon(details, "Synonym", synonym.Database, synonym.Schema, synonym.Name);
         details.AppendLine($"Target: {synonym.TargetObject}");
         var definition = SqlDefinitionFormatter.FormatSynonymDefinition(synonym);
-        var customDescription = BuildDefaultCustomDescription(
-            "synonym",
-            synonym.Database,
-            synonym.Schema,
-            synonym.Name,
-            details.ToString().TrimEnd(),
-            definition);
         return WithDescription("synonym", synonym.Database, synonym.Schema, synonym.Name,
-            $"Synonym [{synonym.Schema}].[{synonym.Name}]", $"{synonym.Database}.{synonym.Schema}.{synonym.Name}", details.ToString().TrimEnd(), definition, customDescription);
+            $"Synonym [{synonym.Schema}].[{synonym.Name}]", $"{synonym.Database}.{synonym.Schema}.{synonym.Name}", details.ToString().TrimEnd(), definition, synonym.Description);
     }
 
     private static SqlObjectReviewInfo WithDescription(
@@ -263,27 +220,10 @@ public static class SqlObjectReviewFormatter
         string subtitle,
         string details,
         string definition,
-        string? customDescriptionOverride = null)
+        string description)
     {
         var key = ObjectDescriptionStore.BuildKey(kind, database, schema, name);
-        var savedCustomDescription = ObjectDescriptionStore.LoadAll().TryGetValue(key, out var value) ? value : string.Empty;
-        var customDescription = string.IsNullOrWhiteSpace(savedCustomDescription) ? customDescriptionOverride ?? string.Empty : savedCustomDescription;
-        return new SqlObjectReviewInfo(title, subtitle, details, definition, key, customDescription);
-    }
-
-    private static string BuildDefaultCustomDescription(string kind, string database, string schema, string name, string details, string definition)
-    {
-        var builder = new StringBuilder();
-        builder.AppendLine($"Object: {kind} {schema}.{name}");
-        builder.AppendLine($"Database: {database}");
-        builder.AppendLine($"Schema: {schema}");
-        builder.AppendLine();
-        builder.AppendLine("Summary:");
-        builder.AppendLine(details.Replace(Environment.NewLine, Environment.NewLine + "  "));
-        builder.AppendLine();
-        builder.AppendLine("Definition:");
-        builder.AppendLine(definition.Length > 400 ? definition[..400] + "..." : definition);
-        return builder.ToString().TrimEnd();
+        return new SqlObjectReviewInfo(title, subtitle, details, definition, key, description);
     }
 
     private static void AppendCommon(StringBuilder sb, string type, string database, string schema, string name)

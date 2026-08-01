@@ -6,7 +6,7 @@
         xmlns:ssms="clr-namespace:MssqlIntelliSense.SsmsHost;assembly=MssqlIntelliSense.SsmsHost"
         xmlns:vsui="clr-namespace:Microsoft.VisualStudio.PlatformUI;assembly=Microsoft.VisualStudio.Shell.15.0"
         mc:Ignorable="d"
-        Title="MSSQL IntelliSense - Standalone UI Debugger" Height="800" Width="420" MinWidth="320"
+        Title="MSSQL IntelliSense - Standalone UI Debugger" Height="900" Width="1180" MinWidth="900"
         WindowStartupLocation="CenterScreen"
         Background="#1B1B1C" Foreground="#E6E6E6">
 
@@ -135,6 +135,19 @@
         </Style>
 
         <Style x:Key="PrimaryButtonStyle" TargetType="{x:Type Button}" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Background" Value="{StaticResource AppAccentBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource AppAccentBrush}" />
+            <Setter Property="Foreground" Value="White" />
+        </Style>
+
+        <Style x:Key="IconButtonStyle" TargetType="{x:Type Button}" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Width" Value="30" />
+            <Setter Property="Height" Value="30" />
+            <Setter Property="MinHeight" Value="30" />
+            <Setter Property="Padding" Value="0" />
+        </Style>
+
+        <Style x:Key="PrimaryIconButtonStyle" TargetType="{x:Type Button}" BasedOn="{StaticResource IconButtonStyle}">
             <Setter Property="Background" Value="{StaticResource AppAccentBrush}" />
             <Setter Property="BorderBrush" Value="{StaticResource AppAccentBrush}" />
             <Setter Property="Foreground" Value="White" />
@@ -345,10 +358,20 @@
                     <DockPanel LastChildFill="True">
                         <Button DockPanel.Dock="Right"
                                 x:Name="ReloadSsmsContextButton"
-                                Content="Reload"
-                                MinWidth="64"
+                                Style="{StaticResource IconButtonStyle}"
+                                ToolTip="Reload saved SSMS context"
                                 Margin="8,0,0,0"
-                                Click="ReloadSsmsContextButton_Click" />
+                                Click="ReloadSsmsContextButton_Click">
+                            <TextBlock Text="&#xE72C;" FontFamily="Segoe MDL2 Assets" FontSize="14" />
+                        </Button>
+                        <Button DockPanel.Dock="Right"
+                            x:Name="OpenSchemaExplorerButton"
+                            Style="{StaticResource IconButtonStyle}"
+                            ToolTip="Open Schema Explorer"
+                            Margin="8,0,0,0"
+                            Click="OpenSchemaExplorerButton_Click">
+                            <TextBlock Text="&#xE7C3;" FontFamily="Segoe MDL2 Assets" FontSize="14" />
+                        </Button>
                         <TextBlock Text="MSSQL IntelliSense Debugger"
                                    FontWeight="SemiBold"
                                    FontSize="14"
@@ -446,8 +469,12 @@
 
                         <DockPanel Grid.Row="0" Margin="0,0,0,6">
                             <TextBlock Text="SQL Input" FontWeight="SemiBold" Foreground="{StaticResource AppTextBrush}" VerticalAlignment="Center" />
-                            <Button x:Name="RunCompletionButton" Content="Run" Click="RunCompletionButton_Click" DockPanel.Dock="Right" Style="{StaticResource PrimaryButtonStyle}" />
-                            <Button x:Name="ReviewCompletionButton" Content="Review" Click="ReviewCompletionButton_Click" DockPanel.Dock="Right" Margin="0,0,6,0" IsEnabled="False" />
+                            <Button x:Name="RunCompletionButton" Click="RunCompletionButton_Click" DockPanel.Dock="Right" Style="{StaticResource PrimaryIconButtonStyle}" ToolTip="Run completion">
+                                <TextBlock Text="&#xE768;" FontFamily="Segoe MDL2 Assets" FontSize="14" />
+                            </Button>
+                            <Button x:Name="ReviewCompletionButton" Click="ReviewCompletionButton_Click" DockPanel.Dock="Right" Style="{StaticResource IconButtonStyle}" ToolTip="Review selected completion" Margin="0,0,6,0" IsEnabled="False">
+                                <TextBlock Text="&#xE70F;" FontFamily="Segoe MDL2 Assets" FontSize="14" />
+                            </Button>
                         </DockPanel>
 
                         <TextBox Grid.Row="1" x:Name="SqlInputTextBox" AcceptsReturn="True" AcceptsTab="True" FontFamily="Consolas" FontSize="13" Padding="8" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" TextChanged="SqlInputTextBox_TextChanged" SelectionChanged="SqlInputTextBox_SelectionChanged" Text="SELECT * FROM dbo.Users u JOIN " />
@@ -479,8 +506,16 @@
                         </Grid.RowDefinitions>
 
                         <DockPanel Grid.Row="0" Margin="0,0,0,6">
-                            <TextBlock x:Name="CachePathStatusText" Text="Cache File Path: Loading..." Foreground="{StaticResource AppMutedTextBrush}" VerticalAlignment="Center" />
-                            <Button x:Name="LoadCacheJsonButton" Content="Reload Cache JSON" Click="LoadCacheJsonButton_Click" DockPanel.Dock="Right" />
+                            <Button x:Name="LoadCacheJsonButton" Click="LoadCacheJsonButton_Click" DockPanel.Dock="Right" Style="{StaticResource IconButtonStyle}" ToolTip="Reload cache JSON">
+                                <TextBlock Text="&#xE72C;" FontFamily="Segoe MDL2 Assets" FontSize="14" />
+                            </Button>
+                            <Button x:Name="BuildHnswIndexButton" Click="BuildHnswIndexButton_Click" DockPanel.Dock="Right" Style="{StaticResource PrimaryIconButtonStyle}" ToolTip="Build HNSW index" Margin="0,0,6,0">
+                                <TextBlock Text="&#xE8B7;" FontFamily="Segoe MDL2 Assets" FontSize="14" />
+                            </Button>
+                            <StackPanel>
+                                <TextBlock x:Name="CachePathStatusText" Text="Cache File Path: Loading..." Foreground="{StaticResource AppMutedTextBrush}" />
+                                <TextBlock x:Name="HnswIndexStatusText" Text="HNSW index cache: Loading..." Foreground="{StaticResource AppMutedTextBrush}" Margin="0,3,0,0" />
+                            </StackPanel>
                         </DockPanel>
 
                         <TextBox Grid.Row="1" x:Name="CacheJsonViewerTextBox" IsReadOnly="True" AcceptsReturn="True" FontFamily="Consolas" FontSize="11.5" Padding="8" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" />

@@ -47,17 +47,17 @@ public sealed class ObjectReviewWindow : Window
         _columns = columns;
 
         Title = "MSSQL IntelliSense Object Review";
-        Width = 720;
-        Height = 760;
-        MinWidth = 360;
-        MinHeight = 480;
+        Width = 820;
+        Height = 700;
+        MinWidth = 560;
+        MinHeight = 520;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         Background = GetBrush(EnvironmentColors.ToolWindowBackgroundBrushKey, Color.FromRgb(31, 31, 31));
         Foreground = GetBrush(EnvironmentColors.ToolWindowTextBrushKey, Colors.White);
         Content = BuildContent(title, subtitle, details, definition, customDescription);
     }
 
-    public static void ShowForCompletion(SqlCompletionItem item, DatabaseMetadata metadata)
+    public static void ShowForCompletion(SqlCompletionItem item, DatabaseMetadata metadata, Window? owner = null)
     {
         if (!SqlObjectReviewFormatter.CanReview(item.Kind))
         {
@@ -66,9 +66,15 @@ public sealed class ObjectReviewWindow : Window
 
         try
         {
+            MetadataDescriptionEditor.EnsureLegacyDescriptionsMigrated();
             var (title, subtitle, details, definition, objectKey, customDescription) = BuildReviewText(item, metadata);
             var columns = GetColumns(item, metadata);
             var window = new ObjectReviewWindow(title, subtitle, details, definition, objectKey, customDescription, columns);
+            if (owner != null)
+            {
+                window.Owner = owner;
+                window.WindowStartupLocation = WindowStartupLocation.CenterOwner;
+            }
             window.Show();
             window.Activate();
         }
@@ -80,6 +86,11 @@ public sealed class ObjectReviewWindow : Window
 
     private UIElement BuildContent(string title, string subtitle, string details, string definition, string customDescription)
     {
+        var panelBrush = GetBrush(EnvironmentColors.ToolWindowBackgroundBrushKey, Color.FromRgb(31, 31, 31));
+        var panelAltBrush = GetBrush(EnvironmentColors.ToolWindowCodeBlockBackgroundBrushKey, Color.FromRgb(37, 37, 38));
+        var textBrush = GetBrush(EnvironmentColors.ToolWindowTextBrushKey, Colors.White);
+        var borderBrush = GetBrush(EnvironmentColors.ToolWindowBorderBrushKey, Color.FromRgb(63, 63, 70));
+        var accentBrush = GetBrush(EnvironmentColors.SystemHighlightBrushKey, Color.FromRgb(45, 125, 154));
         var root = new Grid { Margin = new Thickness(16) };
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
@@ -90,7 +101,7 @@ public sealed class ObjectReviewWindow : Window
             Orientation = Orientation.Horizontal,
             HorizontalAlignment = HorizontalAlignment.Right
         };
-        actions.Children.Add(CreateButton("Copy", "Copy object summary and definition", (_, _) => CopyText(_copyAll)));
+        actions.Children.Add(CreateIconButton("\uE8C8", "Copy object summary and definition", (_, _) => CopyText(_copyAll)));
         DockPanel.SetDock(actions, Dock.Right);
         header.Children.Add(actions);
 
@@ -112,7 +123,14 @@ public sealed class ObjectReviewWindow : Window
         header.Children.Add(titleStack);
         root.Children.Add(header);
 
-        var tabs = new TabControl();
+        var tabs = new TabControl
+        {
+            Background = panelBrush,
+            Foreground = textBrush,
+            BorderBrush = borderBrush,
+            BorderThickness = new Thickness(1),
+            ItemContainerStyle = CreateTabItemStyle(panelBrush, panelAltBrush, textBrush, borderBrush, accentBrush)
+        };
         tabs.Items.Add(BuildOverviewTab(details, customDescription));
         if (_columns.Count > 0)
         {
@@ -128,33 +146,38 @@ public sealed class ObjectReviewWindow : Window
     private TabItem BuildOverviewTab(string details, string customDescription)
     {
         var content = new Grid { Margin = new Thickness(0, 10, 0, 0) };
-        content.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        content.RowDefinitions.Add(new RowDefinition { Height = new GridLength(3, GridUnitType.Star) });
+        content.RowDefinitions.Add(new RowDefinition { Height = new GridLength(2, GridUnitType.Star) });
 
         var infoBox = CreateTextBox(details, acceptsReturn: true);
         infoBox.TextWrapping = TextWrapping.Wrap;
         content.Children.Add(infoBox);
 
-        var customPanel = new Grid { Margin = new Thickness(0, 10, 0, 0) };
+        var customPanel = new Grid
+        {
+            Margin = new Thickness(0, 10, 0, 0),
+            Background = GetBrush(EnvironmentColors.ToolWindowBackgroundBrushKey, Color.FromRgb(31, 31, 31))
+        };
         customPanel.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         customPanel.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         customPanel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        customPanel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        customPanel.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         customPanel.Children.Add(new TextBlock
         {
-            Text = "Object guidance",
+            Text = "Description",
             FontWeight = FontWeights.SemiBold,
-            Margin = new Thickness(0, 0, 0, 6)
+            Margin = new Thickness(0, 0, 0, 6),
+            Foreground = GetBrush(EnvironmentColors.ToolWindowTextBrushKey, Colors.White)
         });
-        var saveDescriptionButton = CreateButton("Save", "Save object and column guidance", (_, _) => SaveCustomDescription());
+        var saveDescriptionButton = CreateIconButton("\uE74E", "Save description", (_, _) => SaveCustomDescription());
         Grid.SetColumn(saveDescriptionButton, 1);
         customPanel.Children.Add(saveDescriptionButton);
 
         _customDescriptionTextBox = CreateTextBox(customDescription, acceptsReturn: true);
-        _customDescriptionTextBox.MinHeight = 60;
+        _customDescriptionTextBox.MinHeight = 80;
         _customDescriptionTextBox.TextWrapping = TextWrapping.Wrap;
         _customDescriptionTextBox.IsReadOnly = false;
-        _customDescriptionTextBox.ToolTip = "Describe the business purpose, data owner, common use cases, and important constraints for this object.";
+        _customDescriptionTextBox.ToolTip = "Edit the cached object description. This is the field that can later be synchronized with SQL Server MS_Description.";
         Grid.SetRow(_customDescriptionTextBox, 1);
         Grid.SetColumnSpan(_customDescriptionTextBox, 2);
         customPanel.Children.Add(_customDescriptionTextBox);
@@ -177,18 +200,16 @@ public sealed class ObjectReviewWindow : Window
             Margin = new Thickness(0, 0, 0, 6)
         });
 
-        var descriptions = ObjectDescriptionStore.LoadAll();
         foreach (var column in _columns.OrderBy(column => column.Ordinal))
         {
             var key = ObjectDescriptionStore.BuildColumnKey(_objectKey, column.Name);
-            descriptions.TryGetValue(key, out var description);
             _columnGuidanceRows.Add(new ColumnGuidanceRow
             {
                 Key = key,
                 Name = column.Name,
                 DataType = column.DataType,
                 Nullable = column.IsNullable ? "Yes" : "No",
-                Description = string.IsNullOrWhiteSpace(description) ? column.Description : description
+                Description = column.Description
             });
         }
 
@@ -243,7 +264,7 @@ public sealed class ObjectReviewWindow : Window
         DatabaseMetadata metadata)
     {
         var review = SqlObjectReviewFormatter.Build(item, metadata);
-        return (review.Title, review.Subtitle, review.Details, review.Definition, review.ObjectKey, review.CustomDescription);
+        return (review.Title, review.Subtitle, review.Details, review.Definition, review.ObjectKey, review.Description);
     }
 
     private static IReadOnlyList<ColumnMetadata> GetColumns(SqlCompletionItem item, DatabaseMetadata metadata)
@@ -281,14 +302,58 @@ public sealed class ObjectReviewWindow : Window
         return new TabItem { Header = "Definition", Content = definitionBox };
     }
 
-    private Button CreateButton(string text, string tooltip, RoutedEventHandler handler)
+    private static Style CreateTabItemStyle(Brush panelBrush, Brush panelAltBrush, Brush textBrush, Brush borderBrush, Brush accentBrush)
+    {
+        var style = new Style(typeof(TabItem));
+        style.Setters.Add(new Setter(Control.ForegroundProperty, textBrush));
+        style.Setters.Add(new Setter(Control.BackgroundProperty, panelAltBrush));
+        style.Setters.Add(new Setter(Control.BorderBrushProperty, borderBrush));
+        style.Setters.Add(new Setter(Control.PaddingProperty, new Thickness(10, 5, 10, 5)));
+        style.Setters.Add(new Setter(Control.TemplateProperty, CreateTabItemTemplate(panelBrush, panelAltBrush, textBrush, borderBrush, accentBrush)));
+        return style;
+    }
+
+    private static ControlTemplate CreateTabItemTemplate(Brush panelBrush, Brush panelAltBrush, Brush textBrush, Brush borderBrush, Brush accentBrush)
+    {
+        var border = new FrameworkElementFactory(typeof(Border));
+        border.Name = "TabBorder";
+        border.SetValue(Border.BackgroundProperty, panelAltBrush);
+        border.SetValue(Border.BorderBrushProperty, borderBrush);
+        border.SetValue(Border.BorderThicknessProperty, new Thickness(1, 1, 1, 0));
+        border.SetValue(Border.PaddingProperty, new Thickness(10, 5, 10, 5));
+
+        var content = new FrameworkElementFactory(typeof(ContentPresenter));
+        content.SetValue(ContentPresenter.ContentSourceProperty, "Header");
+        content.SetValue(ContentPresenter.HorizontalAlignmentProperty, HorizontalAlignment.Center);
+        content.SetValue(ContentPresenter.VerticalAlignmentProperty, VerticalAlignment.Center);
+        border.AppendChild(content);
+
+        var template = new ControlTemplate(typeof(TabItem)) { VisualTree = border };
+        var selected = new Trigger { Property = TabItem.IsSelectedProperty, Value = true };
+        selected.Setters.Add(new Setter(Border.BackgroundProperty, panelBrush, "TabBorder"));
+        selected.Setters.Add(new Setter(Control.ForegroundProperty, textBrush));
+        selected.Setters.Add(new Setter(Border.BorderBrushProperty, accentBrush, "TabBorder"));
+        template.Triggers.Add(selected);
+        return template;
+    }
+
+    private Button CreateIconButton(string glyph, string tooltip, RoutedEventHandler handler)
     {
         var button = new Button
         {
-            Content = text,
-            Padding = new Thickness(10, 4, 10, 4),
+            Content = new TextBlock
+            {
+                Text = glyph,
+                FontFamily = new FontFamily("Segoe MDL2 Assets"),
+                FontSize = 14,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
+            },
+            Padding = new Thickness(0),
             Margin = new Thickness(6, 0, 0, 0),
-            MinWidth = 54,
+            Width = 30,
+            Height = 30,
+            MinWidth = 30,
             MinHeight = 30,
             Background = GetBrush(EnvironmentColors.SystemButtonFaceBrushKey, Color.FromRgb(45, 45, 48)),
             Foreground = GetBrush(EnvironmentColors.SystemButtonTextBrushKey, Colors.White),
@@ -342,18 +407,62 @@ public sealed class ObjectReviewWindow : Window
     {
         try
         {
-            ObjectDescriptionStore.SaveDescription(_objectKey, _customDescriptionTextBox?.Text ?? string.Empty);
+            var savedToMetadata = TryParseObjectKey(_objectKey, out var kind, out var database, out var schema, out var name) &&
+                MetadataDescriptionEditor.TryUpdateObjectDescription(kind, database, schema, name, _customDescriptionTextBox?.Text ?? string.Empty);
+            if (!savedToMetadata)
+            {
+                throw new InvalidOperationException("The reviewed object was not found in the schema cache.");
+            }
+
             foreach (var row in _columnGuidanceRows)
             {
-                ObjectDescriptionStore.SaveDescription(row.Key, row.Description ?? string.Empty);
+                var savedColumnToMetadata = TryParseColumnKey(row.Key, out kind, out database, out schema, out name, out var columnName) &&
+                    MetadataDescriptionEditor.TryUpdateColumnDescription(kind, database, schema, name, columnName, row.Description ?? string.Empty);
+                if (!savedColumnToMetadata)
+                {
+                    throw new InvalidOperationException($"Column '{columnName}' was not found in the schema cache.");
+                }
             }
-            Title = "MSSQL IntelliSense Object Review - saved";
+            Title = "MSSQL IntelliSense Object Review - description saved";
         }
         catch (Exception ex)
         {
             MssqlIntelliSensePackage.Log($"[Object Review Save Description Error] {ex}");
             Title = "MSSQL IntelliSense Object Review - save failed";
         }
+    }
+
+    private static bool TryParseObjectKey(string key, out string kind, out string database, out string schema, out string name)
+    {
+        var parts = key.Split('|');
+        if (parts.Length == 4)
+        {
+            kind = parts[0];
+            database = parts[1];
+            schema = parts[2];
+            name = parts[3];
+            return true;
+        }
+
+        kind = database = schema = name = string.Empty;
+        return false;
+    }
+
+    private static bool TryParseColumnKey(string key, out string kind, out string database, out string schema, out string name, out string columnName)
+    {
+        var parts = key.Split('|');
+        if (parts.Length == 6 && parts[4].Equals("column", StringComparison.OrdinalIgnoreCase))
+        {
+            kind = parts[0];
+            database = parts[1];
+            schema = parts[2];
+            name = parts[3];
+            columnName = parts[5];
+            return true;
+        }
+
+        kind = database = schema = name = columnName = string.Empty;
+        return false;
     }
 
     private static Brush GetBrush(object key, Color fallback)

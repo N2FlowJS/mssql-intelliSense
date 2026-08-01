@@ -171,6 +171,10 @@ public sealed record UserTypeMetadata(string Schema, string Name)
     public IReadOnlyList<ColumnMetadata> Columns { get; init; } = Array.Empty<ColumnMetadata>();
     public string Connection { get; init; } = "";
     public int ConnectionId { get; init; } = 0;
+    public string ExtendedDescription { get; init; } = "";
+    public string Description => string.IsNullOrWhiteSpace(ExtendedDescription)
+        ? $"User type {Schema}.{Name} trong database {Database}."
+        : ExtendedDescription;
 }
 
 /// <summary>SQL Server Synonym pointing to another object.</summary>
@@ -179,6 +183,10 @@ public sealed record SynonymMetadata(string Schema, string Name, string TargetOb
     public string Database { get; init; } = "";
     public string Connection { get; init; } = "";
     public int ConnectionId { get; init; } = 0;
+    public string ExtendedDescription { get; init; } = "";
+    public string Description => string.IsNullOrWhiteSpace(ExtendedDescription)
+        ? $"Synonym {Schema}.{Name} trỏ đến {TargetObject}."
+        : ExtendedDescription;
 }
 
 /// <summary>Database user / principal (from sys.database_principals).</summary>

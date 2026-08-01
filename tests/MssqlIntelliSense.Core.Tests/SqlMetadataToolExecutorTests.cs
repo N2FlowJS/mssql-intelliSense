@@ -122,6 +122,34 @@ public sealed class SqlMetadataToolExecutorTests
     }
 
     [Fact]
+    public async Task ExecuteToolAsync_SearchObjects_FindsVietnameseItsObjectGuidance()
+    {
+        var previous = Environment.GetEnvironmentVariable("MSSQL_INTELLISENSE_APPDATA");
+        var tempFolder = Path.Combine(Path.GetTempPath(), "mssql-intellisense-tests-" + Guid.NewGuid().ToString("N"));
+        Environment.SetEnvironmentVariable("MSSQL_INTELLISENSE_APPDATA", tempFolder);
+        try
+        {
+            var metadata = new DatabaseMetadata(
+                [new TableMetadata("dbo", "PDApplicationReference", Array.Empty<ColumnMetadata>(), Array.Empty<string>()) { Database = "ITS" }],
+                [], [], ["ITS"], []);
+            ObjectDescriptionStore.SaveDescription("table", "ITS", "dbo", "PDApplicationReference", "đơn trình văn");
+            using var args = JsonDocument.Parse("{\"query\":\"đơn trình văn\"}");
+
+            var json = await SqlMetadataToolExecutor.ExecuteToolAsync(SqlMetadataToolExecutor.SearchObjectsToolName, args.RootElement, metadata);
+
+            json.Should().Contain("PDApplicationReference");
+            using var result = JsonDocument.Parse(json);
+            result.RootElement.GetProperty("matches")[0].GetProperty("description").GetString().Should().StartWith("đơn trình văn");
+            result.RootElement.GetProperty("matches")[0].TryGetProperty("customDescription", out _).Should().BeFalse();
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("MSSQL_INTELLISENSE_APPDATA", previous);
+            DeleteDirectoryWithRetry(tempFolder);
+        }
+    }
+
+    [Fact]
     public async Task ExecuteToolAsync_SearchObjects_UsesDatabaseObjectDescription()
     {
         var metadata = new DatabaseMetadata(
@@ -166,6 +194,66 @@ public sealed class SqlMetadataToolExecutorTests
 
         procedureJson.Should().Contain("ReconcilePayment").And.Contain("financial ledger entries");
         functionJson.Should().Contain("NormalizeCustomerIdentity").And.Contain("duplicate records");
+    }
+
+    [Fact]
+    public async Task ExecuteToolAsync_SearchObjects_UsesHnswScoreForTypoTolerantDescriptionSearch()
+    {
+        var metadata = new DatabaseMetadata([], [], [], ["TestDb"], [])
+        {
+            Procedures =
+            [
+                new ProcedureMetadata("dbo", "GetAuthenticatedUser")
+                {
+                    Database = "TestDb",
+                    ExtendedDescription = "Returns the application authentication profile for a user."
+                }
+            ]
+        };
+        using var args = JsonDocument.Parse("{\"query\":\"authentcation profil\"}");
+
+        var json = await SqlMetadataToolExecutor.ExecuteToolAsync(SqlMetadataToolExecutor.SearchObjectsToolName, args.RootElement, metadata);
+
+        json.Should().Contain("GetAuthenticatedUser");
+        json.Should().Contain("\"lexicalScore\":0");
+        json.Should().Contain("\"semanticScore\"");
+    }
+
+    [Fact]
+    public async Task ExecuteToolAsync_SearchObjects_UsesLocalEmbeddingForVietnameseSchemaTerms()
+    {
+        var synonymsPath = Path.Combine(Path.GetTempPath(), "mssql-intellisense-synonyms-" + Guid.NewGuid().ToString("N") + ".json");
+        var metadata = new DatabaseMetadata([], [], [], ["TestDb"], [])
+        {
+            Procedures =
+            [
+                new ProcedureMetadata("dbo", "GetDocumentArchive")
+                {
+                    Database = "TestDb",
+                    ExtendedDescription = "Reads document archive records for content retention."
+                }
+            ]
+        };
+        try
+        {
+            await File.WriteAllTextAsync(synonymsPath, "{\"tai\":[\"document\"],\"lieu\":[\"document\"]}");
+            var provider = new LocalTextEmbeddingProvider(synonymsPath);
+
+            var json = await SqlMetadataToolExecutor.ExecuteToolAsync(
+                SqlMetadataToolExecutor.SearchObjectsToolName,
+                "{\"query\":\"tài liệu\"}",
+                metadata,
+                provider,
+                CancellationToken.None);
+
+            json.Should().Contain("GetDocumentArchive");
+            json.Should().Contain("\"lexicalScore\":0");
+            json.Should().NotContain("error");
+        }
+        finally
+        {
+            if (File.Exists(synonymsPath)) File.Delete(synonymsPath);
+        }
     }
 
     [Fact]

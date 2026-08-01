@@ -37,6 +37,21 @@ public static class MssqlIntelliSenseConfig
         return Path.Combine(GetAppDataFolder(), "config.json");
     }
 
+    public static string GetSearchSynonymsPath()
+    {
+        return Path.Combine(GetAppDataFolder(), "search-synonyms.json");
+    }
+
+    public static string GetSearchIndexCacheFolder()
+    {
+        var directory = Path.Combine(GetAppDataFolder(), "search-indexes");
+        if (!Directory.Exists(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+        return directory;
+    }
+
     public static LlmSettings GetLlmSettings()
     {
         var path = GetConfigPath();

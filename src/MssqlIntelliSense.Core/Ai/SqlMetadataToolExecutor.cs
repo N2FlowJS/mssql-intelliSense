@@ -21,6 +21,7 @@ public static class SqlMetadataToolExecutor
     public const string ExecuteSqlToolName = "execute";
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly ITextEmbeddingProvider DefaultEmbeddingProvider = new LocalTextEmbeddingProvider();
 
     public static readonly string[] AllToolNames = new[]
     {
@@ -40,7 +41,13 @@ public static class SqlMetadataToolExecutor
         JsonElement arguments,
         DatabaseMetadata metadata)
     {
-        return ExecuteToolAsync(toolName, arguments, metadata, graphQlFallback: null);
+        return ExecuteToolAsync(
+            toolName,
+            arguments,
+            metadata,
+            graphQlFallback: null,
+            DefaultEmbeddingProvider,
+            CancellationToken.None);
     }
 
     public static async Task<string> ExecuteToolAsync(
@@ -49,7 +56,48 @@ public static class SqlMetadataToolExecutor
         DatabaseMetadata metadata)
     {
         using var document = JsonDocument.Parse(string.IsNullOrWhiteSpace(argumentsJson) ? "{}" : argumentsJson);
-        return await ExecuteToolAsync(toolName, document.RootElement, metadata, graphQlFallback: null);
+        return await ExecuteToolAsync(
+            toolName,
+            document.RootElement,
+            metadata,
+            graphQlFallback: null,
+            DefaultEmbeddingProvider,
+            CancellationToken.None);
+    }
+
+    public static async Task<string> ExecuteToolAsync(
+        string toolName,
+        string argumentsJson,
+        DatabaseMetadata metadata,
+        ITextEmbeddingProvider embeddingProvider,
+        CancellationToken cancellationToken)
+    {
+        using var document = JsonDocument.Parse(string.IsNullOrWhiteSpace(argumentsJson) ? "{}" : argumentsJson);
+        return await ExecuteToolAsync(
+            toolName,
+            document.RootElement,
+            metadata,
+            graphQlFallback: null,
+            embeddingProvider,
+            cancellationToken);
+    }
+
+    public static async Task<int> BuildObjectSearchIndexAsync(
+        DatabaseMetadata metadata,
+        CancellationToken cancellationToken)
+    {
+        if (metadata == null)
+        {
+            return 0;
+        }
+
+        var documents = BuildObjectSearchCandidates(metadata)
+            .Select(candidate => candidate.searchableText)
+            .ToArray();
+        return await SchemaEmbeddingSearch.EnsureIndexAsync(
+            documents,
+            DefaultEmbeddingProvider,
+            cancellationToken);
     }
 
     public static async Task<string> ExecuteToolAsync(
@@ -57,6 +105,17 @@ public static class SqlMetadataToolExecutor
         JsonElement arguments,
         DatabaseMetadata metadata,
         Func<string, object?, Task<string>>? graphQlFallback)
+    {
+        return await ExecuteToolAsync(toolName, arguments, metadata, graphQlFallback, DefaultEmbeddingProvider, CancellationToken.None);
+    }
+
+    private static async Task<string> ExecuteToolAsync(
+        string toolName,
+        JsonElement arguments,
+        DatabaseMetadata metadata,
+        Func<string, object?, Task<string>>? graphQlFallback,
+        ITextEmbeddingProvider? embeddingProvider,
+        CancellationToken cancellationToken)
     {
         var normalizedTool = NormalizeToolName(toolName);
         var safeMetadata = metadata ?? DatabaseMetadata.Empty;
@@ -121,7 +180,9 @@ public static class SqlMetadataToolExecutor
 
             case SearchObjectsToolName:
             case SearchSchemaObjectsToolName:
-                return JsonSerializer.Serialize(GetSearchObjectsToolResult(safeMetadata, arguments), JsonOptions);
+                return JsonSerializer.Serialize(
+                    await GetSearchObjectsToolResultAsync(safeMetadata, arguments, embeddingProvider, cancellationToken),
+                    JsonOptions);
 
             case FindColumnToolName:
                 return JsonSerializer.Serialize(GetFindColumnToolResult(safeMetadata, arguments), JsonOptions);
@@ -166,6 +227,7 @@ public static class SqlMetadataToolExecutor
 
     public static object GetTableSchemaToolResult(DatabaseMetadata metadata, JsonElement arguments)
     {
+        MetadataDescriptionEditor.EnsureLegacyDescriptionsMigrated();
         var schemaName = GetArgument(arguments, "schemaName", "dbo");
         var tableName = GetArgument(arguments, "tableName", string.Empty);
         var table = metadata?.FindTable(schemaName, tableName);
@@ -174,9 +236,6 @@ public static class SqlMetadataToolExecutor
             return new { error = "Table not found.", schemaName, tableName };
         }
 
-        var descriptions = ObjectDescriptionStore.LoadAll();
-        var objectKey = ObjectDescriptionStore.BuildKey("table", table.Database, table.Schema, table.Name);
-        descriptions.TryGetValue(objectKey, out var objectGuidance);
         return new
         {
             tableSchema = new
@@ -190,11 +249,10 @@ public static class SqlMetadataToolExecutor
                     dataType = c.DataType,
                     isNullable = c.IsNullable,
                     ordinal = c.Ordinal,
-                    description = c.Description,
-                    agentGuidance = GetColumnGuidance(descriptions, objectKey, c.Name)
+                    description = c.Description
                 }).ToList(),
                 primaryKeyColumns = table.PrimaryKeyColumns,
-                agentGuidance = objectGuidance ?? string.Empty
+                description = table.Description
             }
         };
     }
@@ -239,6 +297,37 @@ public static class SqlMetadataToolExecutor
     {
         var query = GetArgument(arguments, "query", GetArgument(arguments, "tableName", string.Empty));
         var matches = BuildObjectSearchRows(metadata, query);
+        return new { query, matches };
+    }
+
+    private static async Task<object> GetSearchObjectsToolResultAsync(
+        DatabaseMetadata metadata,
+        JsonElement arguments,
+        ITextEmbeddingProvider? embeddingProvider,
+        CancellationToken cancellationToken)
+    {
+        MetadataDescriptionEditor.EnsureLegacyDescriptionsMigrated();
+        var query = GetArgument(arguments, "query", GetArgument(arguments, "tableName", string.Empty));
+        var candidates = BuildObjectSearchCandidates(metadata).ToList();
+        IReadOnlyDictionary<int, float>? semanticScores = null;
+        if (embeddingProvider != null && candidates.Count > 0 && !string.IsNullOrWhiteSpace(query))
+        {
+            try
+            {
+                semanticScores = await SchemaEmbeddingSearch.SearchAsync(
+                    candidates.Select(candidate => candidate.searchableText).ToArray(),
+                    query,
+                    limit: 100,
+                    embeddingProvider,
+                    cancellationToken);
+            }
+            catch
+            {
+                semanticScores = null;
+            }
+        }
+
+        var matches = BuildObjectSearchRows(candidates, query, semanticScores);
         return new { query, matches };
     }
 
@@ -298,60 +387,50 @@ public static class SqlMetadataToolExecutor
     {
         if (metadata == null) return Array.Empty<object>();
 
-        var customDescriptions = ObjectDescriptionStore.LoadAll();
+        MetadataDescriptionEditor.EnsureLegacyDescriptionsMigrated();
+        var candidates = BuildObjectSearchCandidates(metadata).ToList();
+        IReadOnlyDictionary<int, float>? semanticScores = null;
+        if (candidates.Count > 0 && !string.IsNullOrWhiteSpace(query))
+        {
+            try
+            {
+                semanticScores = SchemaEmbeddingSearch.SearchAsync(
+                    candidates.Select(candidate => candidate.searchableText).ToArray(),
+                    query,
+                    limit: 100,
+                    DefaultEmbeddingProvider,
+                    CancellationToken.None).GetAwaiter().GetResult();
+            }
+            catch
+            {
+                semanticScores = null;
+            }
+        }
 
-        var tables = (metadata.Tables ?? Enumerable.Empty<TableMetadata>())
-            .Select(t => CreateObjectSearchCandidate(
-                "table",
-                t.Database,
-                t.Schema,
-                t.Name,
-                t.Description,
-                t.Keywords,
-                string.Join(" ", t.Columns.Select(c => c.Name)),
-                string.Empty,
-                BuildColumnGuidanceText(customDescriptions, "table", t.Database, t.Schema, t.Name, t.Columns.Select(c => c.Name)),
-                customDescriptions));
-        var views = (metadata.Views ?? Enumerable.Empty<ViewMetadata>())
-            .Select(v => CreateObjectSearchCandidate(
-                "view",
-                v.Database,
-                v.Schema,
-                v.Name,
-                v.Description,
-                v.Keywords,
-                string.Join(" ", v.Columns.Select(c => c.Name)),
-                v.Definition,
-                BuildColumnGuidanceText(customDescriptions, "view", v.Database, v.Schema, v.Name, v.Columns.Select(c => c.Name)),
-                customDescriptions));
-        var procedures = (metadata.Procedures ?? Enumerable.Empty<ProcedureMetadata>())
-            .Select(p => CreateObjectSearchCandidate(
-                "procedure",
-                p.Database,
-                p.Schema,
-                p.Name,
-                p.Description,
-                p.Keywords,
-                string.Join(" ", p.Parameters.Select(param => param.Name)),
-                p.Definition,
-                string.Empty,
-                customDescriptions));
-        var functions = (metadata.Functions ?? Enumerable.Empty<FunctionMetadata>())
-            .Select(f => CreateObjectSearchCandidate(
-                "function",
-                f.Database,
-                f.Schema,
-                f.Name,
-                f.Description,
-                f.Keywords,
-                string.Join(" ", f.Parameters.Select(param => param.Name)),
-                f.Definition,
-                string.Empty,
-                customDescriptions));
+        return BuildObjectSearchRows(candidates, query, semanticScores);
+    }
 
-        return tables.Concat(views).Concat(procedures).Concat(functions)
-            .Select(o => new { Candidate = o, Score = ScoreObjectSearch(o, query) })
-            .Where(o => string.IsNullOrWhiteSpace(query) || o.Score > 0)
+    private static IEnumerable BuildObjectSearchRows(
+        IReadOnlyList<ObjectSearchCandidate> candidates,
+        string query,
+        IReadOnlyDictionary<int, float>? semanticScores)
+    {
+        semanticScores ??= new Dictionary<int, float>();
+
+        return candidates
+            .Select((candidate, index) =>
+            {
+                semanticScores.TryGetValue(index, out var semanticScore);
+                var lexicalScore = ScoreObjectSearch(candidate, query);
+                return new
+                {
+                    Candidate = candidate,
+                    Score = lexicalScore + (int)Math.Round(Math.Max(0, semanticScore) * 40),
+                    LexicalScore = lexicalScore,
+                    SemanticScore = semanticScore
+                };
+            })
+            .Where(o => string.IsNullOrWhiteSpace(query) || o.LexicalScore > 0 || o.SemanticScore >= 0.05f)
             .OrderByDescending(o => o.Score)
             .ThenBy(o => o.Candidate.kind)
             .ThenBy(o => o.Candidate.schema)
@@ -363,24 +442,74 @@ public static class SqlMetadataToolExecutor
                 o.Candidate.schema,
                 o.Candidate.name,
                 o.Candidate.description,
-                o.Candidate.customDescription,
-                o.Candidate.columnGuidance,
+                o.Candidate.columnDescription,
                 definitionSnippet = Snippet(o.Candidate.definition, 1000),
-                score = o.Score
+                score = o.Score,
+                lexicalScore = o.LexicalScore,
+                semanticScore = Math.Round(o.SemanticScore, 4)
             })
             .Take(100)
             .ToList();
+    }
+
+    private static IEnumerable<ObjectSearchCandidate> BuildObjectSearchCandidates(DatabaseMetadata metadata)
+    {
+        var tables = (metadata.Tables ?? Enumerable.Empty<TableMetadata>())
+            .Select(t => CreateObjectSearchCandidate(
+                "table",
+                t.Database,
+                t.Schema,
+                t.Name,
+                t.Description,
+                t.Keywords,
+                string.Join(" ", t.Columns.Select(c => c.Name)),
+                string.Empty,
+                BuildColumnDescriptionText(t.Columns)));
+        var views = (metadata.Views ?? Enumerable.Empty<ViewMetadata>())
+            .Select(v => CreateObjectSearchCandidate(
+                "view",
+                v.Database,
+                v.Schema,
+                v.Name,
+                v.Description,
+                v.Keywords,
+                string.Join(" ", v.Columns.Select(c => c.Name)),
+                v.Definition,
+                BuildColumnDescriptionText(v.Columns)));
+        var procedures = (metadata.Procedures ?? Enumerable.Empty<ProcedureMetadata>())
+            .Select(p => CreateObjectSearchCandidate(
+                "procedure",
+                p.Database,
+                p.Schema,
+                p.Name,
+                p.Description,
+                p.Keywords,
+                string.Join(" ", p.Parameters.Select(param => param.Name)),
+                p.Definition,
+                string.Empty));
+        var functions = (metadata.Functions ?? Enumerable.Empty<FunctionMetadata>())
+            .Select(f => CreateObjectSearchCandidate(
+                "function",
+                f.Database,
+                f.Schema,
+                f.Name,
+                f.Description,
+                f.Keywords,
+                string.Join(" ", f.Parameters.Select(param => param.Name)),
+                f.Definition,
+                string.Empty));
+
+        return tables.Concat(views).Concat(procedures).Concat(functions);
     }
 
     public static IEnumerable BuildColumnSearchRows(DatabaseMetadata metadata, string query)
     {
         if (metadata == null) return Array.Empty<object>();
 
-        var descriptions = ObjectDescriptionStore.LoadAll();
+        MetadataDescriptionEditor.EnsureLegacyDescriptionsMigrated();
         var tableColumns = (metadata.Tables ?? Enumerable.Empty<TableMetadata>())
             .SelectMany(t => (t.Columns ?? Enumerable.Empty<ColumnMetadata>()).Select(c =>
             {
-                var objectKey = ObjectDescriptionStore.BuildKey("table", t.Database, t.Schema, t.Name);
                 return new
                 {
                     kind = "table",
@@ -390,15 +519,13 @@ public static class SqlMetadataToolExecutor
                     column = c.Name,
                     dataType = c.DataType,
                     isNullable = c.IsNullable,
-                    description = c.Description,
-                    agentGuidance = GetColumnGuidance(descriptions, objectKey, c.Name)
+                    description = c.Description
                 };
             }));
 
         var viewColumns = (metadata.Views ?? Enumerable.Empty<ViewMetadata>())
             .SelectMany(v => (v.Columns ?? Enumerable.Empty<ColumnMetadata>()).Select(c =>
             {
-                var objectKey = ObjectDescriptionStore.BuildKey("view", v.Database, v.Schema, v.Name);
                 return new
                 {
                     kind = "view",
@@ -408,13 +535,12 @@ public static class SqlMetadataToolExecutor
                     column = c.Name,
                     dataType = c.DataType,
                     isNullable = c.IsNullable,
-                    description = c.Description,
-                    agentGuidance = GetColumnGuidance(descriptions, objectKey, c.Name)
+                    description = c.Description
                 };
             }));
 
         return tableColumns.Concat(viewColumns)
-            .Where(c => Matches(c.column, query) || Matches(c.agentGuidance, query))
+            .Where(c => Matches(c.column, query) || Matches(c.description, query))
             .OrderBy(c => c.schema)
             .ThenBy(c => c.objectName)
             .ThenBy(c => c.column)
@@ -497,8 +623,7 @@ public static class SqlMetadataToolExecutor
         string schema,
         string name,
         string description,
-        string customDescription,
-        string columnGuidance,
+        string columnDescription,
         string searchableText,
         string definition);
 
@@ -511,13 +636,8 @@ public static class SqlMetadataToolExecutor
         string keywords,
         string secondaryText,
         string definition,
-        string columnGuidance,
-        IReadOnlyDictionary<string, string> customDescriptions)
+        string columnDescription)
     {
-        var key = ObjectDescriptionStore.BuildKey(kind, database, schema, name);
-        customDescriptions.TryGetValue(key, out var customDescription);
-        customDescription ??= string.Empty;
-
         var searchableText = string.Join(" ", new[]
         {
             kind,
@@ -526,8 +646,7 @@ public static class SqlMetadataToolExecutor
             name,
             schema + "." + name,
             description,
-            customDescription,
-            columnGuidance,
+            columnDescription,
             keywords,
             secondaryText,
             definition
@@ -538,38 +657,17 @@ public static class SqlMetadataToolExecutor
             database,
             schema,
             name,
-            string.IsNullOrWhiteSpace(customDescription) ? description : customDescription,
-            customDescription,
-            columnGuidance,
+            description,
+            columnDescription,
             searchableText,
             definition);
     }
 
-    private static string GetColumnGuidance(
-        IReadOnlyDictionary<string, string> descriptions,
-        string objectKey,
-        string columnName)
+    private static string BuildColumnDescriptionText(IEnumerable<ColumnMetadata> columns)
     {
-        descriptions.TryGetValue(ObjectDescriptionStore.BuildColumnKey(objectKey, columnName), out var guidance);
-        return guidance ?? string.Empty;
-    }
-
-    private static string BuildColumnGuidanceText(
-        IReadOnlyDictionary<string, string> descriptions,
-        string kind,
-        string database,
-        string schema,
-        string name,
-        IEnumerable<string> columnNames)
-    {
-        var objectKey = ObjectDescriptionStore.BuildKey(kind, database, schema, name);
-        return string.Join(" ", columnNames
-            .Select(columnName =>
-            {
-                var guidance = GetColumnGuidance(descriptions, objectKey, columnName);
-                return string.IsNullOrWhiteSpace(guidance) ? string.Empty : $"{columnName}: {guidance}";
-            })
-            .Where(guidance => !string.IsNullOrWhiteSpace(guidance)));
+        return string.Join(" ", columns
+            .Select(column => string.IsNullOrWhiteSpace(column.Description) ? string.Empty : $"{column.Name}: {column.Description}")
+            .Where(description => !string.IsNullOrWhiteSpace(description)));
     }
 
     private static int ScoreObjectSearch(ObjectSearchCandidate candidate, string query)
@@ -597,8 +695,8 @@ public static class SqlMetadataToolExecutor
             var tokenScore = 0;
             tokenScore = Math.Max(tokenScore, ScoreField(candidate.name, token, exact: 120, prefix: 90, contains: 60));
             tokenScore = Math.Max(tokenScore, ScoreField(candidate.schema + "." + candidate.name, token, exact: 110, prefix: 80, contains: 55));
-            tokenScore = Math.Max(tokenScore, ScoreField(candidate.customDescription, token, exact: 95, prefix: 75, contains: 50));
-            tokenScore = Math.Max(tokenScore, ScoreField(candidate.description, token, exact: 50, prefix: 35, contains: 22));
+            tokenScore = Math.Max(tokenScore, ScoreField(candidate.description, token, exact: 95, prefix: 75, contains: 50));
+            tokenScore = Math.Max(tokenScore, ScoreField(candidate.columnDescription, token, exact: 50, prefix: 35, contains: 22));
             tokenScore = Math.Max(tokenScore, ScoreField(candidate.searchableText, token, exact: 25, prefix: 18, contains: 12));
             tokenScore = Math.Max(tokenScore, ScoreField(candidate.definition, token, exact: 16, prefix: 12, contains: 8));
 

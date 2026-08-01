@@ -13,6 +13,7 @@ using MssqlIntelliSense.Core.Metadata;
 
 namespace MssqlIntelliSense.SsmsHost;
 
+#pragma warning disable VSTHRD010
 public partial class ToolLabControl : UserControl
 {
     private const string ListTablesToolName = SqlMetadataToolExecutor.ListTablesToolName;
@@ -71,6 +72,20 @@ public partial class ToolLabControl : UserControl
         public IList<object>? PreviewRows { get; set; }
     }
 
+    private sealed class ObjectSearchPreviewRow
+    {
+        public string Kind { get; set; } = string.Empty;
+        public string Database { get; set; } = string.Empty;
+        public string Schema { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+        public string Description { get; set; } = string.Empty;
+        public int Score { get; set; }
+        public int LexicalScore { get; set; }
+        public double SemanticScore { get; set; }
+    }
+
+    public event EventHandler? ToolExecutionCompleted;
+
     public ToolLabControl()
     {
         InitializeComponent();
@@ -82,6 +97,11 @@ public partial class ToolLabControl : UserControl
     {
         _selectedConnection = connection;
         _selectedDatabase = databaseName;
+
+        if (DatabaseTextBox != null && string.IsNullOrWhiteSpace(DatabaseTextBox.Text))
+        {
+            DatabaseTextBox.Text = databaseName?.Trim() ?? string.Empty;
+        }
 
         if (connection != null)
         {
@@ -147,7 +167,7 @@ public partial class ToolLabControl : UserControl
                 _connections.Add(connection);
             }
 
-            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+            await MssqlIntelliSensePackage.SwitchToMainThreadAsync();
             var activeContext = ResolveToolConnectionContext(registerIfMissing: true);
             if (activeContext.Connection != null)
             {
@@ -218,6 +238,7 @@ public partial class ToolLabControl : UserControl
                 OutputTextBox.Text = result.OutputText;
                 OutputDataGrid.ItemsSource = result.PreviewRows;
             });
+            ToolExecutionCompleted?.Invoke(this, EventArgs.Empty);
         }
         catch (Exception ex)
         {
@@ -232,7 +253,7 @@ public partial class ToolLabControl : UserControl
 
     private ToolRunRequest? CaptureRunRequest()
     {
-        ThreadHelper.ThrowIfNotOnUIThread();
+        EnsureOnUiThread();
         var toolConnection = ResolveToolConnectionContext(registerIfMissing: true);
         var connection = toolConnection.Connection ?? ConnectionsComboBox.SelectedItem as ConnectionInfo;
         if (connection == null)
@@ -308,7 +329,9 @@ public partial class ToolLabControl : UserControl
                 request.ActiveConnectionString ?? string.Empty,
                 dbFilter,
                 query));
-        var previewRows = SqlMetadataToolExecutor.BuildPreviewRows(
+        var previewRows = IsObjectSearchTool(request.ToolName)
+            ? ExtractObjectSearchPreviewRows(output)
+            : SqlMetadataToolExecutor.BuildPreviewRows(
                 request.ToolName,
                 metadata,
                 request.SchemaName,
@@ -327,6 +350,56 @@ public partial class ToolLabControl : UserControl
             PreviewRows = previewRows
         };
     }
+
+    private static bool IsObjectSearchTool(string toolName) =>
+        string.Equals(toolName, SearchObjectsToolName, StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(toolName, SqlMetadataToolExecutor.SearchSchemaObjectsToolName, StringComparison.OrdinalIgnoreCase);
+
+    private static IList<object> ExtractObjectSearchPreviewRows(string output)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(output);
+            if (!document.RootElement.TryGetProperty("matches", out var matches) ||
+                matches.ValueKind != JsonValueKind.Array)
+            {
+                return new List<object>();
+            }
+
+            return matches.EnumerateArray()
+                .Select(match => (object)new ObjectSearchPreviewRow
+                {
+                    Kind = GetJsonString(match, "kind"),
+                    Database = GetJsonString(match, "database"),
+                    Schema = GetJsonString(match, "schema"),
+                    Name = GetJsonString(match, "name"),
+                    Description = GetJsonString(match, "description"),
+                    Score = GetJsonInt(match, "score"),
+                    LexicalScore = GetJsonInt(match, "lexicalScore"),
+                    SemanticScore = GetJsonDouble(match, "semanticScore")
+                })
+                .ToList();
+        }
+        catch
+        {
+            return new List<object>();
+        }
+    }
+
+    private static string GetJsonString(JsonElement source, string propertyName) =>
+        source.TryGetProperty(propertyName, out var property) && property.ValueKind == JsonValueKind.String
+            ? property.GetString() ?? string.Empty
+            : string.Empty;
+
+    private static int GetJsonInt(JsonElement source, string propertyName) =>
+        source.TryGetProperty(propertyName, out var property) && property.TryGetInt32(out var value)
+            ? value
+            : 0;
+
+    private static double GetJsonDouble(JsonElement source, string propertyName) =>
+        source.TryGetProperty(propertyName, out var property) && property.TryGetDouble(out var value)
+            ? value
+            : 0;
 
     private Task UpdateToolUiAsync(Action action)
     {
@@ -358,7 +431,7 @@ public partial class ToolLabControl : UserControl
 
     private ToolConnectionContext ResolveToolConnectionContext(bool registerIfMissing)
     {
-        Microsoft.VisualStudio.Shell.ThreadHelper.ThrowIfNotOnUIThread();
+        EnsureOnUiThread();
 
         var activeConnectionString = MssqlIntelliSensePackage.GetActiveConnectionString();
         var activeDatabase = MssqlIntelliSensePackage.GetActiveDatabaseName();
@@ -409,6 +482,14 @@ public partial class ToolLabControl : UserControl
         }
 
         return new ToolConnectionContext();
+    }
+
+    private void EnsureOnUiThread()
+    {
+        if (!Dispatcher.CheckAccess())
+        {
+            throw new InvalidOperationException("Tool Lab UI access must occur on the WPF dispatcher thread.");
+        }
     }
 
     private static string NormalizeServerConnectionString(string connectionString)

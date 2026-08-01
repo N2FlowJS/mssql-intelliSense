@@ -120,6 +120,7 @@ public sealed class SchemaExplorerNodeContext
     public string? DatabaseName { get; }
 }
 
+#pragma warning disable VSTHRD010
 public partial class MssqlIntelliSenseWindow : Window
 {
     public ObservableCollection<TreeViewItemViewModel> RootNodes { get; set; } = new ObservableCollection<TreeViewItemViewModel>();
@@ -129,24 +130,48 @@ public partial class MssqlIntelliSenseWindow : Window
     public MssqlIntelliSenseWindow()
     {
         InitializeComponent();
+        ApplyStandaloneThemeFallbacks();
         Loaded += MssqlIntelliSenseWindow_Loaded;
         DataContext = this;
     }
 
+    private void ApplyStandaloneThemeFallbacks()
+    {
+        if (MssqlIntelliSensePackage.Instance != null)
+        {
+            return;
+        }
+
+        Resources[EnvironmentColors.ToolWindowBackgroundBrushKey] = new SolidColorBrush(Color.FromRgb(27, 27, 28));
+        Resources[EnvironmentColors.ToolWindowTextBrushKey] = new SolidColorBrush(Color.FromRgb(230, 230, 230));
+        Resources[EnvironmentColors.ToolWindowBorderBrushKey] = new SolidColorBrush(Color.FromRgb(61, 61, 66));
+        Resources[EnvironmentColors.ToolWindowCodeBlockBackgroundBrushKey] = new SolidColorBrush(Color.FromRgb(36, 36, 38));
+        Resources[EnvironmentColors.PanelTextBrushKey] = new SolidColorBrush(Color.FromRgb(168, 168, 173));
+        Resources[EnvironmentColors.ComboBoxBackgroundBrushKey] = new SolidColorBrush(Color.FromRgb(31, 31, 34));
+        Resources[EnvironmentColors.ComboBoxTextBrushKey] = new SolidColorBrush(Color.FromRgb(230, 230, 230));
+        Resources[EnvironmentColors.ComboBoxBorderBrushKey] = new SolidColorBrush(Color.FromRgb(61, 61, 66));
+        Resources[EnvironmentColors.SystemHighlightBrushKey] = new SolidColorBrush(Color.FromRgb(45, 125, 154));
+        Resources[EnvironmentColors.SystemHighlightTextBrushKey] = Brushes.White;
+        Resources[EnvironmentColors.SystemButtonFaceBrushKey] = new SolidColorBrush(Color.FromRgb(52, 52, 56));
+        Resources[EnvironmentColors.SystemButtonTextBrushKey] = new SolidColorBrush(Color.FromRgb(230, 230, 230));
+        Resources[EnvironmentColors.CommandBarMouseOverBackgroundGradientBrushKey] = new SolidColorBrush(Color.FromRgb(66, 66, 71));
+    }
+
+    private void EnsureOnUiThread()
+    {
+        if (!Dispatcher.CheckAccess())
+        {
+            throw new InvalidOperationException("Schema Explorer UI access must occur on the WPF dispatcher thread.");
+        }
+    }
+
     private void MssqlIntelliSenseWindow_Loaded(object sender, RoutedEventArgs e)
     {
-        ThreadHelper.JoinableTaskFactory.Run(async () =>
-        {
-            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-
-            await RefreshConnectionsTreeAsync();
-        });
+        _ = RefreshConnectionsTreeAsync();
     }
 
     private static TreeViewItemViewModel CreateLoadingNode()
     {
-        ThreadHelper.ThrowIfNotOnUIThread();
-
         return new TreeViewItemViewModel
         {
             Name = "Loading...",
@@ -162,7 +187,7 @@ public partial class MssqlIntelliSenseWindow : Window
 
     private async Task RefreshConnectionsTreeAsync()
     {
-        await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+        await MssqlIntelliSensePackage.SwitchToMainThreadAsync();
 
         try
         {
@@ -226,7 +251,7 @@ public partial class MssqlIntelliSenseWindow : Window
 
     private async Task LoadServerObjectsAsync(TreeViewItemViewModel serverObjectsNode, int connectionId)
     {
-        await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+        await MssqlIntelliSensePackage.SwitchToMainThreadAsync();
 
         try
         {
@@ -264,7 +289,7 @@ public partial class MssqlIntelliSenseWindow : Window
 
     private async Task LoadEndpointsAsync(TreeViewItemViewModel endpointsNode, int connectionId)
     {
-        await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+        await MssqlIntelliSensePackage.SwitchToMainThreadAsync();
 
         try
         {
@@ -314,7 +339,7 @@ public partial class MssqlIntelliSenseWindow : Window
 
     private async Task LoadDatabaseChildrenAsync(TreeViewItemViewModel databasesNode, int connectionId)
     {
-        await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+        await MssqlIntelliSensePackage.SwitchToMainThreadAsync();
 
         try
         {
@@ -382,7 +407,7 @@ public partial class MssqlIntelliSenseWindow : Window
 
     private async Task LoadDbObjectsAsync(TreeViewItemViewModel dbNode, int connectionId, string dbName)
     {
-        await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+        await MssqlIntelliSensePackage.SwitchToMainThreadAsync();
 
         try
         {
@@ -607,7 +632,7 @@ public partial class MssqlIntelliSenseWindow : Window
 
     private async Task LoadLinkedServersAsync(TreeViewItemViewModel linkedServersNode, int connectionId)
     {
-        await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+        await MssqlIntelliSensePackage.SwitchToMainThreadAsync();
 
         try
         {
@@ -1025,7 +1050,7 @@ public partial class MssqlIntelliSenseWindow : Window
 
     private void RefreshSchemaButton_Click(object sender, RoutedEventArgs e)
     {
-        ThreadHelper.ThrowIfNotOnUIThread();
+        EnsureOnUiThread();
 
         if (_selectedConnection == null) return;
 
@@ -1034,7 +1059,7 @@ public partial class MssqlIntelliSenseWindow : Window
 
     private void ScanSchemaMenuItem_Click(object sender, RoutedEventArgs e)
     {
-        ThreadHelper.ThrowIfNotOnUIThread();
+        EnsureOnUiThread();
 
         if (ConnectionsTree.SelectedItem is not TreeViewItemViewModel node)
         {
@@ -1052,7 +1077,7 @@ public partial class MssqlIntelliSenseWindow : Window
 
     private (ConnectionInfo Connection, MetadataScanScope Scope, string? DatabaseName, string Label)? GetScanPlan(TreeViewItemViewModel node)
     {
-        ThreadHelper.ThrowIfNotOnUIThread();
+        EnsureOnUiThread();
 
         if (node.Tag is ConnectionInfo conn)
         {
@@ -1083,7 +1108,7 @@ public partial class MssqlIntelliSenseWindow : Window
 
     private void StartSchemaScan(ConnectionInfo connection, MetadataScanScope scope, string? databaseName, string label)
     {
-        ThreadHelper.ThrowIfNotOnUIThread();
+        EnsureOnUiThread();
 
         var connStr = connection.ConnectionString;
         _selectedConnection = connection;
@@ -1120,7 +1145,7 @@ public partial class MssqlIntelliSenseWindow : Window
 
     private void CopyConnStrButton_Click(object sender, RoutedEventArgs e)
     {
-        ThreadHelper.ThrowIfNotOnUIThread();
+        EnsureOnUiThread();
 
         if (_selectedConnection == null) return;
         try
@@ -1136,7 +1161,7 @@ public partial class MssqlIntelliSenseWindow : Window
 
     private void CopyMenuItem_Click(object sender, RoutedEventArgs e)
     {
-        ThreadHelper.ThrowIfNotOnUIThread();
+        EnsureOnUiThread();
 
         try
         {
@@ -1153,7 +1178,7 @@ public partial class MssqlIntelliSenseWindow : Window
 
     private void DeleteConnectionMenuItem_Click(object sender, RoutedEventArgs e)
     {
-        ThreadHelper.ThrowIfNotOnUIThread();
+        EnsureOnUiThread();
 
         if (ConnectionsTree.SelectedItem is not TreeViewItemViewModel { Tag: ConnectionInfo conn }) return;
 
@@ -1184,14 +1209,14 @@ public partial class MssqlIntelliSenseWindow : Window
 
     private void RefreshMenuItem_Click(object sender, RoutedEventArgs e)
     {
-        ThreadHelper.ThrowIfNotOnUIThread();
+        EnsureOnUiThread();
 
         RefreshConnectionsTree();
     }
 
     private void ConnectionsTree_ContextMenuOpening(object sender, ContextMenuEventArgs e)
     {
-        ThreadHelper.ThrowIfNotOnUIThread();
+        EnsureOnUiThread();
 
         var isConnection = ConnectionsTree.SelectedItem is TreeViewItemViewModel { Tag: ConnectionInfo };
         var isScannable = ConnectionsTree.SelectedItem is TreeViewItemViewModel selectedNode && GetScanPlan(selectedNode) != null;
@@ -1207,7 +1232,7 @@ public partial class MssqlIntelliSenseWindow : Window
 
     private void TreeViewItem_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
     {
-        ThreadHelper.ThrowIfNotOnUIThread();
+        EnsureOnUiThread();
 
         if (GetVisualParent<TreeViewItem>(e.OriginalSource as DependencyObject) is { } item)
         {
@@ -1264,14 +1289,16 @@ public partial class MssqlIntelliSenseWindow : Window
             SettingsApiKeyTextBox.Text = SettingsApiKeyPasswordBox.Password;
             SettingsApiKeyTextBox.Visibility = Visibility.Visible;
             SettingsApiKeyPasswordBox.Visibility = Visibility.Collapsed;
-            TogglePasswordButton.Content = "Ẩn";
+            TogglePasswordButton.Content = "\uE7A5";
+            TogglePasswordButton.ToolTip = "Hide API key";
         }
         else
         {
             SettingsApiKeyPasswordBox.Password = SettingsApiKeyTextBox.Text;
             SettingsApiKeyTextBox.Visibility = Visibility.Collapsed;
             SettingsApiKeyPasswordBox.Visibility = Visibility.Visible;
-            TogglePasswordButton.Content = "Hiện";
+            TogglePasswordButton.Content = "\uE7A6";
+            TogglePasswordButton.ToolTip = "Show API key";
         }
     }
 
@@ -1405,6 +1432,11 @@ internal static class SchemaExplorerIconProvider
 
     internal static ImageSource? GetIcon(SchemaExplorerIcon icon)
     {
+        if (MssqlIntelliSensePackage.Instance == null)
+        {
+            return null;
+        }
+
         ThreadHelper.ThrowIfNotOnUIThread();
 
         if (IconCache.TryGetValue(icon, out var cached))

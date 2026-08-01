@@ -7,6 +7,7 @@ using System.Windows;
 using System.Windows.Controls;
 using Microsoft.Data.SqlClient;
 using MssqlIntelliSense.Core;
+using MssqlIntelliSense.Core.Ai;
 using MssqlIntelliSense.Core.Cache;
 using MssqlIntelliSense.Core.Completion;
 using MssqlIntelliSense.Core.Metadata;
@@ -22,14 +23,21 @@ public partial class MainWindow : Window
     private ConnectionInfo? _savedConnection;
     private string _savedConnectionString = string.Empty;
     private string _savedDatabaseName = string.Empty;
+    private MssqlIntelliSenseWindow? _schemaExplorerWindow;
     private bool _isInitialized;
     private bool _isLoadingSavedContext;
 
     public MainWindow()
     {
         InitializeComponent();
+        DebugToolLabControl.ToolExecutionCompleted += DebugToolLabControl_ToolExecutionCompleted;
         _isInitialized = true;
         Loaded += MainWindow_Loaded;
+    }
+
+    private void DebugToolLabControl_ToolExecutionCompleted(object? sender, EventArgs e)
+    {
+        _ = LoadCacheJsonAsync();
     }
 
     private void MainWindow_Loaded(object sender, RoutedEventArgs e)
@@ -351,6 +359,19 @@ public partial class MainWindow : Window
         await TriggerCompletionAsync();
     }
 
+    private void OpenSchemaExplorerButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_schemaExplorerWindow == null || !_schemaExplorerWindow.IsLoaded)
+        {
+            _schemaExplorerWindow = new MssqlIntelliSenseWindow { Owner = this };
+            _schemaExplorerWindow.Closed += (_, _) => _schemaExplorerWindow = null;
+            _schemaExplorerWindow.Show();
+        }
+
+        _schemaExplorerWindow.Activate();
+        if (StatusBarText != null) StatusBarText.Text = "Schema Explorer opened";
+    }
+
     private void SaveSettingsButton_Click(object sender, RoutedEventArgs e)
     {
         UpdateDebugConnectionContext();
@@ -556,7 +577,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        ObjectReviewWindow.ShowForCompletion(item, _currentMetadata);
+        ObjectReviewWindow.ShowForCompletion(item, _currentMetadata, this);
         if (StatusBarText != null) StatusBarText.Text = $"Review opened: {item.Label}";
     }
 
@@ -583,6 +604,14 @@ public partial class MainWindow : Window
         {
             var dbPath = MssqlIntelliSenseCacheReader.GetCacheFilePath();
             if (CachePathStatusText != null) CachePathStatusText.Text = $"Cache File Path: {dbPath}";
+            var hnswStatus = SchemaEmbeddingSearch.GetCacheStatus();
+            if (HnswIndexStatusText != null)
+            {
+                var operationAt = hnswStatus.LastOperationAt.HasValue
+                    ? hnswStatus.LastOperationAt.Value.ToLocalTime().ToString("HH:mm:ss")
+                    : "-";
+                HnswIndexStatusText.Text = $"HNSW: memory {hnswStatus.MemoryIndexCount}, disk {hnswStatus.PersistedIndexCount}, documents {hnswStatus.DocumentCount}, dimensions {hnswStatus.Dimensions}\n{hnswStatus.LastOperation} ({operationAt})\n{hnswStatus.CacheDirectory}";
+            }
 
             if (File.Exists(dbPath))
             {
@@ -607,6 +636,42 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             if (CacheJsonViewerTextBox != null) CacheJsonViewerTextBox.Text = "Failed to read cache file: " + ex.Message;
+        }
+    }
+
+#pragma warning disable VSTHRD100
+    private async void BuildHnswIndexButton_Click(object sender, RoutedEventArgs e)
+#pragma warning restore VSTHRD100
+    {
+        if (_currentMetadata == null || ReferenceEquals(_currentMetadata, DatabaseMetadata.Empty))
+        {
+            await TriggerCompletionAsync();
+        }
+
+        if (_currentMetadata == null || ReferenceEquals(_currentMetadata, DatabaseMetadata.Empty))
+        {
+            if (StatusBarText != null) StatusBarText.Text = "HNSW build: no schema metadata";
+            return;
+        }
+
+        try
+        {
+            BuildHnswIndexButton.IsEnabled = false;
+            if (StatusBarText != null) StatusBarText.Text = "Building HNSW index...";
+            var documentCount = await Task.Run(() => SqlMetadataToolExecutor.BuildObjectSearchIndexAsync(
+                _currentMetadata,
+                System.Threading.CancellationToken.None));
+            await LoadCacheJsonAsync();
+            if (StatusBarText != null) StatusBarText.Text = $"HNSW ready: {documentCount} schema objects";
+        }
+        catch (Exception ex)
+        {
+            if (StatusBarText != null) StatusBarText.Text = "HNSW build error: " + ex.Message;
+            DebugLog("HNSW build failed", ex);
+        }
+        finally
+        {
+            BuildHnswIndexButton.IsEnabled = true;
         }
     }
 
