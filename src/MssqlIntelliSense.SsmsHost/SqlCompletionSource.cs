@@ -100,61 +100,101 @@ internal sealed class SqlCompletionCommandFilter : IOleCommandTarget
     private string? _lastReviewedCompletionKey;
     private DateTime _lastReviewedAtUtc;
 
+    private static bool _isGlobalHandlerRegistered;
+    private static readonly object GlobalHandlerLock = new();
+    private static SqlCompletionCommandFilter? _activeFilter;
+
     public SqlCompletionCommandFilter(IVsTextView textViewAdapter, IWpfTextView textView, ICompletionBroker completionBroker)
     {
         _textViewAdapter = textViewAdapter;
         _textView = textView;
         _completionBroker = completionBroker;
+        _activeFilter = this;
 
         // Add filter to the command chain
         textViewAdapter.AddCommandFilter(this, out _nextCommandTarget);
 
         _longClickTimer = new System.Windows.Threading.DispatcherTimer
         {
-            Interval = TimeSpan.FromMilliseconds(400)
+            Interval = TimeSpan.FromMilliseconds(350)
         };
         _longClickTimer.Tick += OnLongClickTimerTick;
 
-        if (_textView?.VisualElement != null)
-        {
-            _textView.VisualElement.PreviewMouseLeftButtonDown += OnTextViewPreviewMouseLeftButtonDown;
-            _textView.VisualElement.PreviewMouseLeftButtonUp += OnTextViewPreviewMouseLeftButtonUp;
-            _textView.VisualElement.PreviewMouseMove += OnTextViewPreviewMouseMove;
-        }
+        RegisterGlobalMouseHandlers();
 
         MssqlIntelliSensePackage.Log($"[Autocomplete] Command filter attached for content type: {textView.TextBuffer.ContentType.TypeName}");
     }
 
-    private void OnTextViewPreviewMouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    private static void RegisterGlobalMouseHandlers()
     {
-        if (_textView?.VisualElement != null)
+        lock (GlobalHandlerLock)
         {
-            _mouseDownPoint = e.GetPosition(_textView.VisualElement);
-            _isLongClickHandled = false;
-            _longClickTimer.Stop();
-            _longClickTimer.Start();
-        }
-    }
+            if (_isGlobalHandlerRegistered) return;
+            _isGlobalHandlerRegistered = true;
 
-    private void OnTextViewPreviewMouseMove(object sender, System.Windows.Input.MouseEventArgs e)
-    {
-        if (_longClickTimer.IsEnabled && _textView?.VisualElement != null)
-        {
-            var currentPoint = e.GetPosition(_textView.VisualElement);
-            if (Math.Abs(currentPoint.X - _mouseDownPoint.X) > 8 || Math.Abs(currentPoint.Y - _mouseDownPoint.Y) > 8)
+            try
             {
-                _longClickTimer.Stop();
+                System.Windows.EventManager.RegisterClassHandler(
+                    typeof(System.Windows.UIElement),
+                    System.Windows.UIElement.PreviewMouseLeftButtonDownEvent,
+                    new System.Windows.Input.MouseButtonEventHandler(OnGlobalPreviewMouseLeftButtonDown),
+                    true);
+
+                System.Windows.EventManager.RegisterClassHandler(
+                    typeof(System.Windows.UIElement),
+                    System.Windows.UIElement.PreviewMouseLeftButtonUpEvent,
+                    new System.Windows.Input.MouseButtonEventHandler(OnGlobalPreviewMouseLeftButtonUp),
+                    true);
+
+                System.Windows.EventManager.RegisterClassHandler(
+                    typeof(System.Windows.UIElement),
+                    System.Windows.UIElement.PreviewMouseMoveEvent,
+                    new System.Windows.Input.MouseEventHandler(OnGlobalPreviewMouseMove),
+                    true);
+
+                MssqlIntelliSensePackage.Log("[Autocomplete] Registered global WPF mouse handlers for long-click ObjectReview.");
+            }
+            catch (Exception ex)
+            {
+                MssqlIntelliSensePackage.Log($"[Autocomplete] RegisterGlobalMouseHandlers error: {ex.Message}");
             }
         }
     }
 
-    private void OnTextViewPreviewMouseLeftButtonUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    private static void OnGlobalPreviewMouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
-        _longClickTimer.Stop();
-        if (_isLongClickHandled)
+        if (_activeFilter != null)
         {
-            _isLongClickHandled = false;
-            e.Handled = true;
+            _activeFilter._mouseDownPoint = e.GetPosition(null);
+            _activeFilter._isLongClickHandled = false;
+            _activeFilter._longClickTimer.Stop();
+            _activeFilter._longClickTimer.Start();
+        }
+    }
+
+    private static void OnGlobalPreviewMouseMove(object sender, System.Windows.Input.MouseEventArgs e)
+    {
+        if (_activeFilter != null && _activeFilter._longClickTimer.IsEnabled)
+        {
+            var currentPoint = e.GetPosition(null);
+            if (Math.Abs(currentPoint.X - _activeFilter._mouseDownPoint.X) > 15 ||
+                Math.Abs(currentPoint.Y - _activeFilter._mouseDownPoint.Y) > 15)
+            {
+                _activeFilter._longClickTimer.Stop();
+            }
+        }
+    }
+
+    private static void OnGlobalPreviewMouseLeftButtonUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (_activeFilter != null)
+        {
+            _activeFilter._longClickTimer.Stop();
+            if (_activeFilter._isLongClickHandled)
+            {
+                _activeFilter._isLongClickHandled = false;
+                e.Handled = true;
+            }
         }
     }
 
