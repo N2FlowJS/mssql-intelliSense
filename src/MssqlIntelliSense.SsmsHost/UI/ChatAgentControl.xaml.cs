@@ -1595,10 +1595,18 @@ public partial class ChatAgentControl : UserControl
                 foreach (var table in metadata.Tables.Take(50))
                 {
                     sb.AppendLine($"- {table.Schema}.{table.Name} (Database: {table.Database})");
+                    if (!string.IsNullOrWhiteSpace(table.ExtendedDescription))
+                    {
+                        sb.AppendLine($"  Description: {table.ExtendedDescription}");
+                    }
                     sb.AppendLine("  Columns:");
                     foreach (var column in table.Columns.Take(20))
                     {
                         sb.AppendLine($"  - {column.Name} ({column.DataType}) { (column.IsNullable ? "NULL" : "NOT NULL") }");
+                        if (!string.IsNullOrWhiteSpace(column.Description))
+                        {
+                            sb.AppendLine($"    Description: {column.Description}");
+                        }
                     }
                 }
             }
@@ -1610,6 +1618,10 @@ public partial class ChatAgentControl : UserControl
                 foreach (var view in metadata.Views.Take(20))
                 {
                     sb.AppendLine($"- {view.Schema}.{view.Name} (Database: {view.Database})");
+                    if (!string.IsNullOrWhiteSpace(view.ExtendedDescription))
+                    {
+                        sb.AppendLine($"  Description: {view.ExtendedDescription}");
+                    }
                 }
             }
 

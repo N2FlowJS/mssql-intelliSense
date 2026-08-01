@@ -103,6 +103,10 @@ public static class SqlObjectReviewFormatter
     {
         var details = new StringBuilder();
         AppendCommon(details, "Table", table.Database, table.Schema, table.Name);
+        if (!string.IsNullOrWhiteSpace(table.ExtendedDescription))
+        {
+            details.AppendLine($"Description: {table.ExtendedDescription}");
+        }
         details.AppendLine($"Primary key: {(table.PrimaryKeyColumns.Count == 0 ? "(none)" : string.Join(", ", table.PrimaryKeyColumns))}");
         details.AppendLine();
         details.AppendLine("Columns:");
@@ -141,6 +145,10 @@ public static class SqlObjectReviewFormatter
     {
         var details = new StringBuilder();
         AppendCommon(details, "View", view.Database, view.Schema, view.Name);
+        if (!string.IsNullOrWhiteSpace(view.ExtendedDescription))
+        {
+            details.AppendLine($"Description: {view.ExtendedDescription}");
+        }
         details.AppendLine($"Indexed: {(view.IsIndexed ? "Yes" : "No")}");
         details.AppendLine();
         details.AppendLine("Columns:");
