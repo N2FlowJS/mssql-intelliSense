@@ -109,11 +109,7 @@ public class OpenAiSqlAgent : IAiSqlAssistant
                     var approved = await _options.ToolApprovalHandler(approval, cancellationToken);
                     if (!approved)
                     {
-                        toolOutput = JsonSerializer.Serialize(new
-                        {
-                            error = "Tool call rejected by user.",
-                            tool = toolName
-                        });
+                        toolOutput = $"## Tool: {toolName}\n\n**Error:** Tool call rejected by user.";
                     }
                     else
                     {
@@ -123,11 +119,7 @@ public class OpenAiSqlAgent : IAiSqlAssistant
                 }
                 catch (Exception ex)
                 {
-                    toolOutput = JsonSerializer.Serialize(new
-                    {
-                        error = ex.Message,
-                        tool = toolName
-                    }, JsonOptions);
+                    toolOutput = $"## Tool: {toolName}\n\n**Error:** {ex.Message}";
                 }
 
                 messages.Add(new AssistantChatMessage(outputText));

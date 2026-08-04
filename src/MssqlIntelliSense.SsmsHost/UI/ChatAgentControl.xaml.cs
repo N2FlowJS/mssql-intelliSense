@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.Encodings.Web;
@@ -10,7 +9,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using Microsoft.VisualStudio.Shell;
@@ -44,11 +42,6 @@ public partial class ChatAgentControl : UserControl
     private const string FindColumnToolName = SqlMetadataToolExecutor.FindColumnToolName;
     private const string ListEndpointsToolName = SqlMetadataToolExecutor.ListEndpointsToolName;
     private const string ExecuteSqlToolName = SqlMetadataToolExecutor.ExecuteSqlToolName;
-    private const int MaxToolUiJsonLength = 20000;
-    private const int MaxToolUiArrayItems = 40;
-    private const int MaxToolUiObjectProperties = 80;
-    private const int MaxToolUiStringLength = 500;
-    private const int MaxToolUiJsonDepth = 8;
 
     private sealed class ChatTurn
     {
@@ -659,8 +652,9 @@ public partial class ChatAgentControl : UserControl
                     async () => await ExecuteApprovedToolAsync(toolCall, metadata ?? DatabaseMetadata.Empty, chatConnection, cancellationToken),
                     cancellationToken).ConfigureAwait(false);
                 var formattedOutput = await Task.Run(
-                    () => FormatToolOutputForChat(toolCall.Name, output),
+                    () => ChatToolOutputFormatter.FormatForChat(toolCall.Name, output),
                     cancellationToken).ConfigureAwait(false);
+                output = formattedOutput;
                 await SafeUpdateChatMessageAsync(
                     toolStatusBorder,
                     formattedOutput);
@@ -672,11 +666,7 @@ public partial class ChatAgentControl : UserControl
             }
             catch (Exception ex)
             {
-                output = JsonSerializer.Serialize(new
-                {
-                    error = ex.Message,
-                    tool = toolCall.Name
-                }, JsonOptions);
+                output = $"## Tool: {toolCall.Name}\n\n**Error:** {ex.Message}";
                 MssqlIntelliSensePackage.Log($"[Chat Agent Tool Execute Error] {ex}");
                 await SafeUpdateChatMessageAsync(
                     toolStatusBorder,
@@ -685,11 +675,7 @@ public partial class ChatAgentControl : UserControl
         }
         else
         {
-            output = JsonSerializer.Serialize(new
-            {
-                error = "Tool call rejected by user.",
-                tool = toolCall.Name
-            }, JsonOptions);
+            output = $"## Tool: {toolCall.Name}\n\n**Error:** Tool call rejected by user.";
             await AddChatMessageOnMainThreadAsync(
                 "Tool",
                 $"Rejected {toolCall.Name}",
@@ -922,14 +908,14 @@ public partial class ChatAgentControl : UserControl
             return;
         }
 
-        var richTextBox = CreateSelectableMessageBox(state.Foreground, state.CodeBackground);
+        var richTextBox = ChatMarkdownRenderer.CreateSelectableMessageBox(state.Foreground, state.CodeBackground);
         if (state.RenderMarkdown)
         {
-            richTextBox.Document = CreateMarkdownDocument(message, state.Foreground, state.CodeBackground);
+            richTextBox.Document = ChatMarkdownRenderer.CreateMarkdownDocument(message, state.Foreground, state.CodeBackground);
         }
         else
         {
-            richTextBox.Document = CreatePlainTextDocument(message, state.Foreground);
+            richTextBox.Document = ChatMarkdownRenderer.CreatePlainTextDocument(message, state.Foreground);
         }
 
         state.ContentPanel.Children.Add(richTextBox);
@@ -953,8 +939,8 @@ public partial class ChatAgentControl : UserControl
         tags.Children.Add(CreateToolTag(status, state.Foreground, state.BorderBrush, state.CodeBackground, false));
         state.ContentPanel.Children.Add(tags);
 
-        var richTextBox = CreateSelectableMessageBox(state.Foreground, state.CodeBackground);
-        richTextBox.Document = CreateMarkdownDocument(message, state.Foreground, state.CodeBackground);
+        var richTextBox = ChatMarkdownRenderer.CreateSelectableMessageBox(state.Foreground, state.CodeBackground);
+        richTextBox.Document = ChatMarkdownRenderer.CreateMarkdownDocument(message, state.Foreground, state.CodeBackground);
         state.ContentPanel.Children.Add(richTextBox);
     }
 
@@ -962,7 +948,7 @@ public partial class ChatAgentControl : UserControl
     {
         return new Border
         {
-            Background = strong ? CreateOpacityBrush(foreground, 0.14) : backgroundBrush,
+            Background = strong ? ChatMarkdownRenderer.CreateOpacityBrush(foreground, 0.14) : backgroundBrush,
             BorderBrush = borderBrush,
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(3),
@@ -1049,637 +1035,6 @@ public partial class ChatAgentControl : UserControl
         return "Completed";
     }
 
-    private static RichTextBox CreateSelectableMessageBox(Brush foreground, Brush background)
-    {
-        return new RichTextBox
-        {
-            IsReadOnly = true,
-            BorderThickness = new Thickness(0),
-            Background = Brushes.Transparent,
-            Foreground = foreground,
-            Padding = new Thickness(0),
-            Margin = new Thickness(0),
-            MinWidth = 120,
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-            IsDocumentEnabled = false,
-            Focusable = true,
-            Cursor = Cursors.IBeam,
-            SelectionBrush = new SolidColorBrush(Color.FromArgb(120, 51, 153, 255))
-        };
-    }
-
-    private static FlowDocument CreatePlainTextDocument(string text, Brush foreground)
-    {
-        var document = CreateBaseFlowDocument(foreground);
-        document.Blocks.Add(new Paragraph(new Run(text ?? string.Empty))
-        {
-            FontFamily = new FontFamily("Consolas, Courier New, monospace"),
-            Margin = new Thickness(0)
-        });
-        return document;
-    }
-
-    private static FlowDocument CreateMarkdownDocument(string markdownText, Brush foreground, Brush codeBackground)
-    {
-        var document = CreateBaseFlowDocument(foreground);
-        if (string.IsNullOrWhiteSpace(markdownText))
-            return document;
-
-        var lines = markdownText.Replace("\r\n", "\n").Split('\n');
-        var paragraphBuffer = new List<string>();
-        var codeBuffer = new StringBuilder();
-        var inCodeBlock = false;
-        var codeLanguage = string.Empty;
-
-        void FlushParagraph()
-        {
-            if (paragraphBuffer.Count == 0)
-                return;
-
-            var paragraph = CreateParagraph(foreground, marginBottom: 5);
-            for (var i = 0; i < paragraphBuffer.Count; i++)
-            {
-                if (i > 0)
-                    paragraph.Inlines.Add(new LineBreak());
-                AddInlineMarkdown(paragraph.Inlines, paragraphBuffer[i], foreground, codeBackground);
-            }
-
-            document.Blocks.Add(paragraph);
-            paragraphBuffer.Clear();
-        }
-
-        void FlushCodeBlock()
-        {
-            var code = codeBuffer.ToString().TrimEnd('\n');
-            if (!string.IsNullOrWhiteSpace(codeLanguage))
-            {
-                document.Blocks.Add(new Paragraph(new Run(codeLanguage.ToLowerInvariant()))
-                {
-                    Foreground = CreateOpacityBrush(foreground, 0.7),
-                    FontSize = 10,
-                    FontWeight = FontWeights.SemiBold,
-                    Margin = new Thickness(0, 6, 0, 2)
-                });
-            }
-
-            document.Blocks.Add(new Paragraph(new Run(code))
-            {
-                FontFamily = new FontFamily("Consolas, Courier New, monospace"),
-                FontSize = 11.5,
-                Foreground = foreground,
-                Background = codeBackground,
-                Margin = new Thickness(0, 0, 0, 7),
-                Padding = new Thickness(8)
-            });
-            codeBuffer.Clear();
-            codeLanguage = string.Empty;
-        }
-
-        for (var i = 0; i < lines.Length; i++)
-        {
-            var line = lines[i];
-            var trimmed = line.Trim();
-
-            if (trimmed.StartsWith("```", StringComparison.Ordinal))
-            {
-                if (inCodeBlock)
-                {
-                    FlushCodeBlock();
-                    inCodeBlock = false;
-                }
-                else
-                {
-                    FlushParagraph();
-                    inCodeBlock = true;
-                    codeLanguage = trimmed.Length > 3 ? trimmed.Substring(3).Trim() : string.Empty;
-                }
-                continue;
-            }
-
-            if (inCodeBlock)
-            {
-                codeBuffer.AppendLine(line);
-                continue;
-            }
-
-            if (string.IsNullOrWhiteSpace(trimmed))
-            {
-                FlushParagraph();
-                continue;
-            }
-
-            if (IsMarkdownTableStart(lines, i))
-            {
-                FlushParagraph();
-                var tableLines = new List<string> { lines[i] };
-                i += 2;
-                while (i < lines.Length && IsPipeRow(lines[i]))
-                {
-                    tableLines.Add(lines[i]);
-                    i++;
-                }
-                i--;
-                document.Blocks.Add(CreateSelectableMarkdownTable(tableLines, foreground, codeBackground));
-                continue;
-            }
-
-            if (TryGetHeading(trimmed, out var headingLevel, out var headingText))
-            {
-                FlushParagraph();
-                var heading = new Paragraph();
-                AddInlineMarkdown(heading.Inlines, headingText, foreground, codeBackground);
-                heading.Foreground = foreground;
-                heading.FontWeight = FontWeights.Bold;
-                heading.FontSize = headingLevel == 1 ? 16 : headingLevel == 2 ? 14 : 12.5;
-                heading.Margin = new Thickness(0, headingLevel == 1 ? 8 : 6, 0, 4);
-                document.Blocks.Add(heading);
-                continue;
-            }
-
-            if (trimmed == "---" || trimmed == "***")
-            {
-                FlushParagraph();
-                document.Blocks.Add(new Paragraph(new Run(new string('-', 40)))
-                {
-                    FontFamily = new FontFamily("Consolas, Courier New, monospace"),
-                    Foreground = CreateOpacityBrush(foreground, 0.65),
-                    Margin = new Thickness(0, 4, 0, 4)
-                });
-                continue;
-            }
-
-            if (trimmed.StartsWith("> ", StringComparison.Ordinal))
-            {
-                FlushParagraph();
-                var quote = CreateParagraph(foreground, marginBottom: 5);
-                quote.Margin = new Thickness(8, 2, 0, 5);
-                quote.Padding = new Thickness(8, 0, 0, 0);
-                quote.BorderThickness = new Thickness(3, 0, 0, 0);
-                quote.BorderBrush = foreground;
-                quote.Foreground = CreateOpacityBrush(foreground, 0.85);
-                AddInlineMarkdown(quote.Inlines, trimmed.Substring(2).Trim(), foreground, codeBackground);
-                document.Blocks.Add(quote);
-                continue;
-            }
-
-            if (IsListItem(trimmed))
-            {
-                FlushParagraph();
-                document.Blocks.Add(CreateSelectableListItem(trimmed, foreground, codeBackground));
-                continue;
-            }
-
-            paragraphBuffer.Add(line);
-        }
-
-        if (inCodeBlock)
-            FlushCodeBlock();
-        FlushParagraph();
-        return document;
-    }
-
-    private static FlowDocument CreateBaseFlowDocument(Brush foreground)
-    {
-        return new FlowDocument
-        {
-            PagePadding = new Thickness(0),
-            FontFamily = new FontFamily("Segoe UI"),
-            FontSize = 12,
-            Foreground = foreground,
-            LineHeight = 18
-        };
-    }
-
-    private static Paragraph CreateParagraph(Brush foreground, double marginBottom)
-    {
-        return new Paragraph
-        {
-            Foreground = foreground,
-            Margin = new Thickness(0, 1, 0, marginBottom)
-        };
-    }
-
-    private static Brush CreateOpacityBrush(Brush source, double opacity)
-    {
-        if (source is SolidColorBrush solid)
-        {
-            return new SolidColorBrush(solid.Color) { Opacity = opacity };
-        }
-
-        var clone = source.Clone();
-        clone.Opacity = opacity;
-        return clone;
-    }
-
-    private static bool TryGetHeading(string trimmed, out int level, out string text)
-    {
-        level = 0;
-        text = string.Empty;
-        var count = trimmed.TakeWhile(c => c == '#').Count();
-        if (count is < 1 or > 6 || trimmed.Length <= count || trimmed[count] != ' ')
-            return false;
-
-        level = count;
-        text = trimmed.Substring(count + 1).Trim();
-        return true;
-    }
-
-    private static Paragraph CreateSelectableListItem(string trimmed, Brush foreground, Brush codeBackground)
-    {
-        var markerEnd = trimmed.IndexOf(' ');
-        var marker = markerEnd >= 0 ? trimmed.Substring(0, markerEnd) : "-";
-        var body = markerEnd >= 0 ? trimmed.Substring(markerEnd + 1).Trim() : trimmed;
-        if (marker == "*" || marker == "-")
-            marker = "-";
-
-        var paragraph = CreateParagraph(foreground, marginBottom: 3);
-        paragraph.Margin = new Thickness(10, 1, 0, 3);
-        paragraph.Inlines.Add(new Run(marker + " ") { FontWeight = FontWeights.Bold });
-        AddInlineMarkdown(paragraph.Inlines, body, foreground, codeBackground);
-        return paragraph;
-    }
-
-    private static Paragraph CreateSelectableMarkdownTable(IReadOnlyList<string> tableLines, Brush foreground, Brush codeBackground)
-    {
-        var rows = tableLines.Select(SplitMarkdownTableRow).Where(row => row.Count > 0).ToList();
-        var columnCount = rows.Count == 0 ? 0 : rows.Max(row => row.Count);
-        if (columnCount == 0)
-            return new Paragraph();
-
-        var widths = Enumerable.Range(0, columnCount)
-            .Select(col => rows.Max(row => col < row.Count ? StripInlineMarkdown(row[col]).Length : 0))
-            .Select(width => Math.Max(width, 3))
-            .ToArray();
-
-        var formatted = new StringBuilder();
-        for (var rowIndex = 0; rowIndex < rows.Count; rowIndex++)
-        {
-            var row = rows[rowIndex];
-            formatted.Append("| ");
-            for (var col = 0; col < columnCount; col++)
-            {
-                var cell = col < row.Count ? StripInlineMarkdown(row[col]) : string.Empty;
-                formatted.Append(cell.PadRight(widths[col]));
-                formatted.Append(" | ");
-            }
-            formatted.AppendLine();
-        }
-
-        return new Paragraph(new Run(formatted.ToString().TrimEnd()))
-        {
-            FontFamily = new FontFamily("Consolas, Courier New, monospace"),
-            FontSize = 11.5,
-            Foreground = foreground,
-            Background = codeBackground,
-            Margin = new Thickness(0, 4, 0, 7),
-            Padding = new Thickness(6)
-        };
-    }
-
-    private static void AddInlineMarkdown(InlineCollection inlines, string text, Brush foreground, Brush codeBackground)
-    {
-        if (string.IsNullOrEmpty(text))
-            return;
-
-        var inlineRegex = new System.Text.RegularExpressions.Regex(
-            @"(\*\*(?<bold>.+?)\*\*)|(\*(?<italic>[^*]+?)\*)|(`(?<code>.+?)`)",
-            System.Text.RegularExpressions.RegexOptions.Compiled);
-        var lastIndex = 0;
-        var matches = inlineRegex.Matches(text);
-
-        foreach (System.Text.RegularExpressions.Match match in matches)
-        {
-            if (match.Index > lastIndex)
-            {
-                inlines.Add(new Run(text.Substring(lastIndex, match.Index - lastIndex)));
-            }
-
-            if (match.Groups["bold"].Success)
-            {
-                inlines.Add(new Run(match.Groups["bold"].Value) { FontWeight = FontWeights.Bold });
-            }
-            else if (match.Groups["italic"].Success)
-            {
-                inlines.Add(new Run(match.Groups["italic"].Value) { FontStyle = FontStyles.Italic });
-            }
-            else if (match.Groups["code"].Success)
-            {
-                inlines.Add(new Run(match.Groups["code"].Value)
-                {
-                    FontFamily = new FontFamily("Consolas, Courier New, monospace"),
-                    Background = codeBackground,
-                    Foreground = foreground
-                });
-            }
-
-            lastIndex = match.Index + match.Length;
-        }
-
-        if (lastIndex < text.Length)
-        {
-            inlines.Add(new Run(text.Substring(lastIndex)));
-        }
-    }
-
-    private static string StripInlineMarkdown(string text)
-    {
-        if (string.IsNullOrEmpty(text))
-            return string.Empty;
-
-        return text
-            .Replace("**", string.Empty)
-            .Replace("`", string.Empty)
-            .Trim('*')
-            .Trim();
-    }
-
-    private static void RenderMarkdownToContainer(
-        StackPanel contentPanel,
-        string markdownText,
-        Brush foreground,
-        Brush borderBrush,
-        Brush codeBackground)
-    {
-        contentPanel.Children.Clear();
-        var richTextBox = CreateSelectableMessageBox(foreground, codeBackground);
-        richTextBox.Document = CreateMarkdownDocument(markdownText, foreground, codeBackground);
-        contentPanel.Children.Add(richTextBox);
-    }
-
-    private static void RenderTextParagraphs(StackPanel container, string text, Brush foreground, Brush borderBrush, Brush codeBackground)
-    {
-        var lines = text.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
-        TextBlock? currentTextBlock = null;
-
-        for (int i = 0; i < lines.Length; i++)
-        {
-            var line = lines[i];
-            var trimmed = line.Trim();
-            if (string.IsNullOrEmpty(trimmed))
-            {
-                currentTextBlock = null;
-                continue;
-            }
-
-            if (IsMarkdownTableStart(lines, i))
-            {
-                currentTextBlock = null;
-                var tableLines = new List<string> { lines[i] };
-                i += 2;
-                while (i < lines.Length && IsPipeRow(lines[i]))
-                {
-                    tableLines.Add(lines[i]);
-                    i++;
-                }
-
-                i--;
-                container.Children.Add(CreateMarkdownTable(tableLines, foreground, borderBrush, codeBackground));
-            }
-            else if (trimmed.StartsWith("# "))
-            {
-                container.Children.Add(new TextBlock
-                {
-                    Text = trimmed.Substring(2).Trim(),
-                    FontSize = 14,
-                    FontWeight = FontWeights.Bold,
-                    Foreground = foreground,
-                    Margin = new Thickness(0, 4, 0, 2),
-                    TextWrapping = TextWrapping.Wrap
-                });
-                currentTextBlock = null;
-            }
-            else if (trimmed.StartsWith("## "))
-            {
-                container.Children.Add(new TextBlock
-                {
-                    Text = trimmed.Substring(3).Trim(),
-                    FontSize = 13,
-                    FontWeight = FontWeights.Bold,
-                    Foreground = foreground,
-                    Margin = new Thickness(0, 3, 0, 2),
-                    TextWrapping = TextWrapping.Wrap
-                });
-                currentTextBlock = null;
-            }
-            else if (trimmed.StartsWith("### "))
-            {
-                container.Children.Add(new TextBlock
-                {
-                    Text = trimmed.Substring(4).Trim(),
-                    FontSize = 12,
-                    FontWeight = FontWeights.SemiBold,
-                    Foreground = foreground,
-                    Margin = new Thickness(0, 2, 0, 1),
-                    TextWrapping = TextWrapping.Wrap
-                });
-                currentTextBlock = null;
-            }
-            else if (IsListItem(trimmed))
-            {
-                currentTextBlock = null;
-                container.Children.Add(CreateListItem(trimmed, foreground));
-            }
-            else
-            {
-                if (currentTextBlock == null)
-                {
-                    currentTextBlock = new TextBlock
-                    {
-                        TextWrapping = TextWrapping.Wrap,
-                        Foreground = foreground,
-                        Margin = new Thickness(0, 1, 0, 1)
-                    };
-                    container.Children.Add(currentTextBlock);
-                }
-                else
-                {
-                    currentTextBlock.Inlines.Add(new System.Windows.Documents.LineBreak());
-                }
-
-                ParseInlineFormattedText(currentTextBlock, line);
-            }
-        }
-    }
-
-    private static bool IsListItem(string trimmed)
-    {
-        if (trimmed.StartsWith("- ") || trimmed.StartsWith("* "))
-        {
-            return true;
-        }
-
-        var markerEnd = trimmed.IndexOf(' ');
-        if (markerEnd < 2)
-        {
-            return false;
-        }
-
-        var marker = trimmed.Substring(0, markerEnd);
-        return (marker.EndsWith(".") || marker.EndsWith(")"))
-            && marker.Length > 1
-            && marker.Take(marker.Length - 1).All(char.IsDigit);
-    }
-
-    private static TextBlock CreateListItem(string trimmed, Brush foreground)
-    {
-        var markerEnd = trimmed.IndexOf(' ');
-        var body = markerEnd >= 0 ? trimmed.Substring(markerEnd + 1).Trim() : trimmed;
-        var textBlock = new TextBlock
-        {
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = foreground,
-            Margin = new Thickness(10, 1, 0, 1)
-        };
-        textBlock.Inlines.Add(new System.Windows.Documents.Run("- ")
-        {
-            FontWeight = FontWeights.Bold
-        });
-        ParseInlineFormattedText(textBlock, body);
-        return textBlock;
-    }
-
-    private static bool IsMarkdownTableStart(string[] lines, int index)
-    {
-        return index + 1 < lines.Length
-            && IsPipeRow(lines[index])
-            && IsMarkdownTableSeparator(lines[index + 1]);
-    }
-
-    private static bool IsPipeRow(string line)
-    {
-        var trimmed = line.Trim();
-        return trimmed.Contains('|') && trimmed.Count(c => c == '|') >= 2;
-    }
-
-    private static bool IsMarkdownTableSeparator(string line)
-    {
-        var cells = SplitMarkdownTableRow(line);
-        return cells.Count > 0
-            && cells.All(cell =>
-            {
-                var value = cell.Trim();
-                return value.Length >= 3 && value.Trim('-', ':').Length == 0;
-            });
-    }
-
-    private static Grid CreateMarkdownTable(IReadOnlyList<string> tableLines, Brush foreground, Brush borderBrush, Brush codeBackground)
-    {
-        var rows = tableLines.Select(SplitMarkdownTableRow).Where(row => row.Count > 0).ToList();
-        var columnCount = rows.Count == 0 ? 0 : rows.Max(row => row.Count);
-        var grid = new Grid
-        {
-            Margin = new Thickness(0, 5, 0, 7),
-            HorizontalAlignment = HorizontalAlignment.Stretch
-        };
-
-        for (var column = 0; column < columnCount; column++)
-        {
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = 64 });
-        }
-
-        for (var rowIndex = 0; rowIndex < rows.Count; rowIndex++)
-        {
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            var row = rows[rowIndex];
-            for (var column = 0; column < columnCount; column++)
-            {
-                var cellText = column < row.Count ? row[column] : string.Empty;
-                var cellTextBlock = new TextBlock
-                {
-                    TextWrapping = TextWrapping.Wrap,
-                    Foreground = foreground,
-                    Margin = new Thickness(0)
-                };
-                ParseInlineFormattedText(cellTextBlock, cellText);
-
-                var cell = new Border
-                {
-                    BorderBrush = borderBrush,
-                    BorderThickness = new Thickness(0, 0, 1, 1),
-                    Background = rowIndex == 0 ? codeBackground : Brushes.Transparent,
-                    Padding = new Thickness(6, 4, 6, 4),
-                    Child = cellTextBlock
-                };
-
-                if (rowIndex == 0)
-                {
-                    cellTextBlock.FontWeight = FontWeights.SemiBold;
-                }
-
-                Grid.SetRow(cell, rowIndex);
-                Grid.SetColumn(cell, column);
-                grid.Children.Add(cell);
-            }
-        }
-
-        var frame = new Border
-        {
-            BorderBrush = borderBrush,
-            BorderThickness = new Thickness(1, 1, 0, 0),
-            Child = grid
-        };
-
-        var outerGrid = new Grid { ClipToBounds = true };
-        outerGrid.Children.Add(frame);
-        return outerGrid;
-    }
-
-    private static List<string> SplitMarkdownTableRow(string line)
-    {
-        var trimmed = line.Trim();
-        if (trimmed.StartsWith("|"))
-        {
-            trimmed = trimmed.Substring(1);
-        }
-
-        if (trimmed.EndsWith("|"))
-        {
-            trimmed = trimmed.Substring(0, trimmed.Length - 1);
-        }
-
-        return trimmed.Split('|').Select(cell => cell.Trim()).ToList();
-    }
-
-    private static void ParseInlineFormattedText(TextBlock textBlock, string text)
-    {
-        var inlineRegex = new System.Text.RegularExpressions.Regex(@"(\*\*(?<bold>.*?)\*\*)|(`(?<code>.*?)`)", System.Text.RegularExpressions.RegexOptions.Compiled);
-        int lastIndex = 0;
-        var matches = inlineRegex.Matches(text);
-
-        foreach (System.Text.RegularExpressions.Match match in matches)
-        {
-            if (match.Index > lastIndex)
-            {
-                textBlock.Inlines.Add(new System.Windows.Documents.Run(text.Substring(lastIndex, match.Index - lastIndex)));
-            }
-
-            if (match.Groups["bold"].Success)
-            {
-                textBlock.Inlines.Add(new System.Windows.Documents.Run(match.Groups["bold"].Value)
-                {
-                    FontWeight = FontWeights.Bold
-                });
-            }
-            else if (match.Groups["code"].Success)
-            {
-                textBlock.Inlines.Add(new System.Windows.Documents.Run(match.Groups["code"].Value)
-                {
-                    FontFamily = new FontFamily("Consolas, Courier New, monospace"),
-                    Background = new SolidColorBrush(Color.FromArgb(35, 128, 128, 128))
-                });
-            }
-
-            lastIndex = match.Index + match.Length;
-        }
-
-        if (lastIndex < text.Length)
-        {
-            textBlock.Inlines.Add(new System.Windows.Documents.Run(text.Substring(lastIndex)));
-        }
-    }
-
     private void AddToolApprovalCard(OpenAiSqlToolCall toolCall, TaskCompletionSource<bool> completionSource)
     {
         var borderBrush = GetThemeBrush(EnvironmentColors.ToolWindowBorderBrushKey, Color.FromRgb(204, 204, 204));
@@ -1733,11 +1088,11 @@ public partial class ChatAgentControl : UserControl
             Margin = new Thickness(0, 0, 0, 6)
         });
 
-        var argumentsBox = CreateSelectableMessageBox(textBrush, backgroundBrush);
+        var argumentsBox = ChatMarkdownRenderer.CreateSelectableMessageBox(textBrush, backgroundBrush);
         argumentsBox.Height = 72;
         argumentsBox.MinHeight = 56;
         argumentsBox.Margin = new Thickness(0, 0, 0, 6);
-        argumentsBox.Document = CreateMarkdownDocument(
+        argumentsBox.Document = ChatMarkdownRenderer.CreateMarkdownDocument(
             "```json\n" + FormatJsonForDisplay(toolCall.ArgumentsJson) + "\n```",
             textBrush,
             backgroundBrush);
@@ -1847,266 +1202,11 @@ public partial class ChatAgentControl : UserControl
                 metadata);
         }
 
-        using var document = JsonDocument.Parse(argumentsJson);
-        var query = SqlMetadataToolExecutor.GetArgument(document.RootElement, "query", string.Empty);
+        var query = ToolArgumentReader.GetString(argumentsJson, "query");
         return await SqlReadOnlyQueryExecutor.ExecuteAsync(
             chatConnection.ActiveConnectionString ?? string.Empty,
             chatConnection.ActiveDatabase,
             query);
-    }
-
-    private static string SummarizeToolOutput(string output)
-    {
-        if (string.IsNullOrWhiteSpace(output))
-        {
-            return "(empty output)";
-        }
-
-        return output.Length <= 700 ? output : output.Substring(0, 700) + "...";
-    }
-
-    private static string FormatToolOutputForChat(string toolName, string output)
-    {
-        if (string.IsNullOrWhiteSpace(output))
-        {
-            return $"## Tool: {toolName}\n\n(empty output)";
-        }
-
-        try
-        {
-            using var document = JsonDocument.Parse(output);
-            var root = document.RootElement;
-            if (root.ValueKind == JsonValueKind.Object &&
-                root.TryGetProperty("error", out var errorElement))
-            {
-                return $"## Tool: {toolName}\n\n**Error:** {errorElement.GetString() ?? errorElement.ToString()}";
-            }
-
-            if (root.ValueKind == JsonValueKind.Object &&
-                string.Equals(toolName, ExecuteSqlToolName, StringComparison.OrdinalIgnoreCase))
-            {
-                return FormatExecuteToolOutput(root, output);
-            }
-
-            var previewJson = CreateToolUiPreviewJson(root, output, out var previewed);
-            var note = previewed
-                ? "\n\n_UI preview is limited for responsiveness. The agent still receives the full tool output._"
-                : string.Empty;
-            return $"## Tool: {toolName}{note}\n\n```json\n{previewJson}\n```";
-        }
-        catch (JsonException)
-        {
-            return $"## Tool: {toolName}\n\n```\n{SummarizeToolOutput(output)}\n```";
-        }
-    }
-
-    private static string FormatExecuteToolOutput(JsonElement root, string rawOutput)
-    {
-        var sb = new StringBuilder();
-        sb.AppendLine("## Tool: execute");
-        sb.AppendLine();
-        if (root.TryGetProperty("database", out var databaseElement))
-        {
-            sb.AppendLine($"**Database:** `{databaseElement.GetString()}`");
-        }
-
-        var rowCount = root.TryGetProperty("rowCount", out var rowCountElement) && rowCountElement.TryGetInt32(out var rows)
-            ? rows
-            : 0;
-        var elapsedMs = root.TryGetProperty("elapsedMs", out var elapsedElement) && elapsedElement.TryGetInt64(out var elapsed)
-            ? elapsed
-            : 0;
-        var truncated = root.TryGetProperty("truncated", out var truncatedElement) && truncatedElement.ValueKind == JsonValueKind.True;
-        sb.AppendLine($"**Rows:** `{rowCount}`  **Elapsed:** `{elapsedMs} ms`  **Truncated:** `{truncated}`");
-
-        if (root.TryGetProperty("query", out var queryElement))
-        {
-            sb.AppendLine();
-            sb.AppendLine("### Query");
-            sb.AppendLine("```sql");
-            sb.AppendLine(queryElement.GetString() ?? string.Empty);
-            sb.AppendLine("```");
-        }
-
-        if (root.TryGetProperty("rows", out var rowsElement) &&
-            rowsElement.ValueKind == JsonValueKind.Array &&
-            rowsElement.GetArrayLength() > 0)
-        {
-            var columnNames = GetResultColumnNames(root, rowsElement);
-            sb.AppendLine();
-            sb.AppendLine("### Result Preview");
-            AppendMarkdownTable(sb, columnNames, rowsElement, maxRows: 12);
-        }
-        else
-        {
-            sb.AppendLine();
-            sb.AppendLine("No rows returned.");
-        }
-
-        sb.AppendLine();
-        sb.AppendLine("### Raw JSON");
-        sb.AppendLine("```json");
-        sb.AppendLine(CreateToolUiPreviewJson(root, rawOutput, out _));
-        sb.AppendLine("```");
-        return sb.ToString();
-    }
-
-    private static string CreateToolUiPreviewJson(JsonElement root, string rawOutput, out bool previewed)
-    {
-        previewed = rawOutput.Length > MaxToolUiJsonLength;
-        if (!previewed)
-        {
-            return rawOutput;
-        }
-
-        using var stream = new MemoryStream();
-        using (var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = false }))
-        {
-            WriteJsonPreview(root, writer, depth: 0, ref previewed);
-        }
-
-        return Encoding.UTF8.GetString(stream.ToArray());
-    }
-
-    private static void WriteJsonPreview(JsonElement element, Utf8JsonWriter writer, int depth, ref bool previewed)
-    {
-        if (depth >= MaxToolUiJsonDepth)
-        {
-            previewed = true;
-            writer.WriteStringValue("... truncated by UI preview depth ...");
-            return;
-        }
-
-        switch (element.ValueKind)
-        {
-            case JsonValueKind.Object:
-                writer.WriteStartObject();
-                var propertyCount = 0;
-                foreach (var property in element.EnumerateObject())
-                {
-                    if (propertyCount >= MaxToolUiObjectProperties)
-                    {
-                        previewed = true;
-                        writer.WriteString("__uiTruncatedProperties", $"showing first {MaxToolUiObjectProperties:n0} properties");
-                        break;
-                    }
-
-                    writer.WritePropertyName(property.Name);
-                    WriteJsonPreview(property.Value, writer, depth + 1, ref previewed);
-                    propertyCount++;
-                }
-                writer.WriteEndObject();
-                break;
-
-            case JsonValueKind.Array:
-                writer.WriteStartArray();
-                var itemCount = 0;
-                foreach (var item in element.EnumerateArray())
-                {
-                    if (itemCount >= MaxToolUiArrayItems)
-                    {
-                        previewed = true;
-                        writer.WriteStartObject();
-                        writer.WriteString("__uiTruncatedItems", $"showing first {MaxToolUiArrayItems:n0} items");
-                        writer.WriteEndObject();
-                        break;
-                    }
-
-                    WriteJsonPreview(item, writer, depth + 1, ref previewed);
-                    itemCount++;
-                }
-                writer.WriteEndArray();
-                break;
-
-            case JsonValueKind.String:
-                var value = element.GetString() ?? string.Empty;
-                if (value.Length > MaxToolUiStringLength)
-                {
-                    previewed = true;
-                    writer.WriteStringValue(value.Substring(0, MaxToolUiStringLength) + "...");
-                }
-                else
-                {
-                    writer.WriteStringValue(value);
-                }
-                break;
-
-            default:
-                element.WriteTo(writer);
-                break;
-        }
-    }
-
-    private static List<string> GetResultColumnNames(JsonElement root, JsonElement rowsElement)
-    {
-        if (root.TryGetProperty("columns", out var columnsElement) && columnsElement.ValueKind == JsonValueKind.Array)
-        {
-            var names = columnsElement.EnumerateArray()
-                .Select(column => column.TryGetProperty("name", out var nameElement) ? nameElement.GetString() : null)
-                .Where(name => !string.IsNullOrWhiteSpace(name))
-                .Select(name => name!)
-                .ToList();
-            if (names.Count > 0)
-            {
-                return names;
-            }
-        }
-
-        return rowsElement.EnumerateArray()
-            .FirstOrDefault()
-            .EnumerateObject()
-            .Select(property => property.Name)
-            .ToList();
-    }
-
-    private static void AppendMarkdownTable(StringBuilder sb, IReadOnlyList<string> columnNames, JsonElement rowsElement, int maxRows)
-    {
-        var visibleColumns = columnNames.Take(8).ToList();
-        sb.Append("| ");
-        sb.Append(string.Join(" | ", visibleColumns.Select(EscapeMarkdownTableCell)));
-        sb.AppendLine(" |");
-        sb.Append("| ");
-        sb.Append(string.Join(" | ", visibleColumns.Select(_ => "---")));
-        sb.AppendLine(" |");
-
-        foreach (var row in rowsElement.EnumerateArray().Take(maxRows))
-        {
-            sb.Append("| ");
-            sb.Append(string.Join(" | ", visibleColumns.Select(column =>
-                EscapeMarkdownTableCell(row.TryGetProperty(column, out var value) ? FormatJsonValue(value) : string.Empty))));
-            sb.AppendLine(" |");
-        }
-
-        if (columnNames.Count > visibleColumns.Count)
-        {
-            sb.AppendLine();
-            sb.AppendLine($"Showing {visibleColumns.Count}/{columnNames.Count} columns.");
-        }
-
-        if (rowsElement.GetArrayLength() > maxRows)
-        {
-            sb.AppendLine($"Showing {maxRows}/{rowsElement.GetArrayLength()} rows.");
-        }
-    }
-
-    private static string FormatJsonValue(JsonElement value)
-    {
-        return value.ValueKind switch
-        {
-            JsonValueKind.Null => "",
-            JsonValueKind.String => value.GetString() ?? string.Empty,
-            JsonValueKind.True => "true",
-            JsonValueKind.False => "false",
-            _ => value.ToString()
-        };
-    }
-
-    private static string EscapeMarkdownTableCell(string? value)
-    {
-        return (value ?? string.Empty)
-            .Replace("|", "\\|")
-            .Replace("\r", " ")
-            .Replace("\n", " ");
     }
 
     private sealed class ToolPlannerResult
@@ -2497,3 +1597,6 @@ public partial class ChatAgentControl : UserControl
         return TryFindResource(key) as Brush ?? new SolidColorBrush(defaultColor);
     }
 }
+
+
+

@@ -112,7 +112,7 @@ public sealed class SqlMetadataToolExecutorTests
 
             json.Should().Contain("Users");
             json.Should().Contain("customer login identity profile");
-            json.Should().Contain("\"score\"");
+            json.Should().Contain("Score");
         }
         finally
         {
@@ -138,9 +138,7 @@ public sealed class SqlMetadataToolExecutorTests
             var json = await SqlMetadataToolExecutor.ExecuteToolAsync(SqlMetadataToolExecutor.SearchObjectsToolName, args.RootElement, metadata);
 
             json.Should().Contain("PDApplicationReference");
-            using var result = JsonDocument.Parse(json);
-            result.RootElement.GetProperty("matches")[0].GetProperty("description").GetString().Should().StartWith("đơn trình văn");
-            result.RootElement.GetProperty("matches")[0].TryGetProperty("customDescription", out _).Should().BeFalse();
+            json.Should().Contain("đơn trình văn");
         }
         finally
         {
@@ -166,8 +164,7 @@ public sealed class SqlMetadataToolExecutorTests
             var json = await SqlMetadataToolExecutor.ExecuteToolAsync(SqlMetadataToolExecutor.SearchObjectsToolName, args.RootElement, metadata);
 
             json.Should().Contain("PDApplicationReference");
-            using var result = JsonDocument.Parse(json);
-            result.RootElement.GetProperty("matches")[0].GetProperty("description").GetString().Should().Be("đơn trình văn");
+            json.Should().Contain("đơn trình văn");
         }
         finally
         {
@@ -242,7 +239,7 @@ public sealed class SqlMetadataToolExecutorTests
         var json = await SqlMetadataToolExecutor.ExecuteToolAsync(SqlMetadataToolExecutor.SearchObjectsToolName, args.RootElement, metadata);
 
         json.Should().Contain("GetAuthenticatedUser");
-        json.Should().Contain("\"lexicalScore\"");
+        json.Should().Contain("Lexical Score");
     }
 
     [Fact]
@@ -394,8 +391,8 @@ public sealed class SqlMetadataToolExecutorTests
         using var args = JsonDocument.Parse("{}");
         var json = await SqlMetadataToolExecutor.ExecuteToolAsync(SqlMetadataToolExecutor.ListTablesToolName, args.RootElement, metadata);
 
-        json.Should().Contain("\"truncated\":true");
-        json.Should().Contain("\"totalCount\":600");
+        json.Should().Contain("Truncated: True");
+        json.Should().Contain("Total: 600");
     }
 
     [Fact]

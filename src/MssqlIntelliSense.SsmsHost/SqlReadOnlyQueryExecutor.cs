@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using System.Text.Json;
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -15,7 +15,6 @@ internal static class SqlReadOnlyQueryExecutor
     private const int CommandTimeoutSeconds = 30;
     private const int MaxRows = 500;
 
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private static readonly Regex UnsafeSqlPattern = new(
         @"\b(insert|update|delete|merge|drop|alter|create|truncate|grant|revoke|deny|backup|restore|kill|dbcc|use)\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -24,14 +23,14 @@ internal static class SqlReadOnlyQueryExecutor
     {
         if (string.IsNullOrWhiteSpace(connectionString))
         {
-            return JsonSerializer.Serialize(new { error = "No active SQL connection is available." }, JsonOptions);
+            return "## Tool: execute\n\n**Error:** No active SQL connection is available.";
         }
 
         var trimmedQuery = query?.Trim() ?? string.Empty;
         var validationError = ValidateReadOnlyQuery(trimmedQuery);
         if (!string.IsNullOrWhiteSpace(validationError))
         {
-            return JsonSerializer.Serialize(new { error = validationError }, JsonOptions);
+            return $"## Tool: execute\n\n**Error:** {validationError}";
         }
 
         var stopwatch = Stopwatch.StartNew();
@@ -68,17 +67,99 @@ internal static class SqlReadOnlyQueryExecutor
         var truncated = rows.Count == MaxRows && await reader.ReadAsync(CancellationToken.None);
         stopwatch.Stop();
 
-        return JsonSerializer.Serialize(new
-        {
-            query = trimmedQuery,
-            database = connection.Database,
-            columns,
+        return FormatMarkdown(
+            trimmedQuery,
+            connection.Database,
+            columns.Select(c => c.name).ToList(),
             rows,
-            rowCount = rows.Count,
             truncated,
-            maxRows = MaxRows,
-            elapsedMs = stopwatch.ElapsedMilliseconds
-        }, JsonOptions);
+            stopwatch.ElapsedMilliseconds);
+    }
+
+    private static string FormatMarkdown(
+        string query,
+        string database,
+        IReadOnlyList<string> columns,
+        IReadOnlyList<Dictionary<string, object?>> rows,
+        bool truncated,
+        long elapsedMs)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("## Tool: execute");
+        sb.AppendLine();
+        sb.AppendLine($"**Database:** `{database}`");
+        sb.AppendLine($"**Rows:** `{rows.Count}`  **Elapsed:** `{elapsedMs} ms`  **Truncated:** `{truncated}`");
+        sb.AppendLine();
+        sb.AppendLine("### Query");
+        sb.AppendLine("```sql");
+        sb.AppendLine(query);
+        sb.AppendLine("```");
+
+        if (rows.Count == 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine("No rows returned.");
+            return sb.ToString();
+        }
+
+        sb.AppendLine();
+        sb.AppendLine("### Result Preview");
+        AppendMarkdownTable(sb, columns, rows, maxRows: 12);
+        return sb.ToString();
+    }
+
+    private static void AppendMarkdownTable(
+        StringBuilder sb,
+        IReadOnlyList<string> columnNames,
+        IReadOnlyList<Dictionary<string, object?>> rows,
+        int maxRows)
+    {
+        var visibleColumns = columnNames.Take(8).ToList();
+        sb.Append("| ");
+        sb.Append(string.Join(" | ", visibleColumns.Select(EscapeMarkdownTableCell)));
+        sb.AppendLine(" |");
+        sb.Append("| ");
+        sb.Append(string.Join(" | ", visibleColumns.Select(_ => "---")));
+        sb.AppendLine(" |");
+
+        foreach (var row in rows.Take(maxRows))
+        {
+            sb.Append("| ");
+            sb.Append(string.Join(" | ", visibleColumns.Select(column =>
+                EscapeMarkdownTableCell(row.TryGetValue(column, out var value) ? FormatValue(value) : string.Empty))));
+            sb.AppendLine(" |");
+        }
+
+        if (columnNames.Count > visibleColumns.Count)
+        {
+            sb.AppendLine();
+            sb.AppendLine($"Showing {visibleColumns.Count}/{columnNames.Count} columns.");
+        }
+
+        if (rows.Count > maxRows)
+        {
+            sb.AppendLine($"Showing {maxRows}/{rows.Count} rows.");
+        }
+    }
+
+    private static string FormatValue(object? value)
+    {
+        return value switch
+        {
+            null => string.Empty,
+            DateTime dateTime => dateTime.ToString("O"),
+            DateTimeOffset dateTimeOffset => dateTimeOffset.ToString("O"),
+            IFormattable formattable => formattable.ToString(null, System.Globalization.CultureInfo.InvariantCulture),
+            _ => value.ToString() ?? string.Empty
+        };
+    }
+
+    private static string EscapeMarkdownTableCell(string? value)
+    {
+        return (value ?? string.Empty)
+            .Replace("|", "\\|")
+            .Replace("\r", " ")
+            .Replace("\n", " ");
     }
 
     private static string BuildConnectionString(string connectionString, string? databaseName)

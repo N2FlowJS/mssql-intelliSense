@@ -252,38 +252,14 @@
             </Button>
         </Grid>
 
-        <!-- Results Tabs -->
-        <TabControl Grid.Row="3"
-                    BorderThickness="0"
-                    Background="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowBackgroundBrushKey}}">
-            <TabItem Header="Grid View">
-                <DataGrid x:Name="OutputDataGrid"
-                          AutoGenerateColumns="True"
-                          IsReadOnly="True"
-                          HeadersVisibility="Column"
-                          GridLinesVisibility="Horizontal"
-                          EnableRowVirtualization="True"
-                          EnableColumnVirtualization="True"
-                          VirtualizingStackPanel.IsVirtualizing="True"
-                          VirtualizingStackPanel.VirtualizationMode="Recycling"
-                          Background="{DynamicResource {x:Static vsui:EnvironmentColors.ComboBoxBackgroundBrushKey}}"
-                          Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.ComboBoxTextBrushKey}}" />
-            </TabItem>
-            <TabItem Header="JSON Output">
-                <TextBox x:Name="OutputJsonTextBox"
-                         IsReadOnly="True"
-                         AcceptsReturn="True"
-                         AcceptsTab="True"
-                         TextWrapping="NoWrap"
-                         VerticalScrollBarVisibility="Auto"
-                         HorizontalScrollBarVisibility="Auto"
-                         FontFamily="Consolas, Courier New, monospace"
-                         FontSize="11.5"
-                         Padding="8"
-                         BorderThickness="0"
-                         Background="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowCodeBlockBackgroundBrushKey}}"
-                         Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowTextBrushKey}}" />
-            </TabItem>
-        </TabControl>
+        <RichTextBox x:Name="OutputMarkdownBox"
+                     Grid.Row="3"
+                     IsReadOnly="True"
+                     BorderThickness="0"
+                     Padding="8"
+                     VerticalScrollBarVisibility="Auto"
+                     HorizontalScrollBarVisibility="Auto"
+                     Background="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowCodeBlockBackgroundBrushKey}}"
+                     Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowTextBrushKey}}" />
     </Grid>
 </UserControl>

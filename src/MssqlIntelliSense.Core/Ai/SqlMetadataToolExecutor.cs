@@ -25,8 +25,6 @@ public static class SqlMetadataToolExecutor
     public const string ListEndpointsToolName = "list_endpoints";
     public const string ExecuteSqlToolName = "execute";
 
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
-
     public static readonly string[] AllToolNames = new[]
     {
         ListTablesToolName,
@@ -67,21 +65,215 @@ public static class SqlMetadataToolExecutor
 
         var output = normalizedTool switch
         {
-            ListTablesToolName => GetListTablesToolResult(safeMetadata, arguments),
-            TableSchemaToolName => GetTableSchemaToolResult(safeMetadata, arguments),
-            TableRelationsToolName => GetTableRelationsToolResult(safeMetadata, arguments),
-            TableIndexesToolName => GetTableIndexesToolResult(safeMetadata, arguments),
-            SearchObjectsToolName or SearchSchemaObjectsToolName => GetSearchObjectsToolResult(safeMetadata, arguments),
-            FindColumnToolName => GetFindColumnToolResult(safeMetadata, arguments),
-            ListEndpointsToolName => GetListEndpointsToolResult(safeMetadata),
-            ExecuteSqlToolName => new
-            {
-                error = "The execute tool requires an SSMS runtime connection executor."
-            },
+            ListTablesToolName => FormatListTablesMarkdown(safeMetadata, arguments),
+            TableSchemaToolName => FormatTableSchemaMarkdown(safeMetadata, arguments),
+            TableRelationsToolName => FormatTableRelationsMarkdown(safeMetadata, arguments),
+            TableIndexesToolName => FormatTableIndexesMarkdown(safeMetadata, arguments),
+            SearchObjectsToolName or SearchSchemaObjectsToolName => FormatSearchObjectsMarkdown(safeMetadata, arguments),
+            FindColumnToolName => FormatFindColumnMarkdown(safeMetadata, arguments),
+            ListEndpointsToolName => FormatListEndpointsMarkdown(safeMetadata),
+            ExecuteSqlToolName => "## Tool: execute\n\n**Error:** The execute tool requires an SSMS runtime connection executor.",
             _ => throw new NotSupportedException($"Tool '{toolName}' is not supported.")
         };
 
-        return Task.FromResult(JsonSerializer.Serialize(output, JsonOptions));
+        return Task.FromResult(output);
+    }
+
+    private static string FormatListTablesMarkdown(DatabaseMetadata metadata, JsonElement arguments)
+    {
+        if (metadata?.Tables == null)
+        {
+            return "## Tool: list_tables\n\nTotal: 0\n\nNo tables found.";
+        }
+
+        var schemaFilter = GetArgument(arguments, "schemaName", string.Empty);
+        var queryFilter = GetArgument(arguments, "query", string.Empty);
+        var tableNameFilter = GetArgument(arguments, "tableName", string.Empty);
+        var query = !string.IsNullOrWhiteSpace(queryFilter) ? queryFilter : tableNameFilter;
+
+        var source = metadata.Tables.AsEnumerable();
+        if (!string.IsNullOrWhiteSpace(schemaFilter))
+        {
+            source = source.Where(t => Matches(t.Schema, schemaFilter));
+        }
+
+        if (!string.IsNullOrWhiteSpace(query))
+        {
+            source = source.Where(t => Matches(t.Name, query) || Matches(t.Schema + "." + t.Name, query));
+        }
+
+        var matching = source
+            .OrderBy(t => t.Schema)
+            .ThenBy(t => t.Name)
+            .ToList();
+        var visible = matching.Take(500).ToList();
+        var sb = new StringBuilder();
+        sb.AppendLine("## Tool: list_tables");
+        sb.AppendLine();
+        sb.AppendLine($"Total: {matching.Count}");
+        sb.AppendLine($"Truncated: {matching.Count > visible.Count}");
+        if (!string.IsNullOrWhiteSpace(query))
+        {
+            sb.AppendLine($"Query: `{query}`");
+        }
+
+        sb.AppendLine();
+        AppendMarkdownTable(
+            sb,
+            new[] { "Database", "Schema", "Table" },
+            visible.Select(t => new[] { t.Database, t.Schema, t.Name }));
+        return sb.ToString();
+    }
+
+    private static string FormatTableSchemaMarkdown(DatabaseMetadata metadata, JsonElement arguments)
+    {
+        metadata = MetadataDescriptionEditor.ApplyStoredDescriptions(metadata);
+        var schemaName = GetArgument(arguments, "schemaName", "dbo");
+        var tableName = GetArgument(arguments, "tableName", string.Empty);
+        var table = metadata?.FindTable(schemaName, tableName);
+        if (table == null)
+        {
+            return $"## Tool: get_table_schema\n\n**Error:** Table not found.\n\nSchema: `{schemaName}`\nTable: `{tableName}`";
+        }
+
+        var sb = new StringBuilder();
+        sb.AppendLine("## Tool: get_table_schema");
+        sb.AppendLine();
+        sb.AppendLine($"Table: `{table.Schema}.{table.Name}`");
+        if (!string.IsNullOrWhiteSpace(table.Database))
+        {
+            sb.AppendLine($"Database: `{table.Database}`");
+        }
+
+        if (!string.IsNullOrWhiteSpace(table.Description))
+        {
+            sb.AppendLine($"Description: {table.Description}");
+        }
+
+        sb.AppendLine($"primaryKeyColumns: `{string.Join(", ", table.PrimaryKeyColumns)}`");
+        sb.AppendLine();
+        AppendMarkdownTable(
+            sb,
+            new[] { "Ordinal", "Column", "Data Type", "Nullable", "Description" },
+            table.Columns
+                .OrderBy(c => c.Ordinal)
+                .Select(c => new[] { c.Ordinal.ToString(CultureInfo.InvariantCulture), c.Name, c.DataType, c.IsNullable.ToString(), c.Description }));
+        return sb.ToString();
+    }
+
+    private static string FormatTableRelationsMarkdown(DatabaseMetadata metadata, JsonElement arguments)
+    {
+        var tableName = GetArgument(arguments, "tableName", string.Empty);
+        var rows = (metadata?.ForeignKeys ?? Enumerable.Empty<ForeignKeyMetadata>())
+            .Where(fk => fk.FromTable.Equals(tableName, StringComparison.OrdinalIgnoreCase) ||
+                         fk.ToTable.Equals(tableName, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(fk => fk.Name)
+            .ToList();
+
+        var sb = new StringBuilder();
+        sb.AppendLine("## Tool: get_table_relations");
+        sb.AppendLine();
+        sb.AppendLine($"Table: `{tableName}`");
+        sb.AppendLine($"Total: {rows.Count}");
+        sb.AppendLine();
+        AppendMarkdownTable(
+            sb,
+            new[] { "Name", "From", "From Column", "To", "To Column" },
+            rows.Select(fk => new[] { fk.Name, fk.FromSchema + "." + fk.FromTable, fk.FromColumn, fk.ToSchema + "." + fk.ToTable, fk.ToColumn }));
+        return sb.ToString();
+    }
+
+    private static string FormatTableIndexesMarkdown(DatabaseMetadata metadata, JsonElement arguments)
+    {
+        var tableName = GetArgument(arguments, "tableName", string.Empty);
+        var rows = (metadata?.Indexes ?? Enumerable.Empty<IndexMetadata>())
+            .Where(idx => idx.Table.Equals(tableName, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(idx => idx.Name)
+            .ToList();
+
+        var sb = new StringBuilder();
+        sb.AppendLine("## Tool: get_table_indexes");
+        sb.AppendLine();
+        sb.AppendLine($"Table: `{tableName}`");
+        sb.AppendLine($"Total: {rows.Count}");
+        sb.AppendLine();
+        AppendMarkdownTable(
+            sb,
+            new[] { "Schema", "Table", "Index", "Unique", "Columns" },
+            rows.Select(idx => new[] { idx.Schema, idx.Table, idx.Name, idx.IsUnique.ToString(), string.Join(", ", idx.Columns) }));
+        return sb.ToString();
+    }
+
+    private static string FormatSearchObjectsMarkdown(DatabaseMetadata metadata, JsonElement arguments)
+    {
+        var query = GetArgument(arguments, "query", GetArgument(arguments, "tableName", string.Empty));
+        var rows = BuildObjectSearchRows(metadata, query).Cast<object>().ToList();
+        var sb = new StringBuilder();
+        sb.AppendLine("## Tool: search_objects");
+        sb.AppendLine();
+        sb.AppendLine($"Query: `{query}`");
+        sb.AppendLine($"Total matches: {rows.Count}");
+        sb.AppendLine();
+        AppendMarkdownTable(
+            sb,
+            new[] { "Kind", "Database", "Schema", "Name", "Description", "Column Description", "Definition Snippet", "Score", "Lexical Score" },
+            rows.Select(row => new[]
+            {
+                GetObjectProperty(row, "kind"),
+                GetObjectProperty(row, "database"),
+                GetObjectProperty(row, "schema"),
+                GetObjectProperty(row, "name"),
+                GetObjectProperty(row, "description"),
+                GetObjectProperty(row, "columnDescription"),
+                GetObjectProperty(row, "definitionSnippet"),
+                GetObjectProperty(row, "score"),
+                GetObjectProperty(row, "lexicalScore")
+            }));
+        return sb.ToString();
+    }
+
+    private static string FormatFindColumnMarkdown(DatabaseMetadata metadata, JsonElement arguments)
+    {
+        var query = GetArgument(arguments, "query", GetArgument(arguments, "columnName", string.Empty));
+        var rows = BuildColumnSearchRows(metadata, query).Cast<object>().ToList();
+        var sb = new StringBuilder();
+        sb.AppendLine("## Tool: find_column");
+        sb.AppendLine();
+        sb.AppendLine($"Query: `{query}`");
+        sb.AppendLine($"Total matches: {rows.Count}");
+        sb.AppendLine();
+        AppendMarkdownTable(
+            sb,
+            new[] { "Kind", "Database", "Schema", "Object", "Column", "Data Type", "Nullable", "Description" },
+            rows.Select(row => new[]
+            {
+                GetObjectProperty(row, "kind"),
+                GetObjectProperty(row, "database"),
+                GetObjectProperty(row, "schema"),
+                GetObjectProperty(row, "objectName"),
+                GetObjectProperty(row, "column"),
+                GetObjectProperty(row, "dataType"),
+                GetObjectProperty(row, "isNullable"),
+                GetObjectProperty(row, "description")
+            }));
+        return sb.ToString();
+    }
+
+    private static string FormatListEndpointsMarkdown(DatabaseMetadata metadata)
+    {
+        var rows = (metadata?.Endpoints ?? Enumerable.Empty<EndpointInfo>())
+            .OrderBy(ep => ep.Name)
+            .ToList();
+        var sb = new StringBuilder();
+        sb.AppendLine("## Tool: list_endpoints");
+        sb.AppendLine();
+        sb.AppendLine($"Total endpoints: {rows.Count}");
+        sb.AppendLine();
+        AppendMarkdownTable(
+            sb,
+            new[] { "Name", "Type", "Protocol", "State", "Port" },
+            rows.Select(ep => new[] { ep.Name, ep.Type, ep.Protocol, ep.State, ep.Port.ToString(CultureInfo.InvariantCulture) }));
+        return sb.ToString();
     }
 
     public static object GetListTablesToolResult(DatabaseMetadata metadata, JsonElement arguments)
@@ -436,6 +628,50 @@ public static class SqlMetadataToolExecutor
         }
 
         return defaultValue;
+    }
+
+    private static void AppendMarkdownTable(StringBuilder sb, IReadOnlyList<string> headers, IEnumerable<IReadOnlyList<string?>> rows)
+    {
+        var materializedRows = rows.ToList();
+        if (materializedRows.Count == 0)
+        {
+            sb.AppendLine("No rows.");
+            return;
+        }
+
+        sb.Append("| ");
+        sb.Append(string.Join(" | ", headers.Select(EscapeMarkdownTableCell)));
+        sb.AppendLine(" |");
+        sb.Append("| ");
+        sb.Append(string.Join(" | ", headers.Select(_ => "---")));
+        sb.AppendLine(" |");
+
+        foreach (var row in materializedRows)
+        {
+            sb.Append("| ");
+            sb.Append(string.Join(" | ", row.Select(EscapeMarkdownTableCell)));
+            sb.AppendLine(" |");
+        }
+    }
+
+    private static string EscapeMarkdownTableCell(string? value)
+    {
+        return (value ?? string.Empty)
+            .Replace("|", "\\|")
+            .Replace("\r", " ")
+            .Replace("\n", " ");
+    }
+
+    private static string GetObjectProperty(object source, string name)
+    {
+        var property = source.GetType().GetProperty(name);
+        var value = property?.GetValue(source);
+        return value switch
+        {
+            null => string.Empty,
+            IFormattable formattable => formattable.ToString(null, CultureInfo.InvariantCulture),
+            _ => value.ToString() ?? string.Empty
+        };
     }
 
     private static bool Matches(string? value, string query)

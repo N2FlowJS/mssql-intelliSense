@@ -1,5 +1,4 @@
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -7,6 +6,7 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using Microsoft.VisualStudio.Shell;
 using MssqlIntelliSense.Core.Ai;
 using MssqlIntelliSense.Core.Metadata;
@@ -68,18 +68,6 @@ public partial class ToolLabControl : UserControl
     private sealed class ToolRunResult
     {
         public string OutputText { get; set; } = string.Empty;
-        public IList<object>? PreviewRows { get; set; }
-    }
-
-    private sealed class ObjectSearchPreviewRow
-    {
-        public string Kind { get; set; } = string.Empty;
-        public string Database { get; set; } = string.Empty;
-        public string Schema { get; set; } = string.Empty;
-        public string Name { get; set; } = string.Empty;
-        public string Description { get; set; } = string.Empty;
-        public int Score { get; set; }
-        public int LexicalScore { get; set; }
     }
 
     public event EventHandler? ToolExecutionCompleted;
@@ -127,7 +115,7 @@ public partial class ToolLabControl : UserControl
         }
         catch (Exception ex)
         {
-            await UpdateToolUiAsync(() => SetJsonOutput("Failed to load connections: " + ex.Message));
+            await UpdateToolUiAsync(() => SetMarkdownOutput("Failed to load connections: " + ex.Message));
             MssqlIntelliSensePackage.Log($"[Tool Lab Load Connections Handler Error] {ex}");
         }
     }
@@ -145,7 +133,7 @@ public partial class ToolLabControl : UserControl
         }
         catch (Exception ex)
         {
-            await UpdateToolUiAsync(() => SetJsonOutput("Tool execution failed: " + ex.Message));
+            await UpdateToolUiAsync(() => SetMarkdownOutput("Tool execution failed: " + ex.Message));
             MssqlIntelliSensePackage.Log($"[Tool Lab Execute Handler Error] {ex}");
         }
     }
@@ -155,8 +143,7 @@ public partial class ToolLabControl : UserControl
         try
         {
             RefreshConnectionsButton.IsEnabled = false;
-            SetJsonOutput("Loading cached connections...");
-            OutputDataGrid.ItemsSource = null;
+            SetMarkdownOutput("Loading cached connections...");
 
             var connections = await Task.Run(MssqlIntelliSenseCacheReader.GetConnections);
             _connections.Clear();
@@ -192,7 +179,7 @@ public partial class ToolLabControl : UserControl
                 DatabaseTextBox.Text = activeContext.ActiveDatabase;
             }
 
-            SetJsonOutput(!string.IsNullOrWhiteSpace(activeContext.DisplayName)
+            SetMarkdownOutput(!string.IsNullOrWhiteSpace(activeContext.DisplayName)
                 ? $"Active connection: {activeContext.DisplayName}"
                 : _connections.Count == 0
                 ? "No cached connections found."
@@ -200,7 +187,7 @@ public partial class ToolLabControl : UserControl
         }
         catch (Exception ex)
         {
-            SetJsonOutput("Failed to load connections: " + ex.Message);
+            SetMarkdownOutput("Failed to load connections: " + ex.Message);
             MssqlIntelliSensePackage.Log($"[Tool Lab Load Connections Error] {ex}");
         }
         finally
@@ -216,29 +203,27 @@ public partial class ToolLabControl : UserControl
             await UpdateToolUiAsync(() =>
             {
                 RunToolButton.IsEnabled = false;
-                SetJsonOutput("Running tool...");
-                OutputDataGrid.ItemsSource = null;
+                SetMarkdownOutput("Running tool...");
             });
 
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
             var request = CaptureRunRequest();
             if (request == null)
             {
-                await UpdateToolUiAsync(() => SetJsonOutput("No active or selected cached connection found."));
+                await UpdateToolUiAsync(() => SetMarkdownOutput("No active or selected cached connection found."));
                 return;
             }
 
             var result = await Task.Run(async () => await ExecuteToolRequestAsync(request));
             await UpdateToolUiAsync(() =>
             {
-                SetJsonOutput(result.OutputText);
-                OutputDataGrid.ItemsSource = result.PreviewRows;
+                SetMarkdownOutput(result.OutputText);
             });
             ToolExecutionCompleted?.Invoke(this, EventArgs.Empty);
         }
         catch (Exception ex)
         {
-            await UpdateToolUiAsync(() => SetJsonOutput("Tool execution failed: " + ex.Message));
+            await UpdateToolUiAsync(() => SetMarkdownOutput("Tool execution failed: " + ex.Message));
             MssqlIntelliSensePackage.Log($"[Tool Lab Execute Error] {ex}");
         }
         finally
@@ -317,91 +302,33 @@ public partial class ToolLabControl : UserControl
                 columnName = request.Query
             },
             JsonOptions);
-        using var doc = JsonDocument.Parse(arguments);
         var output = string.Equals(request.ToolName, ExecuteSqlToolName, StringComparison.OrdinalIgnoreCase)
             ? await SqlReadOnlyQueryExecutor.ExecuteAsync(
                 request.ActiveConnectionString ?? string.Empty,
                 dbFilter,
-                SqlMetadataToolExecutor.GetArgument(doc.RootElement, "query", string.Empty))
+                ToolArgumentReader.GetString(arguments, "query"))
             : await SqlMetadataToolExecutor.ExecuteToolAsync(
                 request.ToolName,
-                doc.RootElement,
+                arguments,
                 metadata);
-        var previewRows = IsObjectSearchTool(request.ToolName)
-            ? ExtractObjectSearchPreviewRows(output)
-            : SqlMetadataToolExecutor.BuildPreviewRows(
-                request.ToolName,
-                metadata,
-                request.SchemaName,
-                request.TableName,
-                request.Query)
-            ?.Cast<object>()
-            .ToList();
-
         var connectionHeader = string.IsNullOrWhiteSpace(request.DisplayName)
             ? $"Connection: {request.ConnectionName}"
             : $"Connection: {request.DisplayName}";
 
         return new ToolRunResult
         {
-            OutputText = connectionHeader + Environment.NewLine + PrettyPrintJson(output),
-            PreviewRows = previewRows
+            OutputText = $"**{connectionHeader}**\n\n" + ChatToolOutputFormatter.FormatForChat(request.ToolName, output)
         };
     }
 
-    private void SetJsonOutput(string text)
+    private void SetMarkdownOutput(string text)
     {
-        OutputJsonTextBox.Text = text ?? string.Empty;
+        var foreground = TryFindResource(Microsoft.VisualStudio.PlatformUI.EnvironmentColors.ToolWindowTextBrushKey) as Brush
+            ?? SystemColors.ControlTextBrush;
+        var codeBackground = TryFindResource(Microsoft.VisualStudio.PlatformUI.EnvironmentColors.ToolWindowCodeBlockBackgroundBrushKey) as Brush
+            ?? SystemColors.ControlLightBrush;
+        OutputMarkdownBox.Document = ChatMarkdownRenderer.CreateMarkdownDocument(text ?? string.Empty, foreground, codeBackground);
     }
-
-    private static bool IsObjectSearchTool(string toolName) =>
-        string.Equals(toolName, SearchObjectsToolName, StringComparison.OrdinalIgnoreCase) ||
-        string.Equals(toolName, SqlMetadataToolExecutor.SearchSchemaObjectsToolName, StringComparison.OrdinalIgnoreCase);
-
-    private static IList<object> ExtractObjectSearchPreviewRows(string output)
-    {
-        try
-        {
-            using var document = JsonDocument.Parse(output);
-            if (!document.RootElement.TryGetProperty("matches", out var matches) ||
-                matches.ValueKind != JsonValueKind.Array)
-            {
-                return new List<object>();
-            }
-
-            return matches.EnumerateArray()
-                .Select(match => (object)new ObjectSearchPreviewRow
-                {
-                    Kind = GetJsonString(match, "kind"),
-                    Database = GetJsonString(match, "database"),
-                    Schema = GetJsonString(match, "schema"),
-                    Name = GetJsonString(match, "name"),
-                    Description = GetJsonString(match, "description"),
-                    Score = GetJsonInt(match, "score"),
-                    LexicalScore = GetJsonInt(match, "lexicalScore")
-                })
-                .ToList();
-        }
-        catch
-        {
-            return new List<object>();
-        }
-    }
-
-    private static string GetJsonString(JsonElement source, string propertyName) =>
-        source.TryGetProperty(propertyName, out var property) && property.ValueKind == JsonValueKind.String
-            ? property.GetString() ?? string.Empty
-            : string.Empty;
-
-    private static int GetJsonInt(JsonElement source, string propertyName) =>
-        source.TryGetProperty(propertyName, out var property) && property.TryGetInt32(out var value)
-            ? value
-            : 0;
-
-    private static double GetJsonDouble(JsonElement source, string propertyName) =>
-        source.TryGetProperty(propertyName, out var property) && property.TryGetDouble(out var value)
-            ? value
-            : 0;
 
     private Task UpdateToolUiAsync(Action action)
     {
@@ -549,32 +476,4 @@ public partial class ToolLabControl : UserControl
         }
     }
 
-    private static string PrettyPrintJson(string json)
-    {
-        if (string.IsNullOrWhiteSpace(json))
-        {
-            return string.Empty;
-        }
-
-        const int maxDisplayLength = 100000;
-
-        try
-        {
-            using var document = JsonDocument.Parse(json);
-            var formatted = JsonSerializer.Serialize(document.RootElement, new JsonSerializerOptions { WriteIndented = true });
-            if (formatted.Length > maxDisplayLength)
-            {
-                return formatted.Substring(0, maxDisplayLength) + Environment.NewLine + $"... [Output truncated for UI performance. Total length: {formatted.Length} characters]";
-            }
-            return formatted;
-        }
-        catch
-        {
-            if (json.Length > maxDisplayLength)
-            {
-                return json.Substring(0, maxDisplayLength) + Environment.NewLine + $"... [Output truncated for UI performance. Total length: {json.Length} characters]";
-            }
-            return json;
-        }
-    }
 }
