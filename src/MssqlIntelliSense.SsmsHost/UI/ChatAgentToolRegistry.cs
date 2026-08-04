@@ -57,6 +57,64 @@ internal static class ChatAgentToolRegistry
             .ToList();
     }
 
+    public static ISet<string> SelectRelevantToolNames(ISet<string> allowedToolNames, string userMessage)
+    {
+        var selected = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (allowedToolNames == null || allowedToolNames.Count == 0)
+        {
+            return selected;
+        }
+
+        var text = userMessage ?? string.Empty;
+        var lower = text.ToLowerInvariant();
+        AddIfAllowed(selected, allowedToolNames, SqlMetadataToolExecutor.SearchObjectsToolName);
+
+        if (ContainsAny(lower, "column", "columns", "field", "cột", "cot"))
+        {
+            AddIfAllowed(selected, allowedToolNames, SqlMetadataToolExecutor.FindColumnToolName);
+            AddIfAllowed(selected, allowedToolNames, SqlMetadataToolExecutor.TableSchemaToolName);
+        }
+
+        if (ContainsAny(lower, "schema", "datatype", "data type", "kiểu dữ liệu", "kieu du lieu", "primary key", "pk"))
+        {
+            AddIfAllowed(selected, allowedToolNames, SqlMetadataToolExecutor.TableSchemaToolName);
+        }
+
+        if (ContainsAny(lower, "relation", "relationship", "foreign key", "join", "khóa ngoại", "khoa ngoai", "quan hệ", "quan he"))
+        {
+            AddIfAllowed(selected, allowedToolNames, SqlMetadataToolExecutor.TableRelationsToolName);
+            AddIfAllowed(selected, allowedToolNames, SqlMetadataToolExecutor.TableSchemaToolName);
+        }
+
+        if (ContainsAny(lower, "index", "indexes", "chỉ mục", "chi muc", "performance", "optimize", "tối ưu", "toi uu"))
+        {
+            AddIfAllowed(selected, allowedToolNames, SqlMetadataToolExecutor.TableIndexesToolName);
+        }
+
+        if (ContainsAny(lower, "list", "show", "all tables", "tables", "liệt kê", "liet ke", "danh sách", "danh sach", "bảng", "bang"))
+        {
+            AddIfAllowed(selected, allowedToolNames, SqlMetadataToolExecutor.ListTablesToolName);
+        }
+
+        if (ContainsAny(lower, "endpoint", "end point"))
+        {
+            AddIfAllowed(selected, allowedToolNames, SqlMetadataToolExecutor.ListEndpointsToolName);
+        }
+
+        if (ContainsAny(lower, "execute", "run", "select", "with ", "declare", "query", "truy vấn", "truy van", "chạy", "chay", "thực thi", "thuc thi"))
+        {
+            AddIfAllowed(selected, allowedToolNames, SqlMetadataToolExecutor.ExecuteSqlToolName);
+        }
+
+        if (selected.Count == 0)
+        {
+            AddIfAllowed(selected, allowedToolNames, SqlMetadataToolExecutor.SearchObjectsToolName);
+            AddIfAllowed(selected, allowedToolNames, SqlMetadataToolExecutor.FindColumnToolName);
+        }
+
+        return selected;
+    }
+
     public static OpenAiSqlToolCall ToApprovalRequest(ChatToolCall toolCall)
     {
         var toolName = SqlMetadataToolExecutor.NormalizeToolName(toolCall.FunctionName);
@@ -97,108 +155,73 @@ internal static class ChatAgentToolRegistry
     {
         yield return CreateDefinition(
             SqlMetadataToolExecutor.ListTablesToolName,
-            "List cached SQL Server tables by optional schema, object name, or natural-language query.",
+            "List cached tables by schema/name/query.",
             """
-            {
-              "type": "object",
-              "properties": {
-                "schemaName": { "type": "string", "description": "Optional schema filter, for example dbo." },
-                "tableName": { "type": "string", "description": "Optional table name or partial table name filter." },
-                "query": { "type": "string", "description": "Optional natural-language or partial-name search text." }
-              }
-            }
+            {"type":"object","properties":{"schemaName":{"type":"string"},"tableName":{"type":"string"},"query":{"type":"string"}}}
             """);
 
         yield return CreateDefinition(
             SqlMetadataToolExecutor.TableSchemaToolName,
-            "Get columns, data types, nullability, primary key columns, and descriptions for one table.",
+            "Get columns, data types, nullable flags, PK and descriptions for one table.",
             """
-            {
-              "type": "object",
-              "properties": {
-                "schemaName": { "type": "string", "description": "Schema name. Use dbo if unknown." },
-                "tableName": { "type": "string", "description": "Exact table name." }
-              },
-              "required": [ "tableName" ]
-            }
+            {"type":"object","properties":{"schemaName":{"type":"string"},"tableName":{"type":"string"}},"required":["tableName"]}
             """);
 
         yield return CreateDefinition(
             SqlMetadataToolExecutor.TableRelationsToolName,
-            "Get cached foreign-key relationships involving one table.",
+            "Get cached foreign keys involving one table.",
             """
-            {
-              "type": "object",
-              "properties": {
-                "tableName": { "type": "string", "description": "Exact table name to inspect relationships for." }
-              },
-              "required": [ "tableName" ]
-            }
+            {"type":"object","properties":{"tableName":{"type":"string"}},"required":["tableName"]}
             """);
 
         yield return CreateDefinition(
             SqlMetadataToolExecutor.TableIndexesToolName,
-            "Get cached index metadata for one table.",
+            "Get cached indexes for one table.",
             """
-            {
-              "type": "object",
-              "properties": {
-                "tableName": { "type": "string", "description": "Exact table name to inspect indexes for." }
-              },
-              "required": [ "tableName" ]
-            }
+            {"type":"object","properties":{"tableName":{"type":"string"}},"required":["tableName"]}
             """);
 
         yield return CreateDefinition(
             SqlMetadataToolExecutor.SearchObjectsToolName,
-            "Search cached tables, views, procedures, and functions by name, descriptions, columns/parameters, and SQL definition text.",
+            "Search tables, views, procedures and functions by name, columns, SQL text and descriptions.",
             """
-            {
-              "type": "object",
-              "properties": {
-                "query": { "type": "string", "description": "Natural-language or keyword query, in the user's language if useful." }
-              },
-              "required": [ "query" ]
-            }
+            {"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}
             """);
 
         yield return CreateDefinition(
             SqlMetadataToolExecutor.FindColumnToolName,
-            "Find matching table/view columns by name or column description.",
+            "Find table/view columns by name or description.",
             """
-            {
-              "type": "object",
-              "properties": {
-                "query": { "type": "string", "description": "Column name, partial column name, or natural-language column description." },
-                "columnName": { "type": "string", "description": "Optional exact or partial column name." }
-              }
-            }
+            {"type":"object","properties":{"query":{"type":"string"},"columnName":{"type":"string"}}}
             """);
 
         yield return CreateDefinition(
             SqlMetadataToolExecutor.ListEndpointsToolName,
-            "List cached SQL Server endpoints under Server Objects.",
+            "List cached SQL Server endpoints.",
             """
-            {
-              "type": "object",
-              "properties": {}
-            }
+            {"type":"object","properties":{}}
             """);
 
         yield return CreateDefinition(
             SqlMetadataToolExecutor.ExecuteSqlToolName,
-            "Execute a read-only SQL query against the active SSMS connection. Only SELECT, WITH, DECLARE, or safe metadata EXEC statements are allowed.",
+            "Execute read-only SQL on the active SSMS connection.",
             """
-            {
-              "type": "object",
-              "properties": {
-                "query": { "type": "string", "description": "Read-only T-SQL query to run." }
-              },
-              "required": [ "query" ]
-            }
+            {"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}
             """);
     }
 
     private static ChatAgentToolDefinition CreateDefinition(string toolName, string description, string schema) =>
         new(SqlMetadataToolExecutor.NormalizeToolName(toolName), description, schema);
+
+    private static void AddIfAllowed(HashSet<string> selected, ISet<string> allowedToolNames, string toolName)
+    {
+        var normalized = SqlMetadataToolExecutor.NormalizeToolName(toolName);
+        if (allowedToolNames.Contains(normalized))
+        {
+            selected.Add(normalized);
+        }
+    }
+
+    private static bool ContainsAny(string text, params string[] terms) =>
+        terms.Any(term => text.IndexOf(term, StringComparison.OrdinalIgnoreCase) >= 0);
 }

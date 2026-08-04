@@ -40,7 +40,8 @@ public partial class ChatAgentControl : UserControl
     private const string FindColumnToolName = SqlMetadataToolExecutor.FindColumnToolName;
     private const string ListEndpointsToolName = SqlMetadataToolExecutor.ListEndpointsToolName;
     private const string ExecuteSqlToolName = SqlMetadataToolExecutor.ExecuteSqlToolName;
-    private const int MaxSessionMessages = 32;
+    private const int MaxSessionTurns = 8;
+    private const int MaxSessionMessageChars = 1600;
 
     private sealed class ChatConnectionContext
     {
@@ -57,7 +58,19 @@ public partial class ChatAgentControl : UserControl
         public string? ErrorMessage { get; set; }
     }
 
-    private readonly List<ChatMessage> _chatSessionMessages = new();
+    private sealed class CompactChatTurn
+    {
+        public CompactChatTurn(string userMessage, string assistantMessage)
+        {
+            UserMessage = userMessage;
+            AssistantMessage = assistantMessage;
+        }
+
+        public string UserMessage { get; }
+        public string AssistantMessage { get; }
+    }
+
+    private readonly List<CompactChatTurn> _chatSessionTurns = new();
     private readonly List<string> _sentInputHistory = new();
     private int _historyIndex = -1;
     private string _currentDraft = string.Empty;
@@ -221,7 +234,7 @@ public partial class ChatAgentControl : UserControl
     private void ClearChatButton_Click(object sender, RoutedEventArgs e)
     {
         e.Handled = true;
-        _chatSessionMessages.Clear();
+        _chatSessionTurns.Clear();
         ChatMessagesPanel.Children.Clear();
         FocusChatInput();
     }
@@ -297,7 +310,8 @@ public partial class ChatAgentControl : UserControl
         var toolContext = hasSchemaMetadata
             ? string.Empty
             : "Schema cache is unavailable. Do not assume or invent tables, columns, relationships, indexes, procedures, or views. Ask the user to scan the schema when object-specific information is required.";
-        var systemPrompt = BuildSystemPrompt(metadata, toolContext, activeToolNames);
+        var requestToolNames = ChatAgentToolRegistry.SelectRelevantToolNames(activeToolNames, message);
+        var systemPrompt = BuildSystemPrompt(metadata, toolContext, requestToolNames);
         if (!string.IsNullOrWhiteSpace(chatConnection.DisplayName))
         {
             systemPrompt = $"Active SQL connection: {chatConnection.DisplayName}\n" + systemPrompt;
@@ -311,10 +325,6 @@ public partial class ChatAgentControl : UserControl
             toolContext: toolContext,
             systemPrompt: systemPrompt);
 
-        Border? assistantMessageBorder = null;
-        await MssqlIntelliSensePackage.SwitchToMainThreadAsync(cancellationToken);
-        assistantMessageBorder = AddChatMessage("Assistant", string.Empty, isUser: false, isStreaming: true);
-
         var reply = await CompleteChatWithAgentToolsAsync(
             endpoint: options.Endpoint,
             apiKey: options.ApiKey,
@@ -323,10 +333,11 @@ public partial class ChatAgentControl : UserControl
             message: message,
             metadata: metadata ?? DatabaseMetadata.Empty,
             chatConnection: chatConnection,
-            allowedToolNames: activeToolNames,
-            assistantMessageBorder: assistantMessageBorder,
+            allowedToolNames: requestToolNames,
+            assistantMessageBorder: null,
             cancellationToken: cancellationToken);
 
+        _chatSessionTurns.Add(new CompactChatTurn(CompactForSession(message), CompactForSession(reply)));
         TrimChatHistory();
     }
 
@@ -416,7 +427,7 @@ public partial class ChatAgentControl : UserControl
         sb.AppendLine($"| Model | `{model}` |");
         sb.AppendLine($"| Connection | `{(string.IsNullOrWhiteSpace(chatConnection.DisplayName) ? "(none)" : chatConnection.DisplayName)}` |");
         sb.AppendLine($"| Active database | `{(string.IsNullOrWhiteSpace(chatConnection.ActiveDatabase) ? "(not specified)" : chatConnection.ActiveDatabase)}` |");
-        sb.AppendLine($"| Session messages sent | `{Math.Min(_chatSessionMessages.Count, MaxSessionMessages)}` |");
+        sb.AppendLine($"| Session turns sent | `{Math.Min(_chatSessionTurns.Count, MaxSessionTurns)}` |");
         sb.AppendLine($"| Allowed tools | `{(allowedToolNames.Count == 0 ? "(none)" : string.Join(", ", allowedToolNames))}` |");
 
         if (metadata != null)
@@ -599,7 +610,7 @@ public partial class ChatAgentControl : UserControl
                 cancellationToken);
         }
 
-        MssqlIntelliSensePackage.Log($"[Chat Agent Tool Output] Tool '{toolCall.Name}' returned {output.Length:n0} characters for agent context.");
+        MssqlIntelliSensePackage.Log($"[Chat Agent Tool Output] Tool '{toolCall.Name}' returned {output.Length:n0} characters for chat UI.");
         return output;
     }
 
@@ -660,9 +671,17 @@ public partial class ChatAgentControl : UserControl
 
     private sealed class MessageControlState
     {
-        public MessageControlState(string sender, StackPanel contentPanel, Brush foreground, Brush borderBrush, Brush codeBackground, bool renderMarkdown)
+        public MessageControlState(
+            string sender,
+            TextBlock headerText,
+            StackPanel contentPanel,
+            Brush foreground,
+            Brush borderBrush,
+            Brush codeBackground,
+            bool renderMarkdown)
         {
             Sender = sender;
+            HeaderText = headerText;
             ContentPanel = contentPanel;
             Foreground = foreground;
             BorderBrush = borderBrush;
@@ -671,6 +690,7 @@ public partial class ChatAgentControl : UserControl
         }
 
         public string Sender { get; }
+        public TextBlock HeaderText { get; }
         public StackPanel ContentPanel { get; }
         public Brush Foreground { get; }
         public Brush BorderBrush { get; }
@@ -682,6 +702,7 @@ public partial class ChatAgentControl : UserControl
     private static void RenderMessageContent(MessageControlState state, string message)
     {
         state.RawText = message;
+        state.HeaderText.Text = BuildMessageHeaderText(state.Sender);
         state.ContentPanel.Children.Clear();
 
         if (state.Sender.Equals("Tool", StringComparison.OrdinalIgnoreCase))
@@ -893,6 +914,9 @@ public partial class ChatAgentControl : UserControl
         ChatMessagesScrollViewer.ScrollToEnd();
     }
 
+    private static string BuildMessageHeaderText(string sender) =>
+        $"{sender}  •  {DateTime.Now:HH:mm:ss}";
+
     private async Task AddToolApprovalCardOnDispatcherAsync(
         OpenAiSqlToolCall toolCall,
         TaskCompletionSource<bool> completionSource,
@@ -1054,8 +1078,10 @@ public partial class ChatAgentControl : UserControl
                     }
 
                     messages.Add(ChatMessage.CreateAssistantMessage(finalText));
-                    SaveChatSessionMessages(messages);
-                    await SafeUpdateChatMessageAsync(assistantMessageBorder, finalText);
+                    assistantMessageBorder = await AddOrUpdateAssistantMessageAsync(
+                        assistantMessageBorder,
+                        finalText,
+                        cancellationToken);
                     return finalText;
                 }
 
@@ -1072,19 +1098,26 @@ public partial class ChatAgentControl : UserControl
                         approvalRequest,
                         runtimeContext,
                         cancellationToken).ConfigureAwait(false);
-                    messages.Add(ChatMessage.CreateToolMessage(toolCall.Id, toolOutput));
+                    var toolContext = ChatToolOutputFormatter.FormatForAgentContext(approvalRequest.Name, toolOutput);
+                    MssqlIntelliSensePackage.Log($"[Chat Agent Tool Context] Tool '{approvalRequest.Name}' sent {toolContext.Length:n0} characters to LLM.");
+                    messages.Add(ChatMessage.CreateToolMessage(toolCall.Id, toolContext));
                 }
             }
 
             var limitMessage = "Agent reached maximum tool rounds without completing.";
             messages.Add(ChatMessage.CreateAssistantMessage(limitMessage));
-            SaveChatSessionMessages(messages);
-            await SafeUpdateChatMessageAsync(assistantMessageBorder, limitMessage);
+            assistantMessageBorder = await AddOrUpdateAssistantMessageAsync(
+                assistantMessageBorder,
+                limitMessage,
+                cancellationToken);
             return limitMessage;
         }
         catch (OperationCanceledException)
         {
-            await SafeUpdateChatMessageAsync(assistantMessageBorder, "Request stopped.");
+            await AddOrUpdateAssistantMessageAsync(
+                assistantMessageBorder,
+                "Request stopped.",
+                cancellationToken);
             throw;
         }
         catch (Exception ex)
@@ -1093,8 +1126,10 @@ public partial class ChatAgentControl : UserControl
             MssqlIntelliSensePackage.Log($"[Chat Agent Tool Loop Error] {ex}");
             var messages = BuildChatMessages(systemPrompt, message);
             messages.Add(ChatMessage.CreateAssistantMessage(errorMessage));
-            SaveChatSessionMessages(messages);
-            await SafeUpdateChatMessageAsync(assistantMessageBorder, errorMessage);
+            assistantMessageBorder = await AddOrUpdateAssistantMessageAsync(
+                assistantMessageBorder,
+                errorMessage,
+                cancellationToken);
             return errorMessage;
         }
     }
@@ -1139,18 +1174,10 @@ public partial class ChatAgentControl : UserControl
 
     private void AddRecentChatSessionMessages(List<ChatMessage> messages)
     {
-        foreach (var sessionMessage in _chatSessionMessages.Skip(Math.Max(0, _chatSessionMessages.Count - MaxSessionMessages)))
+        foreach (var turn in _chatSessionTurns.Skip(Math.Max(0, _chatSessionTurns.Count - MaxSessionTurns)))
         {
-            messages.Add(sessionMessage);
-        }
-    }
-
-    private void SaveChatSessionMessages(IReadOnlyList<ChatMessage> messages)
-    {
-        _chatSessionMessages.Clear();
-        foreach (var message in messages.Skip(1).Skip(Math.Max(0, messages.Count - 1 - MaxSessionMessages)))
-        {
-            _chatSessionMessages.Add(message);
+            messages.Add(new UserChatMessage(turn.UserMessage));
+            messages.Add(new AssistantChatMessage(turn.AssistantMessage));
         }
     }
 
@@ -1176,8 +1203,26 @@ public partial class ChatAgentControl : UserControl
 
     private void TrimChatHistory()
     {
-        if (_chatSessionMessages.Count <= MaxSessionMessages) return;
-        _chatSessionMessages.RemoveRange(0, _chatSessionMessages.Count - MaxSessionMessages);
+        if (_chatSessionTurns.Count <= MaxSessionTurns) return;
+        _chatSessionTurns.RemoveRange(0, _chatSessionTurns.Count - MaxSessionTurns);
+    }
+
+    private static string CompactForSession(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var compact = string.Join(
+            "\n",
+            value.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None)
+                .Select(line => line.TrimEnd())
+                .Where(line => !string.IsNullOrWhiteSpace(line)));
+
+        return compact.Length <= MaxSessionMessageChars
+            ? compact
+            : compact.Substring(0, MaxSessionMessageChars).TrimEnd() + "\n\n[Session message truncated]";
     }
 
     private void SafeAddChatError(string message)
@@ -1301,6 +1346,25 @@ public partial class ChatAgentControl : UserControl
         }
     }
 
+    private async Task<Border?> AddOrUpdateAssistantMessageAsync(
+        Border? assistantMessageBorder,
+        string message,
+        CancellationToken cancellationToken)
+    {
+        if (assistantMessageBorder != null)
+        {
+            await SafeUpdateChatMessageAsync(assistantMessageBorder, message);
+            return assistantMessageBorder;
+        }
+
+        return await AddChatMessageOnDispatcherAsync(
+            "Assistant",
+            message,
+            isUser: false,
+            isStreaming: false,
+            cancellationToken);
+    }
+
     private string BuildSystemPrompt(DatabaseMetadata? metadata, string toolContext, ISet<string> allowedToolNames)
     {
         var sb = new StringBuilder();
@@ -1408,10 +1472,9 @@ public partial class ChatAgentControl : UserControl
 
         // Header (sender + timestamp + copy button)
         var headerPanel = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 5) };
-        var timestamp = DateTime.Now.ToString("HH:mm:ss");
         var senderText = new TextBlock
         {
-            Text = $"{sender}  •  {timestamp}",
+            Text = BuildMessageHeaderText(sender),
             FontWeight = FontWeights.Bold,
             Foreground = messageForeground,
             FontSize = 11
@@ -1457,7 +1520,7 @@ public partial class ChatAgentControl : UserControl
         container.Children.Add(contentPanel);
 
         border.Child = container;
-        var state = new MessageControlState(sender, contentPanel, messageForeground, borderBrush, messageBackground, renderMarkdown: !isUser);
+        var state = new MessageControlState(sender, senderText, contentPanel, messageForeground, borderBrush, messageBackground, renderMarkdown: !isUser);
         RenderMessageContent(state, message);
         border.Tag = state;
         ChatMessagesPanel.Children.Add(border);
