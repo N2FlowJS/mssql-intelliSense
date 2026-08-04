@@ -44,4 +44,43 @@ public sealed class SqlDefinitionFormatterTests
             .Should()
             .Contain("RETURNS bit");
     }
+
+    [Fact]
+    public void FormatTableDefinition_IncludesForeignKeysAndIndexesWhenAvailable()
+    {
+        var table = new TableMetadata(
+            "sales",
+            "Orders",
+            new[]
+            {
+                new ColumnMetadata("Id", "int", false, 1),
+                new ColumnMetadata("UserId", "int", false, 2),
+                new ColumnMetadata("OrderCode", "nvarchar", true, 3)
+            },
+            new[] { "Id" })
+        {
+            Database = "ShopDb"
+        };
+
+        var foreignKeys = new[]
+        {
+            new ForeignKeyMetadata("FK_Orders_Users", "sales", "Orders", "UserId", "dbo", "Users", "Id", 1)
+            {
+                Database = "ShopDb"
+            }
+        };
+        var indexes = new[]
+        {
+            new IndexMetadata("sales", "Orders", "PK_Orders", true, new[] { "Id" }) { Database = "ShopDb" },
+            new IndexMetadata("sales", "Orders", "IX_Orders_UserId", false, new[] { "UserId" }) { Database = "ShopDb" },
+            new IndexMetadata("sales", "Orders", "UX_Orders_OrderCode", true, new[] { "OrderCode" }) { Database = "ShopDb" }
+        };
+
+        var definition = SqlDefinitionFormatter.FormatTableDefinition(table, foreignKeys, indexes);
+
+        definition.Should().Contain("CONSTRAINT [FK_Orders_Users] FOREIGN KEY ([UserId]) REFERENCES [dbo].[Users] ([Id])");
+        definition.Should().Contain("CREATE INDEX [IX_Orders_UserId] ON [sales].[Orders] ([UserId]);");
+        definition.Should().Contain("CREATE UNIQUE INDEX [UX_Orders_OrderCode] ON [sales].[Orders] ([OrderCode]);");
+        definition.Should().NotContain("CREATE UNIQUE INDEX [PK_Orders]");
+    }
 }

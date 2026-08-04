@@ -27,6 +27,7 @@ public sealed class SqlObjectReviewInfo
     public string Title { get; }
     public string Subtitle { get; }
     public string Details { get; }
+    public string CustomDescription => Details;
     public string Definition { get; }
     public string ObjectKey { get; }
     public string Description { get; }
@@ -128,7 +129,7 @@ public static class SqlObjectReviewFormatter
             }
         }
 
-        var definition = SqlDefinitionFormatter.FormatTableDefinition(table);
+        var definition = SqlDefinitionFormatter.FormatTableDefinition(table, metadata.ForeignKeys, metadata.Indexes);
         return WithDescription("table", table.Database, table.Schema, table.Name,
             $"Table [{table.Schema}].[{table.Name}]", $"{table.Database}.{table.Schema}.{table.Name}", details.ToString().TrimEnd(), definition, table.Description);
     }

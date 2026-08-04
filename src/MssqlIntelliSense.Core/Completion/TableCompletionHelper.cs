@@ -31,7 +31,7 @@ public static class TableCompletionHelper
                         table.Name,
                         SqlCompletionHelper.Quote(table.Name),
                         SqlCompletionKind.Table,
-                        SqlDefinitionFormatter.FormatTableDefinition(table)));
+                        SqlDefinitionFormatter.FormatTableDefinition(table, metadata.ForeignKeys, metadata.Indexes)));
                 }
 
                 // Views
@@ -173,7 +173,7 @@ public static class TableCompletionHelper
         foreach (var table in metadata.Tables.Where(t => SqlCompletionHelper.Matches(t.Name, token.Prefix)))
         {
             AddTableWithContext(suggestions, table.Schema, table.Name, SqlCompletionKind.Table,
-                SqlDefinitionFormatter.FormatTableDefinition(table), table.Columns, token);
+                SqlDefinitionFormatter.FormatTableDefinition(table, metadata.ForeignKeys, metadata.Indexes), table.Columns, token);
         }
 
         // Views

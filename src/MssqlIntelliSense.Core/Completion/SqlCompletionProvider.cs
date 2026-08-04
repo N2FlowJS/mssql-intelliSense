@@ -381,7 +381,7 @@ public sealed class SqlCompletionProvider
             {
                 if (!SqlCompletionHelper.Matches(candidate.Name, token.Prefix)) continue;
 
-                AddCandidateObject(suggestions, candidate, schema.Name, token, context, completer, includeSchema: true);
+                AddCandidateObject(suggestions, candidate, schema.Name, token, context, completer, metadata, includeSchema: true);
             }
         }
     }
@@ -404,7 +404,7 @@ public sealed class SqlCompletionProvider
                         t.Name,
                         SqlCompletionHelper.Quote(t.Name),
                         SqlCompletionKind.Table,
-                        SqlDefinitionFormatter.FormatTableDefinition(t.Source),
+                        SqlDefinitionFormatter.FormatTableDefinition(t.Source, metadata.ForeignKeys, metadata.Indexes),
                         token);
                     break;
                 case ViewCandidate v:
@@ -703,6 +703,7 @@ public sealed class SqlCompletionProvider
         CompletionToken token,
         CompletionContext context,
         CandidateCompleter completer,
+        DatabaseMetadata metadata,
         bool includeSchema)
     {
         switch (candidate)
@@ -739,7 +740,7 @@ public sealed class SqlCompletionProvider
                 }
 
                 var label = includeSchema ? $"{schema}.{t.Name}" : t.Name;
-                var tableDesc = SqlDefinitionFormatter.FormatTableDefinition(t.Source);
+                var tableDesc = SqlDefinitionFormatter.FormatTableDefinition(t.Source, metadata.ForeignKeys, metadata.Indexes);
                 suggestions.Add(new SqlCompletionItem(
                     label,
                     insertText,

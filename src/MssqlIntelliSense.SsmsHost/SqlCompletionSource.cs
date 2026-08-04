@@ -770,7 +770,7 @@ internal sealed class SqlCompletionSource : ICompletionSource
             .FirstOrDefault(t => NameMatches(t.Name, objectName));
         if (table != null)
         {
-            item = BuildReviewItem(SqlCompletionKind.Table, table.Schema, table.Name, SqlDefinitionFormatter.FormatTableDefinition(table));
+            item = BuildReviewItem(SqlCompletionKind.Table, table.Schema, table.Name, SqlDefinitionFormatter.FormatTableDefinition(table, metadata.ForeignKeys, metadata.Indexes));
             return true;
         }
 
