@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
@@ -38,6 +39,11 @@ public partial class ChatAgentControl : UserControl
     private const string FindColumnToolName = SqlMetadataToolExecutor.FindColumnToolName;
     private const string ListEndpointsToolName = SqlMetadataToolExecutor.ListEndpointsToolName;
     private const string ExecuteSqlToolName = SqlMetadataToolExecutor.ExecuteSqlToolName;
+    private const int MaxToolUiJsonLength = 20000;
+    private const int MaxToolUiArrayItems = 40;
+    private const int MaxToolUiObjectProperties = 80;
+    private const int MaxToolUiStringLength = 500;
+    private const int MaxToolUiJsonDepth = 8;
 
     private sealed class ChatTurn
     {
@@ -747,9 +753,12 @@ public partial class ChatAgentControl : UserControl
             try
             {
                 output = await ExecuteApprovedToolAsync(toolCall, metadata ?? DatabaseMetadata.Empty, chatConnection);
+                var formattedOutput = await Task.Run(
+                    () => FormatToolOutputForChat(toolCall.Name, output),
+                    cancellationToken);
                 await SafeUpdateChatMessageAsync(
                     toolStatusBorder,
-                    FormatToolOutputForChat(toolCall.Name, output));
+                    formattedOutput);
             }
             catch (OperationCanceledException)
             {
@@ -1200,27 +1209,6 @@ public partial class ChatAgentControl : UserControl
         tags.Children.Add(CreateToolTag(status, state.Foreground, state.BorderBrush, state.CodeBackground, false));
         state.ContentPanel.Children.Add(tags);
 
-        if (TryExtractJsonCodeBlock(message, out var beforeJson, out var json, out var afterJson))
-        {
-            var summary = (beforeJson + Environment.NewLine + afterJson).Trim();
-            if (!string.IsNullOrWhiteSpace(summary))
-            {
-                var summaryBox = CreateSelectableMessageBox(state.Foreground, state.CodeBackground);
-                summaryBox.Document = CreateMarkdownDocument(summary, state.Foreground, state.CodeBackground);
-                state.ContentPanel.Children.Add(summaryBox);
-            }
-
-            var jsonTree = new TreeJsonControl
-            {
-                Height = 180,
-                MinHeight = 110,
-                Margin = new Thickness(0, 2, 0, 0)
-            };
-            jsonTree.SetJson(json);
-            state.ContentPanel.Children.Add(jsonTree);
-            return;
-        }
-
         var richTextBox = CreateSelectableMessageBox(state.Foreground, state.CodeBackground);
         richTextBox.Document = CreateMarkdownDocument(message, state.Foreground, state.CodeBackground);
         state.ContentPanel.Children.Add(richTextBox);
@@ -1315,43 +1303,6 @@ public partial class ChatAgentControl : UserControl
         }
 
         return "Completed";
-    }
-
-    private static bool TryExtractJsonCodeBlock(string message, out string beforeJson, out string json, out string afterJson)
-    {
-        beforeJson = string.Empty;
-        json = string.Empty;
-        afterJson = string.Empty;
-
-        if (string.IsNullOrWhiteSpace(message))
-        {
-            return false;
-        }
-
-        const string fence = "```";
-        var start = message.IndexOf("```json", StringComparison.OrdinalIgnoreCase);
-        if (start < 0)
-        {
-            return false;
-        }
-
-        var jsonStart = message.IndexOf('\n', start);
-        if (jsonStart < 0)
-        {
-            return false;
-        }
-
-        jsonStart++;
-        var end = message.IndexOf(fence, jsonStart, StringComparison.Ordinal);
-        if (end < 0)
-        {
-            return false;
-        }
-
-        beforeJson = message.Substring(0, start).Trim();
-        json = message.Substring(jsonStart, end - jsonStart).Trim();
-        afterJson = message.Substring(end + fence.Length).Trim();
-        return !string.IsNullOrWhiteSpace(json);
     }
 
     private static RichTextBox CreateSelectableMessageBox(Brush foreground, Brush background)
@@ -2038,14 +1989,15 @@ public partial class ChatAgentControl : UserControl
             Margin = new Thickness(0, 0, 0, 6)
         });
 
-        var argumentsTree = new TreeJsonControl
-        {
-            Height = 92,
-            MinHeight = 72,
-            Margin = new Thickness(0, 0, 0, 6)
-        };
-        argumentsTree.SetJson(string.IsNullOrWhiteSpace(toolCall.ArgumentsJson) ? "{}" : toolCall.ArgumentsJson);
-        container.Children.Add(argumentsTree);
+        var argumentsBox = CreateSelectableMessageBox(textBrush, backgroundBrush);
+        argumentsBox.Height = 72;
+        argumentsBox.MinHeight = 56;
+        argumentsBox.Margin = new Thickness(0, 0, 0, 6);
+        argumentsBox.Document = CreateMarkdownDocument(
+            "```json\n" + (string.IsNullOrWhiteSpace(toolCall.ArgumentsJson) ? "{}" : toolCall.ArgumentsJson) + "\n```",
+            textBrush,
+            backgroundBrush);
+        container.Children.Add(argumentsBox);
 
         var buttons = new StackPanel { Orientation = Orientation.Horizontal };
         var approveButton = CreateActionButton("Approve");
@@ -2151,17 +2103,23 @@ public partial class ChatAgentControl : UserControl
         {
             using var document = JsonDocument.Parse(output);
             var root = document.RootElement;
-            if (root.TryGetProperty("error", out var errorElement))
+            if (root.ValueKind == JsonValueKind.Object &&
+                root.TryGetProperty("error", out var errorElement))
             {
                 return $"## Tool: {toolName}\n\n**Error:** {errorElement.GetString() ?? errorElement.ToString()}";
             }
 
-            if (string.Equals(toolName, ExecuteSqlToolName, StringComparison.OrdinalIgnoreCase))
+            if (root.ValueKind == JsonValueKind.Object &&
+                string.Equals(toolName, ExecuteSqlToolName, StringComparison.OrdinalIgnoreCase))
             {
                 return FormatExecuteToolOutput(root, output);
             }
 
-            return $"## Tool: {toolName}\n\n```json\n{output}\n```";
+            var previewJson = CreateToolUiPreviewJson(root, output, out var previewed);
+            var note = previewed
+                ? "\n\n_UI preview is limited for responsiveness. The agent still receives the full tool output._"
+                : string.Empty;
+            return $"## Tool: {toolName}{note}\n\n```json\n{previewJson}\n```";
         }
         catch (JsonException)
         {
@@ -2215,9 +2173,95 @@ public partial class ChatAgentControl : UserControl
         sb.AppendLine();
         sb.AppendLine("### Raw JSON");
         sb.AppendLine("```json");
-        sb.AppendLine(rawOutput);
+        sb.AppendLine(CreateToolUiPreviewJson(root, rawOutput, out _));
         sb.AppendLine("```");
         return sb.ToString();
+    }
+
+    private static string CreateToolUiPreviewJson(JsonElement root, string rawOutput, out bool previewed)
+    {
+        previewed = rawOutput.Length > MaxToolUiJsonLength;
+        if (!previewed)
+        {
+            return rawOutput;
+        }
+
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = false }))
+        {
+            WriteJsonPreview(root, writer, depth: 0, ref previewed);
+        }
+
+        return Encoding.UTF8.GetString(stream.ToArray());
+    }
+
+    private static void WriteJsonPreview(JsonElement element, Utf8JsonWriter writer, int depth, ref bool previewed)
+    {
+        if (depth >= MaxToolUiJsonDepth)
+        {
+            previewed = true;
+            writer.WriteStringValue("... truncated by UI preview depth ...");
+            return;
+        }
+
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                writer.WriteStartObject();
+                var propertyCount = 0;
+                foreach (var property in element.EnumerateObject())
+                {
+                    if (propertyCount >= MaxToolUiObjectProperties)
+                    {
+                        previewed = true;
+                        writer.WriteString("__uiTruncatedProperties", $"showing first {MaxToolUiObjectProperties:n0} properties");
+                        break;
+                    }
+
+                    writer.WritePropertyName(property.Name);
+                    WriteJsonPreview(property.Value, writer, depth + 1, ref previewed);
+                    propertyCount++;
+                }
+                writer.WriteEndObject();
+                break;
+
+            case JsonValueKind.Array:
+                writer.WriteStartArray();
+                var itemCount = 0;
+                foreach (var item in element.EnumerateArray())
+                {
+                    if (itemCount >= MaxToolUiArrayItems)
+                    {
+                        previewed = true;
+                        writer.WriteStartObject();
+                        writer.WriteString("__uiTruncatedItems", $"showing first {MaxToolUiArrayItems:n0} items");
+                        writer.WriteEndObject();
+                        break;
+                    }
+
+                    WriteJsonPreview(item, writer, depth + 1, ref previewed);
+                    itemCount++;
+                }
+                writer.WriteEndArray();
+                break;
+
+            case JsonValueKind.String:
+                var value = element.GetString() ?? string.Empty;
+                if (value.Length > MaxToolUiStringLength)
+                {
+                    previewed = true;
+                    writer.WriteStringValue(value.Substring(0, MaxToolUiStringLength) + "...");
+                }
+                else
+                {
+                    writer.WriteStringValue(value);
+                }
+                break;
+
+            default:
+                element.WriteTo(writer);
+                break;
+        }
     }
 
     private static List<string> GetResultColumnNames(JsonElement root, JsonElement rowsElement)

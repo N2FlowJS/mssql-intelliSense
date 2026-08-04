@@ -351,7 +351,7 @@ public partial class ToolLabControl : UserControl
 
     private void SetJsonOutput(string text)
     {
-        OutputJsonTree.SetJson(text);
+        OutputJsonTextBox.Text = text ?? string.Empty;
     }
 
     private static bool IsObjectSearchTool(string toolName) =>

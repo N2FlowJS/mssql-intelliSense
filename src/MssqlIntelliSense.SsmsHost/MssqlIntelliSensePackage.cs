@@ -81,7 +81,7 @@ public sealed class MssqlIntelliSensePackage : AsyncPackage
 
     public const string PackageGuidString = "16f11772-cdb0-42ca-a596-d755543518ac";
     private static readonly Guid CommandSet = new("63a8fcd9-601f-427d-a253-d4942b4ff2aa");
-    public static readonly Version CurrentVersion = new("0.2.182");
+    public static readonly Version CurrentVersion = new("0.2.187");
     public static string VersionString => CurrentVersion.ToString();
 
     private readonly List<CommandBarEvents> _commandBarEvents = new();
@@ -1262,6 +1262,11 @@ public sealed class MssqlIntelliSensePackage : AsyncPackage
         }
     }
 }
+
+
+
+
+
 
 
 

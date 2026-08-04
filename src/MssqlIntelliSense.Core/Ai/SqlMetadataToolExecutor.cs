@@ -12,6 +12,9 @@ namespace MssqlIntelliSense.Core.Ai;
 
 public static class SqlMetadataToolExecutor
 {
+    private const int MaxObjectSearchMatches = 20;
+    private const int ObjectSearchDefinitionSnippetLength = 300;
+
     public const string ListTablesToolName = "list_tables";
     public const string TableSchemaToolName = "get_table_schema";
     public const string TableRelationsToolName = "get_table_relations";
@@ -445,12 +448,12 @@ public static class SqlMetadataToolExecutor
                 o.Candidate.name,
                 o.Candidate.description,
                 o.Candidate.columnDescription,
-                definitionSnippet = Snippet(o.Candidate.definition, 1000),
+                definitionSnippet = Snippet(o.Candidate.definition, ObjectSearchDefinitionSnippetLength),
                 score = o.Score,
                 lexicalScore = o.LexicalScore,
                 semanticScore = Math.Round(o.SemanticScore, 4)
             })
-            .Take(100)
+            .Take(MaxObjectSearchMatches)
             .ToList();
     }
 
