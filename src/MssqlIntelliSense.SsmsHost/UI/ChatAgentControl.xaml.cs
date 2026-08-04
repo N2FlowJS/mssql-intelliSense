@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using Microsoft.VisualStudio.Shell;
@@ -772,25 +773,365 @@ public partial class ChatAgentControl : UserControl
     private static void RenderMessageContent(MessageControlState state, string message)
     {
         state.RawText = message;
+        state.ContentPanel.Children.Clear();
+
+        var richTextBox = CreateSelectableMessageBox(state.Foreground, state.CodeBackground);
         if (state.RenderMarkdown)
         {
-            RenderMarkdownToContainer(
-                state.ContentPanel,
-                message,
-                state.Foreground,
-                state.BorderBrush,
-                state.CodeBackground);
-            return;
+            richTextBox.Document = CreateMarkdownDocument(message, state.Foreground, state.CodeBackground);
+        }
+        else
+        {
+            richTextBox.Document = CreatePlainTextDocument(message, state.Foreground);
         }
 
-        state.ContentPanel.Children.Clear();
-        state.ContentPanel.Children.Add(new TextBlock
+        state.ContentPanel.Children.Add(richTextBox);
+    }
+
+    private static RichTextBox CreateSelectableMessageBox(Brush foreground, Brush background)
+    {
+        return new RichTextBox
         {
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = state.Foreground,
+            IsReadOnly = true,
+            BorderThickness = new Thickness(0),
+            Background = Brushes.Transparent,
+            Foreground = foreground,
+            Padding = new Thickness(0),
+            Margin = new Thickness(0),
+            MinWidth = 120,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            IsDocumentEnabled = false,
+            Focusable = true,
+            Cursor = Cursors.IBeam,
+            SelectionBrush = new SolidColorBrush(Color.FromArgb(120, 51, 153, 255))
+        };
+    }
+
+    private static FlowDocument CreatePlainTextDocument(string text, Brush foreground)
+    {
+        var document = CreateBaseFlowDocument(foreground);
+        document.Blocks.Add(new Paragraph(new Run(text ?? string.Empty))
+        {
             FontFamily = new FontFamily("Consolas, Courier New, monospace"),
-            Text = message
+            Margin = new Thickness(0)
         });
+        return document;
+    }
+
+    private static FlowDocument CreateMarkdownDocument(string markdownText, Brush foreground, Brush codeBackground)
+    {
+        var document = CreateBaseFlowDocument(foreground);
+        if (string.IsNullOrWhiteSpace(markdownText))
+            return document;
+
+        var lines = markdownText.Replace("\r\n", "\n").Split('\n');
+        var paragraphBuffer = new List<string>();
+        var codeBuffer = new StringBuilder();
+        var inCodeBlock = false;
+        var codeLanguage = string.Empty;
+
+        void FlushParagraph()
+        {
+            if (paragraphBuffer.Count == 0)
+                return;
+
+            var paragraph = CreateParagraph(foreground, marginBottom: 5);
+            for (var i = 0; i < paragraphBuffer.Count; i++)
+            {
+                if (i > 0)
+                    paragraph.Inlines.Add(new LineBreak());
+                AddInlineMarkdown(paragraph.Inlines, paragraphBuffer[i], foreground, codeBackground);
+            }
+
+            document.Blocks.Add(paragraph);
+            paragraphBuffer.Clear();
+        }
+
+        void FlushCodeBlock()
+        {
+            var code = codeBuffer.ToString().TrimEnd('\n');
+            if (!string.IsNullOrWhiteSpace(codeLanguage))
+            {
+                document.Blocks.Add(new Paragraph(new Run(codeLanguage.ToLowerInvariant()))
+                {
+                    Foreground = CreateOpacityBrush(foreground, 0.7),
+                    FontSize = 10,
+                    FontWeight = FontWeights.SemiBold,
+                    Margin = new Thickness(0, 6, 0, 2)
+                });
+            }
+
+            document.Blocks.Add(new Paragraph(new Run(code))
+            {
+                FontFamily = new FontFamily("Consolas, Courier New, monospace"),
+                FontSize = 11.5,
+                Foreground = foreground,
+                Background = codeBackground,
+                Margin = new Thickness(0, 0, 0, 7),
+                Padding = new Thickness(8)
+            });
+            codeBuffer.Clear();
+            codeLanguage = string.Empty;
+        }
+
+        for (var i = 0; i < lines.Length; i++)
+        {
+            var line = lines[i];
+            var trimmed = line.Trim();
+
+            if (trimmed.StartsWith("```", StringComparison.Ordinal))
+            {
+                if (inCodeBlock)
+                {
+                    FlushCodeBlock();
+                    inCodeBlock = false;
+                }
+                else
+                {
+                    FlushParagraph();
+                    inCodeBlock = true;
+                    codeLanguage = trimmed.Length > 3 ? trimmed.Substring(3).Trim() : string.Empty;
+                }
+                continue;
+            }
+
+            if (inCodeBlock)
+            {
+                codeBuffer.AppendLine(line);
+                continue;
+            }
+
+            if (string.IsNullOrWhiteSpace(trimmed))
+            {
+                FlushParagraph();
+                continue;
+            }
+
+            if (IsMarkdownTableStart(lines, i))
+            {
+                FlushParagraph();
+                var tableLines = new List<string> { lines[i] };
+                i += 2;
+                while (i < lines.Length && IsPipeRow(lines[i]))
+                {
+                    tableLines.Add(lines[i]);
+                    i++;
+                }
+                i--;
+                document.Blocks.Add(CreateSelectableMarkdownTable(tableLines, foreground, codeBackground));
+                continue;
+            }
+
+            if (TryGetHeading(trimmed, out var headingLevel, out var headingText))
+            {
+                FlushParagraph();
+                var heading = new Paragraph();
+                AddInlineMarkdown(heading.Inlines, headingText, foreground, codeBackground);
+                heading.Foreground = foreground;
+                heading.FontWeight = FontWeights.Bold;
+                heading.FontSize = headingLevel == 1 ? 16 : headingLevel == 2 ? 14 : 12.5;
+                heading.Margin = new Thickness(0, headingLevel == 1 ? 8 : 6, 0, 4);
+                document.Blocks.Add(heading);
+                continue;
+            }
+
+            if (trimmed == "---" || trimmed == "***")
+            {
+                FlushParagraph();
+                document.Blocks.Add(new Paragraph(new Run(new string('-', 40)))
+                {
+                    FontFamily = new FontFamily("Consolas, Courier New, monospace"),
+                    Foreground = CreateOpacityBrush(foreground, 0.65),
+                    Margin = new Thickness(0, 4, 0, 4)
+                });
+                continue;
+            }
+
+            if (trimmed.StartsWith("> ", StringComparison.Ordinal))
+            {
+                FlushParagraph();
+                var quote = CreateParagraph(foreground, marginBottom: 5);
+                quote.Margin = new Thickness(8, 2, 0, 5);
+                quote.Padding = new Thickness(8, 0, 0, 0);
+                quote.BorderThickness = new Thickness(3, 0, 0, 0);
+                quote.BorderBrush = foreground;
+                quote.Foreground = CreateOpacityBrush(foreground, 0.85);
+                AddInlineMarkdown(quote.Inlines, trimmed.Substring(2).Trim(), foreground, codeBackground);
+                document.Blocks.Add(quote);
+                continue;
+            }
+
+            if (IsListItem(trimmed))
+            {
+                FlushParagraph();
+                document.Blocks.Add(CreateSelectableListItem(trimmed, foreground, codeBackground));
+                continue;
+            }
+
+            paragraphBuffer.Add(line);
+        }
+
+        if (inCodeBlock)
+            FlushCodeBlock();
+        FlushParagraph();
+        return document;
+    }
+
+    private static FlowDocument CreateBaseFlowDocument(Brush foreground)
+    {
+        return new FlowDocument
+        {
+            PagePadding = new Thickness(0),
+            FontFamily = new FontFamily("Segoe UI"),
+            FontSize = 12,
+            Foreground = foreground,
+            LineHeight = 18
+        };
+    }
+
+    private static Paragraph CreateParagraph(Brush foreground, double marginBottom)
+    {
+        return new Paragraph
+        {
+            Foreground = foreground,
+            Margin = new Thickness(0, 1, 0, marginBottom)
+        };
+    }
+
+    private static Brush CreateOpacityBrush(Brush source, double opacity)
+    {
+        if (source is SolidColorBrush solid)
+        {
+            return new SolidColorBrush(solid.Color) { Opacity = opacity };
+        }
+
+        var clone = source.Clone();
+        clone.Opacity = opacity;
+        return clone;
+    }
+
+    private static bool TryGetHeading(string trimmed, out int level, out string text)
+    {
+        level = 0;
+        text = string.Empty;
+        var count = trimmed.TakeWhile(c => c == '#').Count();
+        if (count is < 1 or > 6 || trimmed.Length <= count || trimmed[count] != ' ')
+            return false;
+
+        level = count;
+        text = trimmed.Substring(count + 1).Trim();
+        return true;
+    }
+
+    private static Paragraph CreateSelectableListItem(string trimmed, Brush foreground, Brush codeBackground)
+    {
+        var markerEnd = trimmed.IndexOf(' ');
+        var marker = markerEnd >= 0 ? trimmed.Substring(0, markerEnd) : "-";
+        var body = markerEnd >= 0 ? trimmed.Substring(markerEnd + 1).Trim() : trimmed;
+        if (marker == "*" || marker == "-")
+            marker = "-";
+
+        var paragraph = CreateParagraph(foreground, marginBottom: 3);
+        paragraph.Margin = new Thickness(10, 1, 0, 3);
+        paragraph.Inlines.Add(new Run(marker + " ") { FontWeight = FontWeights.Bold });
+        AddInlineMarkdown(paragraph.Inlines, body, foreground, codeBackground);
+        return paragraph;
+    }
+
+    private static Paragraph CreateSelectableMarkdownTable(IReadOnlyList<string> tableLines, Brush foreground, Brush codeBackground)
+    {
+        var rows = tableLines.Select(SplitMarkdownTableRow).Where(row => row.Count > 0).ToList();
+        var columnCount = rows.Count == 0 ? 0 : rows.Max(row => row.Count);
+        if (columnCount == 0)
+            return new Paragraph();
+
+        var widths = Enumerable.Range(0, columnCount)
+            .Select(col => rows.Max(row => col < row.Count ? StripInlineMarkdown(row[col]).Length : 0))
+            .Select(width => Math.Max(width, 3))
+            .ToArray();
+
+        var formatted = new StringBuilder();
+        for (var rowIndex = 0; rowIndex < rows.Count; rowIndex++)
+        {
+            var row = rows[rowIndex];
+            formatted.Append("| ");
+            for (var col = 0; col < columnCount; col++)
+            {
+                var cell = col < row.Count ? StripInlineMarkdown(row[col]) : string.Empty;
+                formatted.Append(cell.PadRight(widths[col]));
+                formatted.Append(" | ");
+            }
+            formatted.AppendLine();
+        }
+
+        return new Paragraph(new Run(formatted.ToString().TrimEnd()))
+        {
+            FontFamily = new FontFamily("Consolas, Courier New, monospace"),
+            FontSize = 11.5,
+            Foreground = foreground,
+            Background = codeBackground,
+            Margin = new Thickness(0, 4, 0, 7),
+            Padding = new Thickness(6)
+        };
+    }
+
+    private static void AddInlineMarkdown(InlineCollection inlines, string text, Brush foreground, Brush codeBackground)
+    {
+        if (string.IsNullOrEmpty(text))
+            return;
+
+        var inlineRegex = new System.Text.RegularExpressions.Regex(
+            @"(\*\*(?<bold>.+?)\*\*)|(\*(?<italic>[^*]+?)\*)|(`(?<code>.+?)`)",
+            System.Text.RegularExpressions.RegexOptions.Compiled);
+        var lastIndex = 0;
+        var matches = inlineRegex.Matches(text);
+
+        foreach (System.Text.RegularExpressions.Match match in matches)
+        {
+            if (match.Index > lastIndex)
+            {
+                inlines.Add(new Run(text.Substring(lastIndex, match.Index - lastIndex)));
+            }
+
+            if (match.Groups["bold"].Success)
+            {
+                inlines.Add(new Run(match.Groups["bold"].Value) { FontWeight = FontWeights.Bold });
+            }
+            else if (match.Groups["italic"].Success)
+            {
+                inlines.Add(new Run(match.Groups["italic"].Value) { FontStyle = FontStyles.Italic });
+            }
+            else if (match.Groups["code"].Success)
+            {
+                inlines.Add(new Run(match.Groups["code"].Value)
+                {
+                    FontFamily = new FontFamily("Consolas, Courier New, monospace"),
+                    Background = codeBackground,
+                    Foreground = foreground
+                });
+            }
+
+            lastIndex = match.Index + match.Length;
+        }
+
+        if (lastIndex < text.Length)
+        {
+            inlines.Add(new Run(text.Substring(lastIndex)));
+        }
+    }
+
+    private static string StripInlineMarkdown(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return string.Empty;
+
+        return text
+            .Replace("**", string.Empty)
+            .Replace("`", string.Empty)
+            .Trim('*')
+            .Trim();
     }
 
     private static void RenderMarkdownToContainer(
@@ -801,128 +1142,9 @@ public partial class ChatAgentControl : UserControl
         Brush codeBackground)
     {
         contentPanel.Children.Clear();
-        if (string.IsNullOrWhiteSpace(markdownText))
-        {
-            return;
-        }
-
-        var codeBlockRegex = new System.Text.RegularExpressions.Regex(@"```(?<lang>\w*)\r?\n(?<code>[\s\S]*?)```|```(?<code2>[\s\S]*?)```", System.Text.RegularExpressions.RegexOptions.Compiled);
-        int lastIndex = 0;
-        var matches = codeBlockRegex.Matches(markdownText);
-
-        foreach (System.Text.RegularExpressions.Match match in matches)
-        {
-            if (match.Index > lastIndex)
-            {
-                var textSegment = markdownText.Substring(lastIndex, match.Index - lastIndex);
-                RenderTextParagraphs(contentPanel, textSegment, foreground, borderBrush, codeBackground);
-            }
-
-            string code = match.Groups["code"].Success ? match.Groups["code"].Value : match.Groups["code2"].Value;
-            code = code.TrimEnd('\r', '\n');
-            string lang = match.Groups["lang"].Success ? match.Groups["lang"].Value : string.Empty;
-
-            var codeContainer = new Grid();
-            codeContainer.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            codeContainer.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-
-            var codeHeaderGrid = new Grid
-            {
-                Margin = new Thickness(0, 0, 0, 4)
-            };
-            codeHeaderGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            codeHeaderGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-
-            var langTextBlock = new TextBlock
-            {
-                Text = string.IsNullOrWhiteSpace(lang) ? "code" : lang.ToLowerInvariant(),
-                FontSize = 10,
-                FontWeight = FontWeights.SemiBold,
-                Foreground = foreground,
-                Opacity = 0.7,
-                VerticalAlignment = VerticalAlignment.Center
-            };
-            Grid.SetColumn(langTextBlock, 0);
-            codeHeaderGrid.Children.Add(langTextBlock);
-
-            var copyCodeButton = new Button
-            {
-                Content = "Copy",
-                Padding = new Thickness(6, 2, 6, 2),
-                FontSize = 10,
-                MinHeight = 20,
-                Background = codeBackground,
-                Foreground = foreground,
-                BorderBrush = borderBrush,
-                BorderThickness = new Thickness(1),
-                HorizontalAlignment = HorizontalAlignment.Right,
-                ToolTip = "Copy code block to clipboard"
-            };
-
-            var capturedCode = code;
-            copyCodeButton.Click += (s, e) =>
-            {
-                _ = CopyCodeWithFeedbackAsync(capturedCode, copyCodeButton);
-            };
-            Grid.SetColumn(copyCodeButton, 1);
-            codeHeaderGrid.Children.Add(copyCodeButton);
-
-            Grid.SetRow(codeHeaderGrid, 0);
-            codeContainer.Children.Add(codeHeaderGrid);
-
-            var codeTextBox = new TextBox
-            {
-                Text = code,
-                FontFamily = new FontFamily("Consolas, Courier New, monospace"),
-                FontSize = 11.5,
-                Foreground = foreground,
-                Background = Brushes.Transparent,
-                BorderThickness = new Thickness(0),
-                IsReadOnly = true,
-                TextWrapping = TextWrapping.Wrap,
-                AcceptsReturn = true,
-                Padding = new Thickness(0)
-            };
-            Grid.SetRow(codeTextBox, 1);
-            codeContainer.Children.Add(codeTextBox);
-
-            var codeBorder = new Border
-            {
-                Background = codeBackground,
-                BorderBrush = borderBrush,
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(4),
-                Padding = new Thickness(8),
-                Margin = new Thickness(0, 4, 0, 6),
-                HorizontalAlignment = HorizontalAlignment.Stretch,
-                Child = codeContainer
-            };
-
-            contentPanel.Children.Add(codeBorder);
-
-            lastIndex = match.Index + match.Length;
-        }
-
-        if (lastIndex < markdownText.Length)
-        {
-            var textSegment = markdownText.Substring(lastIndex);
-            RenderTextParagraphs(contentPanel, textSegment, foreground, borderBrush, codeBackground);
-        }
-    }
-
-    private static async Task CopyCodeWithFeedbackAsync(string code, Button copyButton)
-    {
-        try
-        {
-            Clipboard.SetText(code);
-            copyButton.Content = "Copied!";
-            await Task.Delay(1500);
-            copyButton.Content = "Copy";
-        }
-        catch (Exception ex)
-        {
-            MssqlIntelliSensePackage.Log($"Copy code error: {ex.Message}");
-        }
+        var richTextBox = CreateSelectableMessageBox(foreground, codeBackground);
+        richTextBox.Document = CreateMarkdownDocument(markdownText, foreground, codeBackground);
+        contentPanel.Children.Add(richTextBox);
     }
 
     private static void RenderTextParagraphs(StackPanel container, string text, Brush foreground, Brush borderBrush, Brush codeBackground)
