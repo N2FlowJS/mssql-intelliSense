@@ -1313,7 +1313,7 @@ public sealed class SqlCompletionProviderTests
     }
 
     [Fact]
-    public void GetCompletions_TokenStreamFallbackExtractorHandlesCommaSeparatedTables()
+    public void GetCompletions_TokenStreamExtractorHandlesCommaSeparatedTables()
     {
         // Syntax-invalid SQL because of trailing SELECT, but lexer works.
         // It should extract both 'u' (Users) and 'o' (Orders) as sources from the token stream.

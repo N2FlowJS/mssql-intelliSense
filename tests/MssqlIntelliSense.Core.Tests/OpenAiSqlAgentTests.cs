@@ -94,7 +94,7 @@ public sealed class OpenAiSqlAgentTests
 
         result.ImprovedSql.Should().Contain("[dbo].[Users]");
         callCount.Should().Be(2);
-        assistant.LastQuery.Should().Contain("tablesList");
+        assistant.ApprovalCount.Should().Be(1);
     }
 
     [Fact]
@@ -147,7 +147,7 @@ public sealed class OpenAiSqlAgentTests
 
         result.ImprovedSql.Should().Contain("[dbo].[Users]");
         callCount.Should().Be(2);
-        assistant.LastQuery.Should().BeNull();
+        assistant.ApprovalCount.Should().Be(1);
     }
 
     [Fact]
@@ -196,7 +196,6 @@ public sealed class OpenAiSqlAgentTests
         result.ImprovedSql.Should().Be("SELECT 1;");
         callCount.Should().Be(2);
         assistant.ApprovalCount.Should().Be(1);
-        assistant.LastQuery.Should().BeNull();
     }
 
 
@@ -243,7 +242,6 @@ public sealed class OpenAiSqlAgentTests
     private class TestableOpenAiSqlAgent : OpenAiSqlAgent
     {
         private readonly ToolApprovalProbe _approvalProbe;
-        public string? LastQuery { get; private set; }
         public int ApprovalCount => _approvalProbe.Count;
 
         public TestableOpenAiSqlAgent(HttpMessageHandler handler, bool approveTools = true)
@@ -262,12 +260,6 @@ public sealed class OpenAiSqlAgentTests
             })
         {
             _approvalProbe = approvalProbe;
-        }
-
-        protected override Task<string> CallGraphQLToolAsync(string query, object? variables = null)
-        {
-            LastQuery = query;
-            return Task.FromResult("{\"data\":{\"tablesList\":[{\"schema\":\"dbo\",\"name\":\"Users\"}]}}");
         }
 
         private sealed class ToolApprovalProbe(bool approveTools)

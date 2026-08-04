@@ -93,10 +93,10 @@ public static class SqlObjectReviewFormatter
                 break;
         }
 
-        var fallbackTitle = $"{item.Kind}: {item.Label}";
-        var fallbackDetails = $"Kind: {item.Kind}{Environment.NewLine}Label: {item.Label}{Environment.NewLine}Insert: {item.InsertText}";
-        var fallbackKey = ObjectDescriptionStore.BuildKey(item.Kind.ToString(), string.Empty, string.Empty, item.Label);
-        return new SqlObjectReviewInfo(fallbackTitle, item.Label, fallbackDetails, item.Description, fallbackKey, item.Description);
+        var title = $"{item.Kind}: {item.Label}";
+        var details = $"Kind: {item.Kind}{Environment.NewLine}Label: {item.Label}{Environment.NewLine}Insert: {item.InsertText}";
+        var objectKey = ObjectDescriptionStore.BuildKey(item.Kind.ToString(), string.Empty, string.Empty, item.Label);
+        return new SqlObjectReviewInfo(title, item.Label, details, item.Description, objectKey, item.Description);
     }
 
     private static SqlObjectReviewInfo BuildTableReview(TableMetadata table, DatabaseMetadata metadata)

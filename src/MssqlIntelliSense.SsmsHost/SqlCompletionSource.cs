@@ -669,7 +669,7 @@ internal sealed class SqlCompletionSource : ICompletionSource
             builder.Remove("Initial Catalog");
             cacheKey = builder.ConnectionString;
         }
-        catch { /* keep connectionString as fallback */ }
+        catch { /* keep original connectionString */ }
 
         lock (CacheLock)
         {

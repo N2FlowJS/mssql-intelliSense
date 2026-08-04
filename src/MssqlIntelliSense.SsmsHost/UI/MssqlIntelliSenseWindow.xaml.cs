@@ -130,12 +130,12 @@ public partial class MssqlIntelliSenseWindow : Window
     public MssqlIntelliSenseWindow()
     {
         InitializeComponent();
-        ApplyStandaloneThemeFallbacks();
+        ApplyStandaloneThemeDefaults();
         Loaded += MssqlIntelliSenseWindow_Loaded;
         DataContext = this;
     }
 
-    private void ApplyStandaloneThemeFallbacks()
+    private void ApplyStandaloneThemeDefaults()
     {
         if (MssqlIntelliSensePackage.Instance != null)
         {
@@ -900,9 +900,9 @@ public partial class MssqlIntelliSenseWindow : Window
         DetailStack.Children.Add(border);
     }
 
-    private Brush GetThemeBrush(object key, Color fallbackColor)
+    private Brush GetThemeBrush(object key, Color defaultColor)
     {
-        return TryFindResource(key) as Brush ?? new SolidColorBrush(fallbackColor);
+        return TryFindResource(key) as Brush ?? new SolidColorBrush(defaultColor);
     }
 
     private void AddConnectionForm(ConnectionInfo conn)

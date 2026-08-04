@@ -80,7 +80,6 @@ public partial class ToolLabControl : UserControl
         public string Description { get; set; } = string.Empty;
         public int Score { get; set; }
         public int LexicalScore { get; set; }
-        public double SemanticScore { get; set; }
     }
 
     public event EventHandler? ToolExecutionCompleted;
@@ -319,14 +318,15 @@ public partial class ToolLabControl : UserControl
             },
             JsonOptions);
         using var doc = JsonDocument.Parse(arguments);
-        var output = await SqlMetadataToolExecutorBridge.ExecuteToolAsync(
-            request.ToolName,
-            doc.RootElement,
-            metadata,
-            query => SqlReadOnlyQueryExecutor.ExecuteAsync(
+        var output = string.Equals(request.ToolName, ExecuteSqlToolName, StringComparison.OrdinalIgnoreCase)
+            ? await SqlReadOnlyQueryExecutor.ExecuteAsync(
                 request.ActiveConnectionString ?? string.Empty,
                 dbFilter,
-                query));
+                SqlMetadataToolExecutor.GetArgument(doc.RootElement, "query", string.Empty))
+            : await SqlMetadataToolExecutor.ExecuteToolAsync(
+                request.ToolName,
+                doc.RootElement,
+                metadata);
         var previewRows = IsObjectSearchTool(request.ToolName)
             ? ExtractObjectSearchPreviewRows(output)
             : SqlMetadataToolExecutor.BuildPreviewRows(
@@ -378,8 +378,7 @@ public partial class ToolLabControl : UserControl
                     Name = GetJsonString(match, "name"),
                     Description = GetJsonString(match, "description"),
                     Score = GetJsonInt(match, "score"),
-                    LexicalScore = GetJsonInt(match, "lexicalScore"),
-                    SemanticScore = GetJsonDouble(match, "semanticScore")
+                    LexicalScore = GetJsonInt(match, "lexicalScore")
                 })
                 .ToList();
         }

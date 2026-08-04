@@ -485,7 +485,7 @@ public static class SqlContextAnalyzer
             Debug.WriteLine($"FindSources (AST): {ex.Message}");
         }
 
-        // Fallback to token-stream-based extraction
+        // Use token-stream-based extraction when ScriptDom has no table references.
         if (sources.Count == 0)
         {
             try

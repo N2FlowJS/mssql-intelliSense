@@ -91,15 +91,15 @@ public static class QualifiedCompletionHelper
             source = sources.FirstOrDefault(s =>
                 s.Alias.Equals(q, StringComparison.OrdinalIgnoreCase));
 
-            // Fallback: match by table/view name (user typed unqualified name instead of alias)
+            // Match by table/view name when the user typed an unqualified name instead of an alias.
             if (source == null)
             {
                 source = sources.FirstOrDefault(s =>
                     s.Name.Equals(q, StringComparison.OrdinalIgnoreCase));
             }
 
-            // Fallback 2: user typed a table/view name that is in metadata but NOT in FROM/JOIN
-            // (useful in WHERE clause when user writes [tableName].[col] without the table in FROM)
+            // Also support table/view names from metadata when they are not present in FROM/JOIN.
+            // Useful in WHERE clauses like [tableName].[col] without the table in FROM.
             if (source == null)
             {
                 var matchingTable = metadata.Tables.FirstOrDefault(t =>
@@ -129,7 +129,7 @@ public static class QualifiedCompletionHelper
                 s.Schema.Equals(schemaQ, StringComparison.OrdinalIgnoreCase) &&
                 s.Name  .Equals(nameQ,   StringComparison.OrdinalIgnoreCase));
 
-            // Fallback: look directly in metadata
+            // Look directly in metadata for fully-qualified references.
             if (source == null)
             {
                 var matchingTable = metadata.Tables.FirstOrDefault(t =>

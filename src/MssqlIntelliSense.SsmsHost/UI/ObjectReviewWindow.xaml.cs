@@ -63,7 +63,7 @@ public partial class ObjectReviewWindow : UserControl
                 return;
             }
 
-            ObjectReviewFallbackWindow.ShowForCompletion(item, metadata, owner);
+            ObjectReviewStandaloneWindow.ShowForCompletion(item, metadata, owner);
         }
         catch (Exception ex)
         {

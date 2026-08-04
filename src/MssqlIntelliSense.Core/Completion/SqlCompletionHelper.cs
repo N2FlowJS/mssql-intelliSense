@@ -41,7 +41,7 @@ public static class SqlCompletionHelper
         }
         else
         {
-            prefixScore = 3;  // substring / contains (fallback, currently unused)
+            prefixScore = 3;  // substring / contains match
         }
 
         return prefixScore * 100 + KindRank(kind);
@@ -89,7 +89,7 @@ public static class SqlCompletionHelper
                                     (char.IsDigit(prev) && char.IsLetter(cc));
                 if (!isWordStart && char.ToUpperInvariant(cc) == fc && fi == 0)
                 {
-                    // For first filter char, also check non-boundary match as fallback
+                    // First filter character may start from a non-boundary match.
                 }
             }
 

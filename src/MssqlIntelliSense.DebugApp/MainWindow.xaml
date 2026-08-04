@@ -23,7 +23,7 @@
         <SolidColorBrush x:Key="AppButtonBrush" Color="#343438" />
         <SolidColorBrush x:Key="AppButtonHoverBrush" Color="#424247" />
 
-        <!-- Fallbacks for SSMS/VS-themed controls when hosted in this standalone app. -->
+        <!-- Standalone defaults for SSMS/VS-themed controls. -->
         <SolidColorBrush x:Key="{x:Static vsui:EnvironmentColors.ToolWindowBackgroundBrushKey}" Color="#1B1B1C" />
         <SolidColorBrush x:Key="{x:Static vsui:EnvironmentColors.ToolWindowTextBrushKey}" Color="#E6E6E6" />
         <SolidColorBrush x:Key="{x:Static vsui:EnvironmentColors.ToolWindowBorderBrushKey}" Color="#3D3D42" />
@@ -509,12 +509,8 @@
                             <Button x:Name="LoadCacheJsonButton" Click="LoadCacheJsonButton_Click" DockPanel.Dock="Right" Style="{StaticResource IconButtonStyle}" ToolTip="Reload cache JSON">
                                 <TextBlock Text="&#xE72C;" FontFamily="Segoe MDL2 Assets" FontSize="14" />
                             </Button>
-                            <Button x:Name="BuildHnswIndexButton" Click="BuildHnswIndexButton_Click" DockPanel.Dock="Right" Style="{StaticResource PrimaryIconButtonStyle}" ToolTip="Build HNSW index" Margin="0,0,6,0">
-                                <TextBlock Text="&#xE8B7;" FontFamily="Segoe MDL2 Assets" FontSize="14" />
-                            </Button>
                             <StackPanel>
                                 <TextBlock x:Name="CachePathStatusText" Text="Cache File Path: Loading..." Foreground="{StaticResource AppMutedTextBrush}" />
-                                <TextBlock x:Name="HnswIndexStatusText" Text="HNSW index cache: Loading..." Foreground="{StaticResource AppMutedTextBrush}" Margin="0,3,0,0" />
                             </StackPanel>
                         </DockPanel>
 

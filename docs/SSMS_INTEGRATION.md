@@ -204,7 +204,7 @@ The extension auto-detects SSMS active connection via:
    - From assembly `SqlPackageBase`
    - Provides: ServerName, DatabaseName, UserName, Password, AuthenticationType
 
-2. **Fallback**: Toolbar database combo
+2. **Secondary source**: Toolbar database combo
    - Iterates through all visible CommandBars
    - Finds ComboBox containing database name
    - Filters invalid values (containing `\`, `:`, `/`, or ending with `%`)

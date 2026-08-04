@@ -12,7 +12,7 @@ public sealed class SqlObjectReviewFormatterTests
             "ActiveUsers",
             "[dbo].[ActiveUsers]",
             SqlCompletionKind.View,
-            "fallback view description");
+            "custom view description");
 
         var review = SqlObjectReviewFormatter.Build(item, TestMetadata.Create());
 
@@ -30,7 +30,7 @@ public sealed class SqlObjectReviewFormatterTests
             "dbo.GetUser",
             "[dbo].[GetUser]",
             SqlCompletionKind.Procedure,
-            "fallback procedure description");
+            "custom procedure description");
 
         var review = SqlObjectReviewFormatter.Build(item, TestMetadata.Create());
 
@@ -48,7 +48,7 @@ public sealed class SqlObjectReviewFormatterTests
             "NormalizeEmail",
             "[dbo].[NormalizeEmail]",
             SqlCompletionKind.Function,
-            "fallback function description");
+            "custom function description");
 
         var review = SqlObjectReviewFormatter.Build(item, TestMetadata.Create());
 
@@ -66,7 +66,7 @@ public sealed class SqlObjectReviewFormatterTests
             "Users",
             "[dbo].[Users]",
             SqlCompletionKind.Table,
-            "fallback table description");
+            "custom table description");
 
         var review = SqlObjectReviewFormatter.Build(item, TestMetadata.Create());
 

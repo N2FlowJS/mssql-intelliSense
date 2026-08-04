@@ -26,7 +26,6 @@ public static class SqlMetadataToolExecutor
     public const string ExecuteSqlToolName = "execute";
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
-    private static readonly ITextEmbeddingProvider DefaultEmbeddingProvider = new LocalTextEmbeddingProvider();
 
     public static readonly string[] AllToolNames = new[]
     {
@@ -46,13 +45,7 @@ public static class SqlMetadataToolExecutor
         JsonElement arguments,
         DatabaseMetadata metadata)
     {
-        return ExecuteToolAsync(
-            toolName,
-            arguments,
-            metadata,
-            graphQlFallback: null,
-            DefaultEmbeddingProvider,
-            CancellationToken.None);
+        return ExecuteToolCoreAsync(toolName, arguments, metadata);
     }
 
     public static async Task<string> ExecuteToolAsync(
@@ -61,149 +54,34 @@ public static class SqlMetadataToolExecutor
         DatabaseMetadata metadata)
     {
         using var document = JsonDocument.Parse(string.IsNullOrWhiteSpace(argumentsJson) ? "{}" : argumentsJson);
-        return await ExecuteToolAsync(
-            toolName,
-            document.RootElement,
-            metadata,
-            graphQlFallback: null,
-            DefaultEmbeddingProvider,
-            CancellationToken.None);
+        return await ExecuteToolCoreAsync(toolName, document.RootElement, metadata);
     }
 
-    public static async Task<string> ExecuteToolAsync(
-        string toolName,
-        string argumentsJson,
-        DatabaseMetadata metadata,
-        ITextEmbeddingProvider embeddingProvider,
-        CancellationToken cancellationToken)
-    {
-        using var document = JsonDocument.Parse(string.IsNullOrWhiteSpace(argumentsJson) ? "{}" : argumentsJson);
-        return await ExecuteToolAsync(
-            toolName,
-            document.RootElement,
-            metadata,
-            graphQlFallback: null,
-            embeddingProvider,
-            cancellationToken);
-    }
-
-    public static async Task<int> BuildObjectSearchIndexAsync(
-        DatabaseMetadata metadata,
-        CancellationToken cancellationToken)
-    {
-        if (metadata == null)
-        {
-            return 0;
-        }
-
-        var documents = BuildObjectSearchCandidates(metadata)
-            .Select(candidate => candidate.searchableText)
-            .ToArray();
-        return await SchemaEmbeddingSearch.EnsureIndexAsync(
-            documents,
-            DefaultEmbeddingProvider,
-            cancellationToken);
-    }
-
-    public static async Task<string> ExecuteToolAsync(
+    private static Task<string> ExecuteToolCoreAsync(
         string toolName,
         JsonElement arguments,
-        DatabaseMetadata metadata,
-        Func<string, object?, Task<string>>? graphQlFallback)
-    {
-        return await ExecuteToolAsync(toolName, arguments, metadata, graphQlFallback, DefaultEmbeddingProvider, CancellationToken.None);
-    }
-
-    private static async Task<string> ExecuteToolAsync(
-        string toolName,
-        JsonElement arguments,
-        DatabaseMetadata metadata,
-        Func<string, object?, Task<string>>? graphQlFallback,
-        ITextEmbeddingProvider? embeddingProvider,
-        CancellationToken cancellationToken)
+        DatabaseMetadata metadata)
     {
         var normalizedTool = NormalizeToolName(toolName);
         var safeMetadata = metadata ?? DatabaseMetadata.Empty;
 
-        if ((metadata == null || metadata.Tables == null || metadata.Tables.Count == 0) && graphQlFallback != null)
+        var output = normalizedTool switch
         {
-            switch (normalizedTool)
+            ListTablesToolName => GetListTablesToolResult(safeMetadata, arguments),
+            TableSchemaToolName => GetTableSchemaToolResult(safeMetadata, arguments),
+            TableRelationsToolName => GetTableRelationsToolResult(safeMetadata, arguments),
+            TableIndexesToolName => GetTableIndexesToolResult(safeMetadata, arguments),
+            SearchObjectsToolName or SearchSchemaObjectsToolName => GetSearchObjectsToolResult(safeMetadata, arguments),
+            FindColumnToolName => GetFindColumnToolResult(safeMetadata, arguments),
+            ListEndpointsToolName => GetListEndpointsToolResult(safeMetadata),
+            ExecuteSqlToolName => new
             {
-                case ListTablesToolName:
-                    return await graphQlFallback("query { tablesList { schema name } }", null);
+                error = "The execute tool requires an SSMS runtime connection executor."
+            },
+            _ => throw new NotSupportedException($"Tool '{toolName}' is not supported.")
+        };
 
-                case TableSchemaToolName:
-                    string schemaName = GetArgument(arguments, "schemaName", "dbo");
-                    string tableName = GetArgument(arguments, "tableName", string.Empty);
-                    return await graphQlFallback(
-                        "query($schema: String!, $name: String!) { tableSchema(schema: $schema, name: $name) { schema name columns { name dataType isNullable ordinal } primaryKeyColumns } }",
-                        new { schema = schemaName, name = tableName }
-                    );
-
-                case TableRelationsToolName:
-                    string relTable = GetArgument(arguments, "tableName", string.Empty);
-                    return await graphQlFallback(
-                        "query($tableName: String!) { tableRelations(tableName: $tableName) { name fromSchema fromTable fromColumn toSchema toTable toColumn } }",
-                        new { tableName = relTable }
-                    );
-
-                case TableIndexesToolName:
-                    string idxTable = GetArgument(arguments, "tableName", string.Empty);
-                    return await graphQlFallback(
-                        "query($tableName: String!) { tableIndexes(tableName: $tableName) { schema table name isUnique columns } }",
-                        new { tableName = idxTable }
-                    );
-
-                case SearchObjectsToolName:
-                case SearchSchemaObjectsToolName:
-                case FindColumnToolName:
-                case ListEndpointsToolName:
-                    return JsonSerializer.Serialize(new
-                    {
-                        results = Array.Empty<object>(),
-                        error = "Search/endpoint tools are supported when database metadata is cached locally."
-                    }, JsonOptions);
-
-                default:
-                    throw new NotSupportedException($"Tool '{toolName}' is not supported.");
-            }
-        }
-
-        switch (normalizedTool)
-        {
-            case ListTablesToolName:
-                return JsonSerializer.Serialize(GetListTablesToolResult(safeMetadata, arguments), JsonOptions);
-
-            case TableSchemaToolName:
-                return JsonSerializer.Serialize(GetTableSchemaToolResult(safeMetadata, arguments), JsonOptions);
-
-            case TableRelationsToolName:
-                return JsonSerializer.Serialize(GetTableRelationsToolResult(safeMetadata, arguments), JsonOptions);
-
-            case TableIndexesToolName:
-                return JsonSerializer.Serialize(GetTableIndexesToolResult(safeMetadata, arguments), JsonOptions);
-
-            case SearchObjectsToolName:
-            case SearchSchemaObjectsToolName:
-                return JsonSerializer.Serialize(
-                    await GetSearchObjectsToolResultAsync(safeMetadata, arguments, embeddingProvider, cancellationToken),
-                    JsonOptions);
-
-            case FindColumnToolName:
-                return JsonSerializer.Serialize(GetFindColumnToolResult(safeMetadata, arguments), JsonOptions);
-
-            case ListEndpointsToolName:
-                return JsonSerializer.Serialize(GetListEndpointsToolResult(safeMetadata), JsonOptions);
-
-            case ExecuteSqlToolName:
-                return JsonSerializer.Serialize(new
-                {
-                    error = "The execute tool requires an SSMS runtime connection executor."
-                }, JsonOptions);
-
-            default:
-                throw new NotSupportedException($"Tool '{toolName}' is not supported.");
-        }
+        return Task.FromResult(JsonSerializer.Serialize(output, JsonOptions));
     }
 
     public static object GetListTablesToolResult(DatabaseMetadata metadata, JsonElement arguments)
@@ -305,37 +183,6 @@ public static class SqlMetadataToolExecutor
         return new { query, matches };
     }
 
-    private static async Task<object> GetSearchObjectsToolResultAsync(
-        DatabaseMetadata metadata,
-        JsonElement arguments,
-        ITextEmbeddingProvider? embeddingProvider,
-        CancellationToken cancellationToken)
-    {
-        metadata = MetadataDescriptionEditor.ApplyStoredDescriptions(metadata);
-        var query = GetArgument(arguments, "query", GetArgument(arguments, "tableName", string.Empty));
-        var candidates = BuildObjectSearchCandidates(metadata).ToList();
-        IReadOnlyDictionary<int, float>? semanticScores = null;
-        if (embeddingProvider != null && candidates.Count > 0 && !string.IsNullOrWhiteSpace(query))
-        {
-            try
-            {
-                semanticScores = await SchemaEmbeddingSearch.SearchAsync(
-                    candidates.Select(candidate => candidate.searchableText).ToArray(),
-                    query,
-                    limit: 100,
-                    embeddingProvider,
-                    cancellationToken);
-            }
-            catch
-            {
-                semanticScores = null;
-            }
-        }
-
-        var matches = BuildObjectSearchRows(candidates, query, semanticScores);
-        return new { query, matches };
-    }
-
     public static object GetFindColumnToolResult(DatabaseMetadata metadata, JsonElement arguments)
     {
         var query = GetArgument(arguments, "query", GetArgument(arguments, "columnName", string.Empty));
@@ -394,48 +241,25 @@ public static class SqlMetadataToolExecutor
 
         metadata = MetadataDescriptionEditor.ApplyStoredDescriptions(metadata);
         var candidates = BuildObjectSearchCandidates(metadata).ToList();
-        IReadOnlyDictionary<int, float>? semanticScores = null;
-        if (candidates.Count > 0 && !string.IsNullOrWhiteSpace(query))
-        {
-            try
-            {
-                semanticScores = SchemaEmbeddingSearch.SearchAsync(
-                    candidates.Select(candidate => candidate.searchableText).ToArray(),
-                    query,
-                    limit: 100,
-                    DefaultEmbeddingProvider,
-                    CancellationToken.None).GetAwaiter().GetResult();
-            }
-            catch
-            {
-                semanticScores = null;
-            }
-        }
-
-        return BuildObjectSearchRows(candidates, query, semanticScores);
+        return BuildObjectSearchRows(candidates, query);
     }
 
     private static IEnumerable BuildObjectSearchRows(
         IReadOnlyList<ObjectSearchCandidate> candidates,
-        string query,
-        IReadOnlyDictionary<int, float>? semanticScores)
+        string query)
     {
-        semanticScores ??= new Dictionary<int, float>();
-
         return candidates
-            .Select((candidate, index) =>
+            .Select(candidate =>
             {
-                semanticScores.TryGetValue(index, out var semanticScore);
                 var lexicalScore = ScoreObjectSearch(candidate, query);
                 return new
                 {
                     Candidate = candidate,
-                    Score = lexicalScore + (int)Math.Round(Math.Max(0, semanticScore) * 40),
-                    LexicalScore = lexicalScore,
-                    SemanticScore = semanticScore
+                    Score = lexicalScore,
+                    LexicalScore = lexicalScore
                 };
             })
-            .Where(o => string.IsNullOrWhiteSpace(query) || o.LexicalScore > 0 || o.SemanticScore >= 0.05f)
+            .Where(o => string.IsNullOrWhiteSpace(query) || o.LexicalScore > 0)
             .OrderByDescending(o => o.Score)
             .ThenBy(o => o.Candidate.kind)
             .ThenBy(o => o.Candidate.schema)
@@ -450,8 +274,7 @@ public static class SqlMetadataToolExecutor
                 o.Candidate.columnDescription,
                 definitionSnippet = Snippet(o.Candidate.definition, ObjectSearchDefinitionSnippetLength),
                 score = o.Score,
-                lexicalScore = o.LexicalScore,
-                semanticScore = Math.Round(o.SemanticScore, 4)
+                lexicalScore = o.LexicalScore
             })
             .Take(MaxObjectSearchMatches)
             .ToList();
@@ -602,17 +425,17 @@ public static class SqlMetadataToolExecutor
         _ => "Reads cached metadata for this chat session."
     };
 
-    public static string GetArgument(JsonElement arguments, string name, string fallback)
+    public static string GetArgument(JsonElement arguments, string name, string defaultValue)
     {
         if (arguments.ValueKind == JsonValueKind.Object && arguments.TryGetProperty(name, out var property))
         {
             if (property.ValueKind == JsonValueKind.String)
             {
-                return property.GetString() ?? fallback;
+                return property.GetString() ?? defaultValue;
             }
         }
 
-        return fallback;
+        return defaultValue;
     }
 
     private static bool Matches(string? value, string query)

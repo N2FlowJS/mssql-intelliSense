@@ -1,7 +1,6 @@
 using System.ClientModel;
 using System.Linq;
 using System.Net;
-using System.Net.Http.Json;
 using System.Text.Json;
 using OpenAI;
 using OpenAI.Chat;
@@ -119,7 +118,7 @@ public class OpenAiSqlAgent : IAiSqlAssistant
                     else
                     {
                         toolOutput = await SqlMetadataToolExecutor.ExecuteToolAsync(
-                            toolName, arguments, metadata, CallGraphQLToolAsync);
+                            toolName, arguments, metadata);
                     }
                 }
                 catch (Exception ex)
@@ -141,25 +140,6 @@ public class OpenAiSqlAgent : IAiSqlAssistant
         }
 
         throw new OpenAiSqlAgentException("Agent reached maximum iterations without completing.");
-    }
-
-    protected virtual async Task<string> CallGraphQLToolAsync(string query, object? variables = null)
-    {
-        using (var client = new HttpClient())
-        {
-            var requestBody = new
-            {
-                query = query,
-                variables = variables
-            };
-            var content = JsonContent.Create(requestBody);
-            var response = await client.PostAsync("http://localhost:5070/graphql", content);
-            if (response.IsSuccessStatusCode)
-            {
-                return await response.Content.ReadAsStringAsync();
-            }
-            throw new Exception($"GraphQL tool execution failed: {response.ReasonPhrase}");
-        }
     }
 
     private static readonly object AgentResponseSchema = new

@@ -314,7 +314,7 @@ The extension bundles required .NET runtime assemblies (`OpenAI`, `System.Client
 
 SSMS extension auto-detects active connection from:
 1. `ServiceCache.ScriptFactory.CurrentlyActiveWndConnectionInfo.UIConnectionInfo`
-2. Database name combo on toolbar (fallback)
+2. Database name combo on toolbar (secondary source)
 
 ---
 

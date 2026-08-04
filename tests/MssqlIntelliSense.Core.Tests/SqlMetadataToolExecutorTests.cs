@@ -224,7 +224,7 @@ public sealed class SqlMetadataToolExecutorTests
     }
 
     [Fact]
-    public async Task ExecuteToolAsync_SearchObjects_UsesHnswScoreForTypoTolerantDescriptionSearch()
+    public async Task ExecuteToolAsync_SearchObjects_UsesLexicalDescriptionSearch()
     {
         var metadata = new DatabaseMetadata([], [], [], ["TestDb"], [])
         {
@@ -237,49 +237,12 @@ public sealed class SqlMetadataToolExecutorTests
                 }
             ]
         };
-        using var args = JsonDocument.Parse("{\"query\":\"authentcation profil\"}");
+        using var args = JsonDocument.Parse("{\"query\":\"authentication profile\"}");
 
         var json = await SqlMetadataToolExecutor.ExecuteToolAsync(SqlMetadataToolExecutor.SearchObjectsToolName, args.RootElement, metadata);
 
         json.Should().Contain("GetAuthenticatedUser");
-        json.Should().Contain("\"semanticScore\"");
-    }
-
-    [Fact]
-    public async Task ExecuteToolAsync_SearchObjects_UsesLocalEmbeddingForVietnameseSchemaTerms()
-    {
-        var synonymsPath = Path.Combine(Path.GetTempPath(), "mssql-intellisense-synonyms-" + Guid.NewGuid().ToString("N") + ".json");
-        var metadata = new DatabaseMetadata([], [], [], ["TestDb"], [])
-        {
-            Procedures =
-            [
-                new ProcedureMetadata("dbo", "GetDocumentArchive")
-                {
-                    Database = "TestDb",
-                    ExtendedDescription = "Reads document archive records for content retention."
-                }
-            ]
-        };
-        try
-        {
-            await File.WriteAllTextAsync(synonymsPath, "{\"tai\":[\"document\"],\"lieu\":[\"document\"]}");
-            var provider = new LocalTextEmbeddingProvider(synonymsPath);
-
-            var json = await SqlMetadataToolExecutor.ExecuteToolAsync(
-                SqlMetadataToolExecutor.SearchObjectsToolName,
-                "{\"query\":\"tài liệu\"}",
-                metadata,
-                provider,
-                CancellationToken.None);
-
-            json.Should().Contain("GetDocumentArchive");
-            json.Should().Contain("\"lexicalScore\":0");
-            json.Should().NotContain("error");
-        }
-        finally
-        {
-            if (File.Exists(synonymsPath)) File.Delete(synonymsPath);
-        }
+        json.Should().Contain("\"lexicalScore\"");
     }
 
     [Fact]
@@ -388,27 +351,6 @@ public sealed class SqlMetadataToolExecutorTests
             SqlMetadataToolExecutor.BuildPreviewRows(toolName, metadata, "dbo", "Users", "Email")
                 .Should().NotBeNull(toolName);
         }
-    }
-
-    [Fact]
-    public async Task ExecuteToolAsync_GraphQlFallback_TriggeredWhenEmptyMetadata()
-    {
-        bool calledFallback = false;
-        Func<string, object?, Task<string>> fallback = (query, vars) =>
-        {
-            calledFallback = true;
-            return Task.FromResult("{\"data\":{\"tablesList\":[]}}");
-        };
-
-        using var args = JsonDocument.Parse("{}");
-        var json = await SqlMetadataToolExecutor.ExecuteToolAsync(
-            SqlMetadataToolExecutor.ListTablesToolName,
-            args.RootElement,
-            DatabaseMetadata.Empty,
-            fallback);
-
-        calledFallback.Should().BeTrue();
-        json.Should().Contain("tablesList");
     }
 
     [Fact]

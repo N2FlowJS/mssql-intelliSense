@@ -251,19 +251,17 @@ public sealed class NewFeaturesTests
     }
 
     [Fact]
-    public void FilterByDatabase_FallsBackToFull_WhenDatabaseNotFound()
+    public void FilterByDatabase_ReturnsFullMetadata_WhenDatabaseNotFound()
     {
         var metadata = CreateRichMetadata();
 
-        // "OtherDb" has no objects tagged → fallback to full
         var filtered = MssqlIntelliSense.Core.Metadata.MssqlIntelliSenseCacheReader.FilterByDatabase(metadata, "OtherDb");
 
-        // Fallback: returns full metadata because OtherDb has no tables/views/procedures
         filtered.Tables.Count.Should().Be(metadata.Tables.Count);
     }
 
     [Fact]
-    public void FilterByDatabase_FallsBackToFull_WhenNoDbTagPresent()
+    public void FilterByDatabase_ReturnsFullMetadata_WhenNoDbTagPresent()
     {
         // Metadata without Database tags (legacy)
         var metadata = new DatabaseMetadata(

@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -26,7 +27,11 @@ public partial class ChatAgentControl : UserControl
 {
     private static WeakReference<ChatAgentControl>? _activeControl;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
-    private static readonly TimeSpan ToolPlannerTimeout = TimeSpan.FromSeconds(45);
+    private static readonly JsonSerializerOptions DisplayJsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+        WriteIndented = true
+    };
     private const string SendIconGlyph = "\uE724";
     private const string StopIconGlyph = "\uE71A";
     private const string ApproveIconGlyph = "\uE73E";
@@ -317,9 +322,6 @@ public partial class ChatAgentControl : UserControl
 
         var toolContext = hasSchemaMetadata
             ? await ResolveApprovedToolContextAsync(
-                endpoint: options.Endpoint,
-                apiKey: options.ApiKey,
-                model: string.IsNullOrWhiteSpace(options.Model) ? "gpt-4o" : options.Model,
                 userMessage: message,
                 metadata: metadata,
                 chatConnection: chatConnection,
@@ -589,9 +591,6 @@ public partial class ChatAgentControl : UserControl
     }
 
     private async Task<string> ResolveApprovedToolContextAsync(
-        string endpoint,
-        string apiKey,
-        string model,
         string userMessage,
         DatabaseMetadata? metadata,
         ChatConnectionContext chatConnection,
@@ -607,114 +606,18 @@ public partial class ChatAgentControl : UserControl
 
         try
         {
-            var clientOptions = new OpenAIClientOptions();
-            var sdkEndpoint = GetSdkEndpoint(endpoint);
-            if (sdkEndpoint != null)
+            await SafeUpdateChatMessageAsync(statusBorder, "Checking local actions...");
+            var localPlannerResult = TryBuildLocalToolPlannerResult(userMessage, toolOutputs, allowedToolNames);
+            if (localPlannerResult?.ToolCall != null)
             {
-                clientOptions.Endpoint = sdkEndpoint;
-            }
-
-            var client = new OpenAIClient(new ApiKeyCredential(apiKey), clientOptions);
-            var chatClient = client.GetChatClient(model);
-
-            for (var iteration = 0; iteration < 4; iteration++)
-            {
-                await SafeUpdateChatMessageAsync(statusBorder, $"Checking available actions... ({iteration + 1}/4)");
-
-                string plannerJson;
-                try
-                {
-                    plannerJson = await CompleteToolPlannerWithTimeoutAsync(
-                        chatClient,
-                        BuildToolPlannerMessages(metadata, userMessage, toolOutputs, allowedToolNames),
-                        cancellationToken);
-                }
-                catch (TimeoutException ex)
-                {
-                    var localPlannerResult = TryBuildLocalToolPlannerResult(userMessage, toolOutputs, allowedToolNames);
-                    if (localPlannerResult?.ToolCall != null)
-                    {
-                        MssqlIntelliSensePackage.Log($"[Chat Agent Tool Planner Timeout] {ex.Message}. Using local fallback tool '{localPlannerResult.ToolCall.Name}'.");
-                        await SafeUpdateChatMessageAsync(statusBorder, $"Planner was slow; using local fallback action {localPlannerResult.ToolCall.Name}.");
-                        var approvedFallback = await ExecuteToolCallWithApprovalAsync(
-                            localPlannerResult.ToolCall,
-                            metadata,
-                            chatConnection,
-                            toolOutputs,
-                            cancellationToken);
-
-                        if (approvedFallback)
-                        {
-                            continue;
-                        }
-                    }
-                    else
-                    {
-                        var message = "Tool planner timeout: " + ex.Message + " Continuing without tool actions.";
-                        MssqlIntelliSensePackage.Log($"[Chat Agent Tool Planner Timeout] {message}");
-                        await SafeUpdateChatMessageAsync(statusBorder, message);
-                        toolOutputs.Add(message);
-                    }
-
-                    break;
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException)
-                {
-                    var message = "Tool planner error: " + ex.Message;
-                    await SafeUpdateChatMessageAsync(statusBorder, message);
-                    await AddChatMessageOnMainThreadAsync("Error", message, isUser: false, cancellationToken);
-                    toolOutputs.Add(message);
-                    break;
-                }
-
-                var plannerResult = ParseToolPlannerResult(plannerJson);
-                if (plannerResult == null || plannerResult.Status == "completed")
-                {
-                    if (plannerResult == null)
-                    {
-                        var preview = string.IsNullOrWhiteSpace(plannerJson)
-                            ? "(empty planner response)"
-                            : plannerJson.Length > 500 ? plannerJson.Substring(0, 500) + "..." : plannerJson;
-                        var message = "Tool planner returned invalid response. Continuing without tool actions.\n" + preview;
-                        await SafeUpdateChatMessageAsync(statusBorder, message);
-                        await AddChatMessageOnMainThreadAsync("Error", message, isUser: false, cancellationToken);
-                        toolOutputs.Add(message);
-                    }
-                    break;
-                }
-
-                if (plannerResult.ToolCall == null)
-                {
-                    break;
-                }
-
-                if (!allowedToolNames.Contains(plannerResult.ToolCall.Name))
-                {
-                    var blockedOutput = JsonSerializer.Serialize(new
-                    {
-                        error = "Tool call blocked by chat session action settings.",
-                        tool = plannerResult.ToolCall.Name
-                    }, JsonOptions);
-                    await AddChatMessageOnMainThreadAsync(
-                        "Tool",
-                        $"Blocked {plannerResult.ToolCall.Name}\nAction is disabled for this chat.",
-                        isUser: false,
-                        cancellationToken);
-                    toolOutputs.Add($"Tool: {plannerResult.ToolCall.Name}\nArguments: {plannerResult.ToolCall.ArgumentsJson}\nOutput: {blockedOutput}");
-                    break;
-                }
-
-                var approved = await ExecuteToolCallWithApprovalAsync(
-                    plannerResult.ToolCall,
+                MssqlIntelliSensePackage.Log($"[Chat Agent Tool Planner] Using local action '{localPlannerResult.ToolCall.Name}'.");
+                await SafeUpdateChatMessageAsync(statusBorder, $"Using local action {localPlannerResult.ToolCall.Name}.");
+                await ExecuteToolCallWithApprovalAsync(
+                    localPlannerResult.ToolCall,
                     metadata,
                     chatConnection,
                     toolOutputs,
                     cancellationToken);
-
-                if (!approved)
-                {
-                    break;
-                }
             }
         }
         catch (OperationCanceledException)
@@ -739,23 +642,25 @@ public partial class ChatAgentControl : UserControl
         List<string> toolOutputs,
         CancellationToken cancellationToken)
     {
-        var approved = await RequestToolApprovalAsync(toolCall, cancellationToken);
+        var approved = await RequestToolApprovalAsync(toolCall, cancellationToken).ConfigureAwait(false);
         string output;
         if (approved)
         {
-            await MssqlIntelliSensePackage.SwitchToMainThreadAsync(cancellationToken);
-            var toolStatusBorder = AddChatMessage(
+            var toolStatusBorder = await AddChatMessageOnDispatcherAsync(
                 "Tool",
                 $"Running {toolCall.Name}...",
                 isUser: false,
-                isStreaming: true);
+                isStreaming: true,
+                cancellationToken);
 
             try
             {
-                output = await ExecuteApprovedToolAsync(toolCall, metadata ?? DatabaseMetadata.Empty, chatConnection);
+                output = await Task.Run(
+                    async () => await ExecuteApprovedToolAsync(toolCall, metadata ?? DatabaseMetadata.Empty, chatConnection, cancellationToken),
+                    cancellationToken).ConfigureAwait(false);
                 var formattedOutput = await Task.Run(
                     () => FormatToolOutputForChat(toolCall.Name, output),
-                    cancellationToken);
+                    cancellationToken).ConfigureAwait(false);
                 await SafeUpdateChatMessageAsync(
                     toolStatusBorder,
                     formattedOutput);
@@ -793,96 +698,8 @@ public partial class ChatAgentControl : UserControl
         }
 
         toolOutputs.Add($"Tool: {toolCall.Name}\nArguments: {toolCall.ArgumentsJson}\nOutput: {output}");
+        MssqlIntelliSensePackage.Log($"[Chat Agent Tool Output] Tool '{toolCall.Name}' returned {output.Length:n0} characters for assistant context.");
         return approved;
-    }
-
-    private async Task<string> CompleteToolPlannerAsync(
-        ChatClient chatClient,
-        List<ChatMessage> messages,
-        CancellationToken cancellationToken)
-    {
-        var options = new ChatCompletionOptions
-        {
-            ResponseFormat = ChatResponseFormat.CreateJsonSchemaFormat(
-                jsonSchemaFormatName: "tool_planner_response",
-                jsonSchema: BinaryData.FromString(JsonSerializer.Serialize(ToolPlannerResponseSchema, JsonOptions)),
-                jsonSchemaIsStrict: true)
-        };
-
-        try
-        {
-            var response = await chatClient.CompleteChatAsync(messages, options, cancellationToken);
-            return GetChatCompletionText(response);
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            MssqlIntelliSensePackage.Log($"[Chat Agent Tool Planner JsonSchema Error] {ex.Message}");
-            try
-            {
-                var fallbackResponse = await chatClient.CompleteChatAsync(messages, new ChatCompletionOptions(), cancellationToken);
-                var fallbackResult = GetChatCompletionText(fallbackResponse);
-                if (string.IsNullOrWhiteSpace(fallbackResult))
-                {
-                    throw new InvalidOperationException("Tool planner fallback returned an empty response.");
-                }
-
-                return fallbackResult;
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception fallbackEx)
-            {
-                MssqlIntelliSensePackage.Log($"[Chat Agent Tool Planner Fallback Error] {fallbackEx.Message}");
-                throw new InvalidOperationException(
-                    $"Unable to check available actions. JSON planner failed: {ex.Message}. Fallback planner failed: {fallbackEx.Message}",
-                    fallbackEx);
-            }
-        }
-    }
-
-    private static string GetChatCompletionText(ChatCompletion response)
-    {
-        var result = response.Content == null
-            ? string.Empty
-            : string.Concat(response.Content.Select(part => part.Text));
-        if (string.IsNullOrWhiteSpace(result))
-        {
-            throw new InvalidOperationException("Tool planner returned an empty response.");
-        }
-
-        return result;
-    }
-
-    private async Task<string> CompleteToolPlannerWithTimeoutAsync(
-        ChatClient chatClient,
-        List<ChatMessage> messages,
-        CancellationToken cancellationToken)
-    {
-        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeoutCts.CancelAfter(ToolPlannerTimeout);
-
-        var plannerTask = CompleteToolPlannerAsync(chatClient, messages, timeoutCts.Token);
-        var completedTask = await Task.WhenAny(plannerTask, Task.Delay(ToolPlannerTimeout + TimeSpan.FromSeconds(2), cancellationToken));
-        if (completedTask != plannerTask)
-        {
-            timeoutCts.Cancel();
-            throw new TimeoutException($"No response after {ToolPlannerTimeout.TotalSeconds:0} seconds while checking available actions.");
-        }
-
-        try
-        {
-            return await plannerTask;
-        }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-        {
-            throw new TimeoutException($"No response after {ToolPlannerTimeout.TotalSeconds:0} seconds while checking available actions.");
-        }
     }
 
     private static ToolPlannerResult? TryBuildLocalToolPlannerResult(
@@ -939,7 +756,6 @@ public partial class ChatAgentControl : UserControl
 
         return null;
     }
-
     private static ToolPlannerResult CreateLocalToolPlannerResult(string toolName, string query)
     {
         var (schemaName, tableName) = SplitObjectName(query);
@@ -960,7 +776,7 @@ public partial class ChatAgentControl : UserControl
 
     private static bool IsListTablesRequest(string lower) =>
         (lower.Contains("list") || lower.Contains("show") || lower.Contains("liệt kê") || lower.Contains("danh sách")) &&
-        (lower.Contains("table") || lower.Contains("tables") || lower.Contains("bảng"));
+        (lower.Contains("table") || lower.Contains("tables") || lower.Contains("bảng") || lower.Contains("bang") || lower.Contains("bnagr"));
 
     private static bool IsSchemaRequest(string lower) =>
         lower.Contains("schema") || lower.Contains("column") || lower.Contains("columns") ||
@@ -1064,86 +880,14 @@ public partial class ChatAgentControl : UserControl
         return allowed;
     }
 
-    private List<ChatMessage> BuildToolPlannerMessages(
-        DatabaseMetadata? metadata,
-        string userMessage,
-        IReadOnlyList<string> toolOutputs,
-        ISet<string> allowedToolNames)
-    {
-        var systemPrompt = new StringBuilder();
-        systemPrompt.AppendLine("You are a SQL Server chat tool planner.");
-        systemPrompt.AppendLine("Decide whether the assistant must use a schema metadata tool before answering.");
-        systemPrompt.AppendLine("Return only JSON that matches the schema.");
-        systemPrompt.AppendLine("If the user asks about tables, columns, indexes, relations, stored procedures, views, unknown object names, or SQL generation that needs schema, return status 'tool_call'.");
-        systemPrompt.AppendLine("If no tool is needed or enough tool output is already available, return status 'completed'.");
-        systemPrompt.AppendLine("Allowed tools for this chat session:");
-        foreach (var toolName in allowedToolNames)
-        {
-            systemPrompt.AppendLine("- " + SqlMetadataToolExecutor.GetToolPlannerDescription(toolName));
-        }
-        systemPrompt.AppendLine("Do not request tools that are not listed above.");
-
-        if (metadata != null)
-        {
-            systemPrompt.AppendLine("Schema cache summary:");
-            systemPrompt.AppendLine($"Tables: {metadata.Tables.Count}, Views: {metadata.Views.Count}, Procedures: {metadata.Procedures.Count}, Foreign keys: {metadata.ForeignKeys.Count}, Indexes: {metadata.Indexes.Count}.");
-            systemPrompt.AppendLine("Do not assume object names, columns, relationships, indexes, procedures, or views from the summary. Request an approved tool call when object-specific schema is needed.");
-        }
-
-        if (toolOutputs.Count > 0)
-        {
-            systemPrompt.AppendLine("Already approved tool outputs:");
-            foreach (var output in toolOutputs)
-            {
-                systemPrompt.AppendLine(output);
-            }
-        }
-
-        var messages = new List<ChatMessage>
-        {
-            new SystemChatMessage(systemPrompt.ToString())
-        };
-        AddRecentChatHistory(messages);
-        messages.Add(new UserChatMessage(userMessage));
-        return messages;
-    }
-
-    private ToolPlannerResult? ParseToolPlannerResult(string plannerJson)
-    {
-        if (string.IsNullOrWhiteSpace(plannerJson))
-        {
-            return null;
-        }
-
-        using var document = JsonDocument.Parse(plannerJson);
-        var root = document.RootElement;
-        var status = root.TryGetProperty("status", out var statusElement)
-            ? statusElement.GetString() ?? "completed"
-            : "completed";
-
-        OpenAiSqlToolCall? toolCall = null;
-        if (status == "tool_call" && root.TryGetProperty("toolCall", out var toolElement))
-        {
-            var name = toolElement.TryGetProperty("name", out var nameElement)
-                ? nameElement.GetString() ?? string.Empty
-                : string.Empty;
-            var argumentsJson = toolElement.TryGetProperty("arguments", out var argumentsElement)
-                ? argumentsElement.GetRawText()
-                : "{}";
-            toolCall = new OpenAiSqlToolCall(name, argumentsJson, SqlMetadataToolExecutor.GetToolDescription(name));
-        }
-
-        return new ToolPlannerResult(status, toolCall);
-    }
-
     private async Task<bool> RequestToolApprovalAsync(OpenAiSqlToolCall toolCall, CancellationToken cancellationToken)
     {
-        var tcs = new TaskCompletionSource<bool>();
+        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         using var registration = cancellationToken.Register(() => tcs.TrySetCanceled());
 
         await MssqlIntelliSensePackage.SwitchToMainThreadAsync(cancellationToken);
         AddToolApprovalCard(toolCall, tcs);
-        return await tcs.Task;
+        return await tcs.Task.ConfigureAwait(false);
     }
 
     private sealed class MessageControlState
@@ -1994,7 +1738,7 @@ public partial class ChatAgentControl : UserControl
         argumentsBox.MinHeight = 56;
         argumentsBox.Margin = new Thickness(0, 0, 0, 6);
         argumentsBox.Document = CreateMarkdownDocument(
-            "```json\n" + (string.IsNullOrWhiteSpace(toolCall.ArgumentsJson) ? "{}" : toolCall.ArgumentsJson) + "\n```",
+            "```json\n" + FormatJsonForDisplay(toolCall.ArgumentsJson) + "\n```",
             textBrush,
             backgroundBrush);
         container.Children.Add(argumentsBox);
@@ -2028,6 +1772,25 @@ public partial class ChatAgentControl : UserControl
         border.Child = container;
         ChatMessagesPanel.Children.Add(border);
         ChatMessagesScrollViewer.ScrollToEnd();
+    }
+
+    private static string FormatJsonForDisplay(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return "{}";
+        }
+
+        var jsonText = json!;
+        try
+        {
+            using var document = JsonDocument.Parse(jsonText);
+            return JsonSerializer.Serialize(document.RootElement, DisplayJsonOptions);
+        }
+        catch (JsonException)
+        {
+            return jsonText;
+        }
     }
 
     private static void CompleteToolApproval(Button approveButton, Button rejectButton, TextBlock statusText, string status)
@@ -2069,17 +1832,27 @@ public partial class ChatAgentControl : UserControl
         };
     }
 
-    private static async Task<string> ExecuteApprovedToolAsync(OpenAiSqlToolCall toolCall, DatabaseMetadata metadata, ChatConnectionContext chatConnection)
+    private static async Task<string> ExecuteApprovedToolAsync(
+        OpenAiSqlToolCall toolCall,
+        DatabaseMetadata metadata,
+        ChatConnectionContext chatConnection,
+        CancellationToken cancellationToken)
     {
-        using var document = JsonDocument.Parse(string.IsNullOrWhiteSpace(toolCall.ArgumentsJson) ? "{}" : toolCall.ArgumentsJson);
-        return await SqlMetadataToolExecutorBridge.ExecuteToolAsync(
-            toolCall.Name,
-            document.RootElement,
-            metadata,
-            query => SqlReadOnlyQueryExecutor.ExecuteAsync(
-                chatConnection.ActiveConnectionString ?? string.Empty,
-                chatConnection.ActiveDatabase,
-                query));
+        var argumentsJson = string.IsNullOrWhiteSpace(toolCall.ArgumentsJson) ? "{}" : toolCall.ArgumentsJson;
+        if (!string.Equals(toolCall.Name, ExecuteSqlToolName, StringComparison.OrdinalIgnoreCase))
+        {
+            return await SqlMetadataToolExecutor.ExecuteToolAsync(
+                toolCall.Name,
+                argumentsJson,
+                metadata);
+        }
+
+        using var document = JsonDocument.Parse(argumentsJson);
+        var query = SqlMetadataToolExecutor.GetArgument(document.RootElement, "query", string.Empty);
+        return await SqlReadOnlyQueryExecutor.ExecuteAsync(
+            chatConnection.ActiveConnectionString ?? string.Empty,
+            chatConnection.ActiveDatabase,
+            query);
     }
 
     private static string SummarizeToolOutput(string output)
@@ -2561,8 +2334,45 @@ public partial class ChatAgentControl : UserControl
         bool isUser,
         CancellationToken cancellationToken)
     {
-        await MssqlIntelliSensePackage.SwitchToMainThreadAsync(cancellationToken);
-        AddChatMessage(sender, message, isUser);
+        await AddChatMessageOnDispatcherAsync(
+            sender,
+            message,
+            isUser,
+            isStreaming: false,
+            cancellationToken);
+    }
+
+    private async Task<Border?> AddChatMessageOnDispatcherAsync(
+        string sender,
+        string message,
+        bool isUser,
+        bool isStreaming,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished)
+            {
+                return null;
+            }
+
+            if (Dispatcher.CheckAccess())
+            {
+                return AddChatMessage(sender, message, isUser, isStreaming);
+            }
+
+#pragma warning disable VSTHRD001
+            return await Dispatcher.InvokeAsync(
+                () => AddChatMessage(sender, message, isUser, isStreaming),
+                System.Windows.Threading.DispatcherPriority.Normal,
+                cancellationToken);
+#pragma warning restore VSTHRD001
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            MssqlIntelliSensePackage.Log($"[Chat Agent UI Add Error] {ex}");
+            return null;
+        }
     }
 
     private string BuildSystemPrompt(DatabaseMetadata? metadata, string toolContext)
@@ -2587,47 +2397,6 @@ public partial class ChatAgentControl : UserControl
         sb.AppendLine("\nPlease format your answers using markdown.");
         return sb.ToString();
     }
-
-    private static readonly object ToolPlannerResponseSchema = new
-    {
-        type = "object",
-        additionalProperties = false,
-        required = new[] { "status", "toolCall" },
-        properties = new
-        {
-            status = new { type = "string", @enum = new[] { "tool_call", "completed" } },
-            toolCall = new
-            {
-                anyOf = new object[]
-                {
-                    new
-                    {
-                        type = "object",
-                        additionalProperties = false,
-                        required = new[] { "name", "arguments" },
-                        properties = new
-                        {
-                            name = new { type = "string", @enum = SqlMetadataToolExecutor.AllToolNames },
-                            arguments = new
-                            {
-                                type = "object",
-                                additionalProperties = false,
-                                properties = new
-                                {
-                                    schemaName = new { type = "string" },
-                                    tableName = new { type = "string" },
-                                    query = new { type = "string" },
-                                    columnName = new { type = "string" }
-                                },
-                                required = new[] { "schemaName", "tableName", "query", "columnName" }
-                            }
-                        }
-                    },
-                    new { type = "null" }
-                }
-            }
-        }
-    };
 
     private Border AddChatMessage(string sender, string message, bool isUser, bool isStreaming = false)
     {
@@ -2723,8 +2492,8 @@ public partial class ChatAgentControl : UserControl
         ChatMessagesScrollViewer.ScrollToEnd();
     }
 
-    private Brush GetThemeBrush(object key, Color fallbackColor)
+    private Brush GetThemeBrush(object key, Color defaultColor)
     {
-        return TryFindResource(key) as Brush ?? new SolidColorBrush(fallbackColor);
+        return TryFindResource(key) as Brush ?? new SolidColorBrush(defaultColor);
     }
 }

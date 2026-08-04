@@ -204,15 +204,15 @@ internal static class MssqlIntelliSenseJsonCache
         }
         catch (JsonException)
         {
-            return LoadFallbackStore(path);
+            return LoadBackupStore(path);
         }
         catch (IOException)
         {
-            return LoadFallbackStore(path);
+            return LoadBackupStore(path);
         }
     }
 
-    private static JsonCacheStore LoadFallbackStore(string path)
+    private static JsonCacheStore LoadBackupStore(string path)
     {
         var directory = Path.GetDirectoryName(path);
         var fileName = Path.GetFileName(path);

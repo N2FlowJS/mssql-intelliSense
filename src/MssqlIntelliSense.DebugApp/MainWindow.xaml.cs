@@ -604,14 +604,6 @@ public partial class MainWindow : Window
         {
             var dbPath = MssqlIntelliSenseCacheReader.GetCacheFilePath();
             if (CachePathStatusText != null) CachePathStatusText.Text = $"Cache File Path: {dbPath}";
-            var hnswStatus = SchemaEmbeddingSearch.GetCacheStatus();
-            if (HnswIndexStatusText != null)
-            {
-                var operationAt = hnswStatus.LastOperationAt.HasValue
-                    ? hnswStatus.LastOperationAt.Value.ToLocalTime().ToString("HH:mm:ss")
-                    : "-";
-                HnswIndexStatusText.Text = $"HNSW: memory {hnswStatus.MemoryIndexCount}, disk {hnswStatus.PersistedIndexCount}, documents {hnswStatus.DocumentCount}, dimensions {hnswStatus.Dimensions}\n{hnswStatus.LastOperation} ({operationAt})\n{hnswStatus.CacheDirectory}";
-            }
 
             if (File.Exists(dbPath))
             {
@@ -636,42 +628,6 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             if (CacheJsonViewerTextBox != null) CacheJsonViewerTextBox.Text = "Failed to read cache file: " + ex.Message;
-        }
-    }
-
-#pragma warning disable VSTHRD100
-    private async void BuildHnswIndexButton_Click(object sender, RoutedEventArgs e)
-#pragma warning restore VSTHRD100
-    {
-        if (_currentMetadata == null || ReferenceEquals(_currentMetadata, DatabaseMetadata.Empty))
-        {
-            await TriggerCompletionAsync();
-        }
-
-        if (_currentMetadata == null || ReferenceEquals(_currentMetadata, DatabaseMetadata.Empty))
-        {
-            if (StatusBarText != null) StatusBarText.Text = "HNSW build: no schema metadata";
-            return;
-        }
-
-        try
-        {
-            BuildHnswIndexButton.IsEnabled = false;
-            if (StatusBarText != null) StatusBarText.Text = "Building HNSW index...";
-            var documentCount = await Task.Run(() => SqlMetadataToolExecutor.BuildObjectSearchIndexAsync(
-                _currentMetadata,
-                System.Threading.CancellationToken.None));
-            await LoadCacheJsonAsync();
-            if (StatusBarText != null) StatusBarText.Text = $"HNSW ready: {documentCount} schema objects";
-        }
-        catch (Exception ex)
-        {
-            if (StatusBarText != null) StatusBarText.Text = "HNSW build error: " + ex.Message;
-            DebugLog("HNSW build failed", ex);
-        }
-        finally
-        {
-            BuildHnswIndexButton.IsEnabled = true;
         }
     }
 
