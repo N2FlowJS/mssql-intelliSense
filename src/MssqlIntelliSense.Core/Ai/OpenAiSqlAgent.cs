@@ -26,7 +26,7 @@ public class OpenAiSqlAgent : IAiSqlAssistant
     {
         var messages = new List<ChatMessage>
         {
-            new SystemChatMessage("You are a SQL Server T-SQL expert. You have access to database schema tools to query metadata. Resolve schema details using tools before generating SQL. Do not invent tables or columns. Once you have all the information, return status 'completed' along with the SQL result."),
+            new SystemChatMessage("You are a SQL Server T-SQL expert. Use the provided function tools to inspect metadata when object or column details matter. Do not invent tables or columns. Return only the final JSON result when ready."),
             new UserChatMessage($"User instruction:\n{instruction}\n\nSQL:\n{sql}")
         };
 
@@ -46,11 +46,15 @@ public class OpenAiSqlAgent : IAiSqlAssistant
         var completionOptions = new ChatCompletionOptions
         {
             ResponseFormat = ChatResponseFormat.CreateJsonSchemaFormat(
-                jsonSchemaFormatName: "agent_response",
-                jsonSchema: BinaryData.FromObjectAsJson(AgentResponseSchema),
+                jsonSchemaFormatName: "sql_result",
+                jsonSchema: BinaryData.FromObjectAsJson(SqlResultSchema),
                 jsonSchemaIsStrict: true
             )
         };
+        foreach (var tool in CreateMetadataTools())
+        {
+            completionOptions.Tools.Add(tool);
+        }
 
         const int maxIterations = 5;
         for (int i = 0; i < maxIterations; i++)
@@ -67,6 +71,54 @@ public class OpenAiSqlAgent : IAiSqlAssistant
                 throw new OpenAiSqlAgentException(exception.Message, statusCode);
             }
             
+            IReadOnlyList<ChatToolCall> toolCalls;
+            try
+            {
+                toolCalls = response.ToolCalls ?? Array.Empty<ChatToolCall>();
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+                throw new OpenAiSqlAgentException("OpenAI returned an unexpected response shape.");
+            }
+
+            if (toolCalls.Count > 0)
+            {
+                messages.Add(ChatMessage.CreateAssistantMessage(response));
+
+                foreach (var toolCall in toolCalls)
+                {
+                    var toolName = SqlMetadataToolExecutor.NormalizeToolName(toolCall.FunctionName);
+                    var argumentsJson = toolCall.FunctionArguments?.ToString() ?? "{}";
+                    string toolOutput;
+                    try
+                    {
+                        var approval = new OpenAiSqlToolCall(
+                            toolName,
+                            argumentsJson,
+                            SqlMetadataToolExecutor.GetToolDescription(toolName));
+
+                        var approved = await _options.ToolApprovalHandler(approval, cancellationToken);
+                        if (!approved)
+                        {
+                            toolOutput = $"## Tool: {toolName}\n\n**Error:** Tool call rejected by user.";
+                        }
+                        else
+                        {
+                            toolOutput = await SqlMetadataToolExecutor.ExecuteToolAsync(
+                                toolName, argumentsJson, metadata);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        toolOutput = $"## Tool: {toolName}\n\n**Error:** {ex.Message}";
+                    }
+
+                    messages.Add(ChatMessage.CreateToolMessage(toolCall.Id, toolOutput));
+                }
+
+                continue;
+            }
+
             string outputText;
             try
             {
@@ -79,99 +131,55 @@ public class OpenAiSqlAgent : IAiSqlAssistant
                 throw new OpenAiSqlAgentException("OpenAI returned an empty response.");
             }
 
-            using var resDoc = JsonDocument.Parse(outputText);
-            var root = resDoc.RootElement;
-            string status = root.GetProperty("status").GetString()!;
-            if (status == "completed")
-            {
-                var resultNode = root.GetProperty("result");
-                return JsonSerializer.Deserialize<AiSqlResult>(resultNode.GetRawText(), JsonOptions)
-                    ?? throw new OpenAiSqlAgentException("Failed to deserialize final result.");
-            }
-            else if (status == "tool_call")
-            {
-                var toolCall = root.GetProperty("toolCall");
-                string toolName = toolCall.GetProperty("name").GetString()!;
-                JsonElement arguments = default;
-                if (toolCall.TryGetProperty("arguments", out var argsElement))
-                {
-                    arguments = argsElement;
-                }
-
-                string toolOutput;
-                try
-                {
-                    var approval = new OpenAiSqlToolCall(
-                        toolName,
-                        arguments.ValueKind == JsonValueKind.Undefined ? "{}" : arguments.GetRawText(),
-                        SqlMetadataToolExecutor.GetToolDescription(toolName));
-
-                    var approved = await _options.ToolApprovalHandler(approval, cancellationToken);
-                    if (!approved)
-                    {
-                        toolOutput = $"## Tool: {toolName}\n\n**Error:** Tool call rejected by user.";
-                    }
-                    else
-                    {
-                        toolOutput = await SqlMetadataToolExecutor.ExecuteToolAsync(
-                            toolName, arguments, metadata);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    toolOutput = $"## Tool: {toolName}\n\n**Error:** {ex.Message}";
-                }
-
-                messages.Add(new AssistantChatMessage(outputText));
-                messages.Add(new UserChatMessage($"Tool output for {toolName}:\n{toolOutput}"));
-            }
-            else
-            {
-                throw new OpenAiSqlAgentException($"Unknown status: {status}");
-            }
+            return JsonSerializer.Deserialize<AiSqlResult>(outputText, JsonOptions)
+                ?? throw new OpenAiSqlAgentException("Failed to deserialize final result.");
         }
 
         throw new OpenAiSqlAgentException("Agent reached maximum iterations without completing.");
     }
 
-    private static readonly object AgentResponseSchema = new
+    private static IEnumerable<ChatTool> CreateMetadataTools()
+    {
+        foreach (var toolName in SqlMetadataToolExecutor.AllToolNames
+                     .Where(tool => !string.Equals(tool, SqlMetadataToolExecutor.ExecuteSqlToolName, StringComparison.OrdinalIgnoreCase))
+                     .Select(SqlMetadataToolExecutor.NormalizeToolName)
+                     .Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            yield return ChatTool.CreateFunctionTool(
+                functionName: toolName,
+                functionDescription: SqlMetadataToolExecutor.GetToolDescription(toolName),
+                functionParameters: BinaryData.FromString(GetToolSchema(toolName)),
+                functionSchemaIsStrict: false);
+        }
+    }
+
+    private static string GetToolSchema(string toolName) => SqlMetadataToolExecutor.NormalizeToolName(toolName) switch
+    {
+        SqlMetadataToolExecutor.TableSchemaToolName => """
+            { "type": "object", "properties": { "schemaName": { "type": "string" }, "tableName": { "type": "string" } }, "required": [ "tableName" ] }
+            """,
+        SqlMetadataToolExecutor.TableRelationsToolName or SqlMetadataToolExecutor.TableIndexesToolName => """
+            { "type": "object", "properties": { "tableName": { "type": "string" } }, "required": [ "tableName" ] }
+            """,
+        SqlMetadataToolExecutor.SearchObjectsToolName or SqlMetadataToolExecutor.FindColumnToolName => """
+            { "type": "object", "properties": { "query": { "type": "string" }, "columnName": { "type": "string" } } }
+            """,
+        _ => """
+            { "type": "object", "properties": { "schemaName": { "type": "string" }, "tableName": { "type": "string" }, "query": { "type": "string" }, "columnName": { "type": "string" } } }
+            """
+    };
+
+    private static readonly object SqlResultSchema = new
     {
         type = "object",
         additionalProperties = false,
-        required = new[] { "status" },
+        required = new[] { "improvedSql", "explanation", "warnings", "indexSuggestions" },
         properties = new
         {
-            status = new { type = "string", @enum = new[] { "tool_call", "completed" } },
-            toolCall = new
-            {
-                type = "object",
-                properties = new
-                {
-                    name = new { type = "string", @enum = SqlMetadataToolExecutor.AllToolNames },
-                    arguments = new
-                    {
-                        type = "object",
-                        properties = new
-                        {
-                            schemaName = new { type = "string" },
-                            tableName = new { type = "string" },
-                            query = new { type = "string" },
-                            columnName = new { type = "string" }
-                        }
-                    }
-                }
-            },
-            result = new
-            {
-                type = "object",
-                properties = new
-                {
-                    improvedSql = new { type = "string" },
-                    explanation = new { type = "string" },
-                    warnings = new { type = "array", items = new { type = "string" } },
-                    indexSuggestions = new { type = "array", items = new { type = "string" } }
-                }
-            }
+            improvedSql = new { type = "string" },
+            explanation = new { type = "string" },
+            warnings = new { type = "array", items = new { type = "string" } },
+            indexSuggestions = new { type = "array", items = new { type = "string" } }
         }
     };
 }

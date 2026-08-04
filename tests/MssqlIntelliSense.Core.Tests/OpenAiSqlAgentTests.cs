@@ -1,4 +1,4 @@
-﻿using System.Net;
+using System.Net;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
@@ -25,7 +25,7 @@ public sealed class OpenAiSqlAgentTests
                       "index": 0,
                       "message": {
                         "role": "assistant",
-                        "content": "{\"status\":\"completed\",\"result\":{\"improvedSql\":\"SELECT [Id] FROM [dbo].[Users];\",\"explanation\":\"Qualified identifiers.\",\"warnings\":[],\"indexSuggestions\":[]}}" 
+                        "content": "{\"improvedSql\":\"SELECT [Id] FROM [dbo].[Users];\",\"explanation\":\"Qualified identifiers.\",\"warnings\":[],\"indexSuggestions\":[]}" 
                       },
                       "finish_reason": "stop"
                     }
@@ -60,9 +60,9 @@ public sealed class OpenAiSqlAgentTests
                           "index": 0,
                           "message": {
                             "role": "assistant",
-                            "content": "{\"status\":\"tool_call\",\"toolCall\":{\"name\":\"list_tables\",\"arguments\":{}}}"
+                            "tool_calls": [ { "id": "call_1", "type": "function", "function": { "name": "list_tables", "arguments": "{}" } } ]
                           },
-                          "finish_reason": "stop"
+                          "finish_reason": "tool_calls"
                         }
                       ]
                     }
@@ -77,7 +77,7 @@ public sealed class OpenAiSqlAgentTests
                           "index": 0,
                           "message": {
                             "role": "assistant",
-                            "content": "{\"status\":\"completed\",\"result\":{\"improvedSql\":\"SELECT [Id] FROM [dbo].[Users];\",\"explanation\":\"Qualified identifiers.\",\"warnings\":[],\"indexSuggestions\":[]}}"
+                            "content": "{\"improvedSql\":\"SELECT [Id] FROM [dbo].[Users];\",\"explanation\":\"Qualified identifiers.\",\"warnings\":[],\"indexSuggestions\":[]}"
                           },
                           "finish_reason": "stop"
                         }
@@ -113,9 +113,9 @@ public sealed class OpenAiSqlAgentTests
                           "index": 0,
                           "message": {
                             "role": "assistant",
-                            "content": "{\"status\":\"tool_call\",\"toolCall\":{\"name\":\"list_tables\",\"arguments\":{}}}"
+                            "tool_calls": [ { "id": "call_1", "type": "function", "function": { "name": "list_tables", "arguments": "{}" } } ]
                           },
-                          "finish_reason": "stop"
+                          "finish_reason": "tool_calls"
                         }
                       ]
                     }
@@ -130,7 +130,7 @@ public sealed class OpenAiSqlAgentTests
                           "index": 0,
                           "message": {
                             "role": "assistant",
-                            "content": "{\"status\":\"completed\",\"result\":{\"improvedSql\":\"SELECT [Id] FROM [dbo].[Users];\",\"explanation\":\"Qualified identifiers.\",\"warnings\":[],\"indexSuggestions\":[]}}"
+                            "content": "{\"improvedSql\":\"SELECT [Id] FROM [dbo].[Users];\",\"explanation\":\"Qualified identifiers.\",\"warnings\":[],\"indexSuggestions\":[]}"
                           },
                           "finish_reason": "stop"
                         }
@@ -165,9 +165,9 @@ public sealed class OpenAiSqlAgentTests
                           "index": 0,
                           "message": {
                             "role": "assistant",
-                            "content": "{\"status\":\"tool_call\",\"toolCall\":{\"name\":\"list_tables\",\"arguments\":{}}}"
+                            "tool_calls": [ { "id": "call_1", "type": "function", "function": { "name": "list_tables", "arguments": "{}" } } ]
                           },
-                          "finish_reason": "stop"
+                          "finish_reason": "tool_calls"
                         }
                       ]
                     }
@@ -179,7 +179,7 @@ public sealed class OpenAiSqlAgentTests
                           "index": 0,
                           "message": {
                             "role": "assistant",
-                            "content": "{\"status\":\"completed\",\"result\":{\"improvedSql\":\"SELECT 1;\",\"explanation\":\"User rejected tool.\",\"warnings\":[\"Tool rejected.\"],\"indexSuggestions\":[]}}"
+                            "content": "{\"improvedSql\":\"SELECT 1;\",\"explanation\":\"User rejected tool.\",\"warnings\":[\"Tool rejected.\"],\"indexSuggestions\":[]}"
                           },
                           "finish_reason": "stop"
                         }
@@ -274,3 +274,4 @@ public sealed class OpenAiSqlAgentTests
         }
     }
 }
+

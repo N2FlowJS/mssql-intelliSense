@@ -214,17 +214,7 @@ public static class SqlMetadataToolExecutor
         sb.AppendLine($"Query: `{query}`");
         sb.AppendLine($"Total matches: {rows.Count}");
         sb.AppendLine();
-        AppendMarkdownTable(
-            sb,
-            new[] { "Kind", "Object", "Description", "Lexical Score" },
-            rows.Select(row => new[]
-            {
-                GetObjectProperty(row, "kind"),
-                BuildQualifiedObjectName(row),
-                Shorten(GetObjectProperty(row, "description"), 180),
-                GetObjectProperty(row, "score")
-            }));
-        AppendObjectSearchDetails(sb, rows);
+        AppendObjectSearchMatches(sb, rows);
         return sb.ToString();
     }
 
@@ -527,39 +517,51 @@ public static class SqlMetadataToolExecutor
         return string.Join(".", new[] { database, schema, name }.Where(part => !string.IsNullOrWhiteSpace(part)));
     }
 
-    private static void AppendObjectSearchDetails(StringBuilder sb, IReadOnlyList<object> rows)
+    private static void AppendObjectSearchMatches(StringBuilder sb, IReadOnlyList<object> rows)
     {
-        var rowsWithDetails = rows
-            .Select(row => new
-            {
-                Name = BuildQualifiedObjectName(row),
-                ColumnDescription = GetObjectProperty(row, "columnDescription"),
-                DefinitionSnippet = GetObjectProperty(row, "definitionSnippet")
-            })
-            .Where(row => !string.IsNullOrWhiteSpace(row.ColumnDescription) ||
-                          !string.IsNullOrWhiteSpace(row.DefinitionSnippet))
-            .Take(5)
-            .ToList();
-
-        if (rowsWithDetails.Count == 0)
+        if (rows.Count == 0)
         {
+            sb.AppendLine("No matches.");
             return;
         }
 
+        sb.AppendLine("### Matches");
         sb.AppendLine();
-        sb.AppendLine("### Details");
-        foreach (var row in rowsWithDetails)
+
+        var rank = 1;
+        foreach (var row in rows)
         {
-            sb.AppendLine($"- **{row.Name}**");
-            if (!string.IsNullOrWhiteSpace(row.ColumnDescription))
+            var name = BuildQualifiedObjectName(row);
+            var kind = GetObjectProperty(row, "kind");
+            var score = GetObjectProperty(row, "score");
+            var description = Shorten(GetObjectProperty(row, "description"), 260);
+            var columnDescription = Shorten(GetObjectProperty(row, "columnDescription"), 260);
+            var definitionSnippet = Shorten(GetObjectProperty(row, "definitionSnippet"), 260);
+
+            sb.AppendLine($"**{rank}. {name}**");
+            sb.AppendLine($"Kind: `{kind}`  ");
+            sb.AppendLine($"Lexical Score: `{score}`");
+
+            if (!string.IsNullOrWhiteSpace(description))
             {
-                sb.AppendLine($"  - Columns: {Shorten(row.ColumnDescription, 240)}");
+                sb.AppendLine();
+                sb.AppendLine(description);
             }
 
-            if (!string.IsNullOrWhiteSpace(row.DefinitionSnippet))
+            if (!string.IsNullOrWhiteSpace(columnDescription))
             {
-                sb.AppendLine($"  - Definition: `{Shorten(row.DefinitionSnippet, 240)}`");
+                sb.AppendLine();
+                sb.AppendLine($"Columns: {columnDescription}");
             }
+
+            if (!string.IsNullOrWhiteSpace(definitionSnippet))
+            {
+                sb.AppendLine();
+                sb.AppendLine($"Definition: `{definitionSnippet}`");
+            }
+
+            sb.AppendLine();
+            rank++;
         }
     }
 

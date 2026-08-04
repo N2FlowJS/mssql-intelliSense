@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Text.Encodings.Web;
@@ -24,7 +23,6 @@ namespace MssqlIntelliSense.SsmsHost;
 public partial class ChatAgentControl : UserControl
 {
     private static WeakReference<ChatAgentControl>? _activeControl;
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private static readonly JsonSerializerOptions DisplayJsonOptions = new(JsonSerializerDefaults.Web)
     {
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
@@ -42,18 +40,7 @@ public partial class ChatAgentControl : UserControl
     private const string FindColumnToolName = SqlMetadataToolExecutor.FindColumnToolName;
     private const string ListEndpointsToolName = SqlMetadataToolExecutor.ListEndpointsToolName;
     private const string ExecuteSqlToolName = SqlMetadataToolExecutor.ExecuteSqlToolName;
-
-    private sealed class ChatTurn
-    {
-        public ChatTurn(string role, string content)
-        {
-            Role = role;
-            Content = content;
-        }
-
-        public string Role { get; }
-        public string Content { get; }
-    }
+    private const int MaxSessionMessages = 32;
 
     private sealed class ChatConnectionContext
     {
@@ -70,7 +57,7 @@ public partial class ChatAgentControl : UserControl
         public string? ErrorMessage { get; set; }
     }
 
-    private readonly List<ChatTurn> _chatHistory = new();
+    private readonly List<ChatMessage> _chatSessionMessages = new();
     private readonly List<string> _sentInputHistory = new();
     private int _historyIndex = -1;
     private string _currentDraft = string.Empty;
@@ -234,7 +221,7 @@ public partial class ChatAgentControl : UserControl
     private void ClearChatButton_Click(object sender, RoutedEventArgs e)
     {
         e.Handled = true;
-        _chatHistory.Clear();
+        _chatSessionMessages.Clear();
         ChatMessagesPanel.Children.Clear();
         FocusChatInput();
     }
@@ -306,31 +293,11 @@ public partial class ChatAgentControl : UserControl
             await SafeUpdateChatMessageAsync(metadataStatusBorder, BuildSchemaLoadedMessage(metadata!));
         }
 
-        Border? statusBorder = null;
-        if (hasSchemaMetadata && allowedToolNames.Count > 0)
-        {
-            await MssqlIntelliSensePackage.SwitchToMainThreadAsync(cancellationToken);
-            statusBorder = AddChatMessage("Assistant", "Checking available actions...", isUser: false, isStreaming: true);
-        }
-
+        var activeToolNames = hasSchemaMetadata ? allowedToolNames : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var toolContext = hasSchemaMetadata
-            ? await ResolveApprovedToolContextAsync(
-                userMessage: message,
-                metadata: metadata,
-                chatConnection: chatConnection,
-                allowedToolNames: allowedToolNames,
-                statusBorder: statusBorder,
-                cancellationToken: cancellationToken)
+            ? string.Empty
             : "Schema cache is unavailable. Do not assume or invent tables, columns, relationships, indexes, procedures, or views. Ask the user to scan the schema when object-specific information is required.";
-
-        if (statusBorder != null)
-        {
-            await MssqlIntelliSensePackage.SwitchToMainThreadAsync(cancellationToken);
-            ChatMessagesPanel.Children.Remove(statusBorder);
-            statusBorder = null;
-        }
-
-        var systemPrompt = BuildSystemPrompt(metadata, toolContext);
+        var systemPrompt = BuildSystemPrompt(metadata, toolContext, activeToolNames);
         if (!string.IsNullOrWhiteSpace(chatConnection.DisplayName))
         {
             systemPrompt = $"Active SQL connection: {chatConnection.DisplayName}\n" + systemPrompt;
@@ -340,7 +307,7 @@ public partial class ChatAgentControl : UserControl
             model: string.IsNullOrWhiteSpace(options.Model) ? "gpt-4o" : options.Model,
             chatConnection: chatConnection,
             metadata: metadata,
-            allowedToolNames: allowedToolNames,
+            allowedToolNames: activeToolNames,
             toolContext: toolContext,
             systemPrompt: systemPrompt);
 
@@ -348,17 +315,18 @@ public partial class ChatAgentControl : UserControl
         await MssqlIntelliSensePackage.SwitchToMainThreadAsync(cancellationToken);
         assistantMessageBorder = AddChatMessage("Assistant", string.Empty, isUser: false, isStreaming: true);
 
-        var reply = await CompleteChatStreamingTextAsync(
+        var reply = await CompleteChatWithAgentToolsAsync(
             endpoint: options.Endpoint,
             apiKey: options.ApiKey,
             model: string.IsNullOrWhiteSpace(options.Model) ? "gpt-4o" : options.Model,
             systemPrompt: systemPrompt,
             message: message,
+            metadata: metadata ?? DatabaseMetadata.Empty,
+            chatConnection: chatConnection,
+            allowedToolNames: activeToolNames,
             assistantMessageBorder: assistantMessageBorder,
             cancellationToken: cancellationToken);
 
-        _chatHistory.Add(new ChatTurn("user", message));
-        _chatHistory.Add(new ChatTurn("assistant", reply));
         TrimChatHistory();
     }
 
@@ -448,7 +416,7 @@ public partial class ChatAgentControl : UserControl
         sb.AppendLine($"| Model | `{model}` |");
         sb.AppendLine($"| Connection | `{(string.IsNullOrWhiteSpace(chatConnection.DisplayName) ? "(none)" : chatConnection.DisplayName)}` |");
         sb.AppendLine($"| Active database | `{(string.IsNullOrWhiteSpace(chatConnection.ActiveDatabase) ? "(not specified)" : chatConnection.ActiveDatabase)}` |");
-        sb.AppendLine($"| History turns sent | `{Math.Min(_chatHistory.Count, 12)}` |");
+        sb.AppendLine($"| Session messages sent | `{Math.Min(_chatSessionMessages.Count, MaxSessionMessages)}` |");
         sb.AppendLine($"| Allowed tools | `{(allowedToolNames.Count == 0 ? "(none)" : string.Join(", ", allowedToolNames))}` |");
 
         if (metadata != null)
@@ -583,56 +551,9 @@ public partial class ChatAgentControl : UserControl
         }
     }
 
-    private async Task<string> ResolveApprovedToolContextAsync(
-        string userMessage,
-        DatabaseMetadata? metadata,
-        ChatConnectionContext chatConnection,
-        ISet<string> allowedToolNames,
-        Border? statusBorder,
-        CancellationToken cancellationToken)
-    {
-        var toolOutputs = new List<string>();
-        if (allowedToolNames.Count == 0)
-        {
-            return string.Empty;
-        }
-
-        try
-        {
-            await SafeUpdateChatMessageAsync(statusBorder, "Checking local actions...");
-            var localPlannerResult = TryBuildLocalToolPlannerResult(userMessage, toolOutputs, allowedToolNames);
-            if (localPlannerResult?.ToolCall != null)
-            {
-                MssqlIntelliSensePackage.Log($"[Chat Agent Tool Planner] Using local action '{localPlannerResult.ToolCall.Name}'.");
-                await SafeUpdateChatMessageAsync(statusBorder, $"Using local action {localPlannerResult.ToolCall.Name}.");
-                await ExecuteToolCallWithApprovalAsync(
-                    localPlannerResult.ToolCall,
-                    metadata,
-                    chatConnection,
-                    toolOutputs,
-                    cancellationToken);
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            MssqlIntelliSensePackage.Log($"[Chat Agent Tool Planner Error] {ex}");
-            toolOutputs.Add("Tool planner error: " + ex.Message);
-        }
-
-        return toolOutputs.Count == 0
-            ? string.Empty
-            : string.Join("\n\n", toolOutputs);
-    }
-
-    private async Task<bool> ExecuteToolCallWithApprovalAsync(
+    private async Task<string> ExecuteToolCallWithApprovalAsync(
         OpenAiSqlToolCall toolCall,
-        DatabaseMetadata? metadata,
-        ChatConnectionContext chatConnection,
-        List<string> toolOutputs,
+        ChatAgentToolRuntimeContext runtimeContext,
         CancellationToken cancellationToken)
     {
         var approved = await RequestToolApprovalAsync(toolCall, cancellationToken).ConfigureAwait(false);
@@ -649,15 +570,10 @@ public partial class ChatAgentControl : UserControl
             try
             {
                 output = await Task.Run(
-                    async () => await ExecuteApprovedToolAsync(toolCall, metadata ?? DatabaseMetadata.Empty, chatConnection, cancellationToken),
+                    async () => await ChatAgentToolRegistry.ExecuteAsync(toolCall, runtimeContext, cancellationToken),
                     cancellationToken).ConfigureAwait(false);
-                var formattedOutput = await Task.Run(
-                    () => ChatToolOutputFormatter.FormatForChat(toolCall.Name, output),
-                    cancellationToken).ConfigureAwait(false);
-                output = formattedOutput;
-                await SafeUpdateChatMessageAsync(
-                    toolStatusBorder,
-                    formattedOutput);
+                output = ChatToolOutputFormatter.FormatForChat(toolCall.Name, output);
+                await SafeUpdateChatMessageAsync(toolStatusBorder, output);
             }
             catch (OperationCanceledException)
             {
@@ -683,141 +599,8 @@ public partial class ChatAgentControl : UserControl
                 cancellationToken);
         }
 
-        toolOutputs.Add($"Tool: {toolCall.Name}\nArguments: {toolCall.ArgumentsJson}\nOutput: {output}");
-        MssqlIntelliSensePackage.Log($"[Chat Agent Tool Output] Tool '{toolCall.Name}' returned {output.Length:n0} characters for assistant context.");
-        return approved;
-    }
-
-    private static ToolPlannerResult? TryBuildLocalToolPlannerResult(
-        string userMessage,
-        IReadOnlyList<string> toolOutputs,
-        ISet<string> allowedToolNames)
-    {
-        if (toolOutputs.Count > 0 || string.IsNullOrWhiteSpace(userMessage))
-        {
-            return null;
-        }
-
-        var text = userMessage.Trim();
-        var lower = text.ToLowerInvariant();
-
-        if (IsEndpointRequest(lower) && allowedToolNames.Contains(ListEndpointsToolName))
-        {
-            return CreateLocalToolPlannerResult(ListEndpointsToolName, text);
-        }
-
-        if (IsListTablesRequest(lower) && allowedToolNames.Contains(ListTablesToolName))
-        {
-            return CreateLocalToolPlannerResult(ListTablesToolName, text);
-        }
-
-        var objectName = ExtractLikelyObjectName(text);
-        if (!string.IsNullOrWhiteSpace(objectName))
-        {
-            if (IsIndexRequest(lower) && allowedToolNames.Contains(TableIndexesToolName))
-            {
-                return CreateLocalToolPlannerResult(TableIndexesToolName, objectName);
-            }
-
-            if (IsRelationRequest(lower) && allowedToolNames.Contains(TableRelationsToolName))
-            {
-                return CreateLocalToolPlannerResult(TableRelationsToolName, objectName);
-            }
-
-            if (IsSchemaRequest(lower) && allowedToolNames.Contains(TableSchemaToolName))
-            {
-                return CreateLocalToolPlannerResult(TableSchemaToolName, objectName);
-            }
-        }
-
-        if (IsColumnRequest(lower) && allowedToolNames.Contains(FindColumnToolName))
-        {
-            return CreateLocalToolPlannerResult(FindColumnToolName, text);
-        }
-
-        if (allowedToolNames.Contains(SearchObjectsToolName))
-        {
-            return CreateLocalToolPlannerResult(SearchObjectsToolName, text);
-        }
-
-        return null;
-    }
-    private static ToolPlannerResult CreateLocalToolPlannerResult(string toolName, string query)
-    {
-        var (schemaName, tableName) = SplitObjectName(query);
-        var arguments = JsonSerializer.Serialize(new
-        {
-            schemaName,
-            tableName,
-            query = TruncateToolQuery(query),
-            columnName = string.Empty
-        }, JsonOptions);
-
-        var toolCall = new OpenAiSqlToolCall(toolName, arguments, SqlMetadataToolExecutor.GetToolDescription(toolName));
-        return new ToolPlannerResult("tool_call", toolCall);
-    }
-
-    private static bool IsEndpointRequest(string lower) =>
-        lower.Contains("endpoint") || lower.Contains("end point");
-
-    private static bool IsListTablesRequest(string lower) =>
-        (lower.Contains("list") || lower.Contains("show") || lower.Contains("liệt kê") || lower.Contains("danh sách")) &&
-        (lower.Contains("table") || lower.Contains("tables") || lower.Contains("bảng") || lower.Contains("bang") || lower.Contains("bnagr"));
-
-    private static bool IsSchemaRequest(string lower) =>
-        lower.Contains("schema") || lower.Contains("column") || lower.Contains("columns") ||
-        lower.Contains("cột") || lower.Contains("kiểu dữ liệu") || lower.Contains("primary key");
-
-    private static bool IsRelationRequest(string lower) =>
-        lower.Contains("relation") || lower.Contains("relationship") || lower.Contains("foreign key") ||
-        lower.Contains("references") || lower.Contains("khóa ngoại") || lower.Contains("quan hệ");
-
-    private static bool IsIndexRequest(string lower) =>
-        lower.Contains("index") || lower.Contains("indexes") || lower.Contains("chỉ mục");
-
-    private static bool IsColumnRequest(string lower) =>
-        lower.Contains("column") || lower.Contains("columns") || lower.Contains("field") || lower.Contains("cột");
-
-    private static string ExtractLikelyObjectName(string text)
-    {
-        foreach (var token in text.Split(new[] { ' ', '\t', '\r', '\n', ',', ';', ':', '(', ')', '[', ']', '"', '\'', '`' }, StringSplitOptions.RemoveEmptyEntries))
-        {
-            var trimmed = token.Trim();
-            if (trimmed.Length < 2 || !trimmed.Any(char.IsLetter))
-            {
-                continue;
-            }
-
-            if (trimmed.Contains(".") || trimmed.Contains("_"))
-            {
-                return trimmed.Trim('.');
-            }
-        }
-
-        return string.Empty;
-    }
-
-    private static (string schemaName, string tableName) SplitObjectName(string query)
-    {
-        var objectName = ExtractLikelyObjectName(query);
-        if (string.IsNullOrWhiteSpace(objectName))
-        {
-            return (string.Empty, string.Empty);
-        }
-
-        var parts = objectName.Split(new[] { '.' }, StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length >= 2)
-        {
-            return (parts[parts.Length - 2], parts[parts.Length - 1]);
-        }
-
-        return (string.Empty, objectName);
-    }
-
-    private static string TruncateToolQuery(string query)
-    {
-        var normalized = query.Replace("\r", " ").Replace("\n", " ").Trim();
-        return normalized.Length <= 240 ? normalized : normalized.Substring(0, 240);
+        MssqlIntelliSensePackage.Log($"[Chat Agent Tool Output] Tool '{toolCall.Name}' returned {output.Length:n0} characters for agent context.");
+        return output;
     }
 
     private HashSet<string> GetAllowedToolNamesFromUi()
@@ -871,8 +654,7 @@ public partial class ChatAgentControl : UserControl
         var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         using var registration = cancellationToken.Register(() => tcs.TrySetCanceled());
 
-        await MssqlIntelliSensePackage.SwitchToMainThreadAsync(cancellationToken);
-        AddToolApprovalCard(toolCall, tcs);
+        await AddToolApprovalCardOnDispatcherAsync(toolCall, tcs, cancellationToken);
         return await tcs.Task.ConfigureAwait(false);
     }
 
@@ -1111,6 +893,31 @@ public partial class ChatAgentControl : UserControl
         ChatMessagesScrollViewer.ScrollToEnd();
     }
 
+    private async Task AddToolApprovalCardOnDispatcherAsync(
+        OpenAiSqlToolCall toolCall,
+        TaskCompletionSource<bool> completionSource,
+        CancellationToken cancellationToken)
+    {
+        if (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished)
+        {
+            completionSource.TrySetCanceled();
+            return;
+        }
+
+        if (Dispatcher.CheckAccess())
+        {
+            AddToolApprovalCard(toolCall, completionSource);
+            return;
+        }
+
+#pragma warning disable VSTHRD001
+        await Dispatcher.InvokeAsync(
+            () => AddToolApprovalCard(toolCall, completionSource),
+            System.Windows.Threading.DispatcherPriority.Normal,
+            cancellationToken);
+#pragma warning restore VSTHRD001
+    }
+
     private static string BuildToolApprovalMarkdown(OpenAiSqlToolCall toolCall)
     {
         var sb = new StringBuilder();
@@ -1194,51 +1001,19 @@ public partial class ChatAgentControl : UserControl
         };
     }
 
-    private static async Task<string> ExecuteApprovedToolAsync(
-        OpenAiSqlToolCall toolCall,
-        DatabaseMetadata metadata,
-        ChatConnectionContext chatConnection,
-        CancellationToken cancellationToken)
-    {
-        var argumentsJson = string.IsNullOrWhiteSpace(toolCall.ArgumentsJson) ? "{}" : toolCall.ArgumentsJson;
-        if (!string.Equals(toolCall.Name, ExecuteSqlToolName, StringComparison.OrdinalIgnoreCase))
-        {
-            return await SqlMetadataToolExecutor.ExecuteToolAsync(
-                toolCall.Name,
-                argumentsJson,
-                metadata);
-        }
-
-        var query = ToolArgumentReader.GetString(argumentsJson, "query");
-        return await SqlReadOnlyQueryExecutor.ExecuteAsync(
-            chatConnection.ActiveConnectionString ?? string.Empty,
-            chatConnection.ActiveDatabase,
-            query);
-    }
-
-    private sealed class ToolPlannerResult
-    {
-        public ToolPlannerResult(string status, OpenAiSqlToolCall? toolCall)
-        {
-            Status = status;
-            ToolCall = toolCall;
-        }
-
-        public string Status { get; }
-        public OpenAiSqlToolCall? ToolCall { get; }
-    }
-
-    private async Task<string> CompleteChatStreamingTextAsync(
+    private async Task<string> CompleteChatWithAgentToolsAsync(
         string endpoint,
         string apiKey,
         string model,
         string systemPrompt,
         string message,
+        DatabaseMetadata metadata,
+        ChatConnectionContext chatConnection,
+        ISet<string> allowedToolNames,
         Border? assistantMessageBorder,
         CancellationToken cancellationToken)
     {
-        var assistantMessageContent = new StringBuilder();
-        var lastUiUpdate = Stopwatch.StartNew();
+        const int maxToolRounds = 5;
         try
         {
             var clientOptions = new OpenAIClientOptions();
@@ -1251,60 +1026,103 @@ public partial class ChatAgentControl : UserControl
             var client = new OpenAIClient(new ApiKeyCredential(apiKey), clientOptions);
             var chatClient = client.GetChatClient(model);
             var messages = BuildChatMessages(systemPrompt, message);
-
-            await Task.Run(() =>
+            var tools = ChatAgentToolRegistry.CreateChatTools(allowedToolNames);
+            var runtimeContext = new ChatAgentToolRuntimeContext
             {
-                var completionOptions = new ChatCompletionOptions();
-                foreach (var chatUpdate in chatClient.CompleteChatStreaming(messages, completionOptions, cancellationToken))
+                Metadata = metadata ?? DatabaseMetadata.Empty,
+                ActiveConnectionString = chatConnection.ActiveConnectionString ?? string.Empty,
+                ActiveDatabase = chatConnection.ActiveDatabase
+            };
+
+            for (var round = 0; round < maxToolRounds; round++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                await SafeUpdateChatMessageAsync(
+                    assistantMessageBorder,
+                    round == 0 ? "Thinking..." : "Thinking with approved tool output...");
+
+                var completionOptions = CreateAgentChatCompletionOptions(tools);
+                var completionResult = await chatClient.CompleteChatAsync(messages, completionOptions, cancellationToken);
+                var completion = completionResult.Value;
+                var toolCalls = completion.ToolCalls ?? Array.Empty<ChatToolCall>();
+                if (toolCalls.Count == 0)
+                {
+                    var finalText = GetChatCompletionText(completion);
+                    if (string.IsNullOrWhiteSpace(finalText))
+                    {
+                        finalText = "OpenAI returned an empty response.";
+                    }
+
+                    messages.Add(ChatMessage.CreateAssistantMessage(finalText));
+                    SaveChatSessionMessages(messages);
+                    await SafeUpdateChatMessageAsync(assistantMessageBorder, finalText);
+                    return finalText;
+                }
+
+                messages.Add(ChatMessage.CreateAssistantMessage(completion));
+                await SafeUpdateChatMessageAsync(
+                    assistantMessageBorder,
+                    $"Requested {toolCalls.Count} tool call(s). Waiting for approval...");
+
+                foreach (var toolCall in toolCalls)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-
-                    foreach (var part in chatUpdate.ContentUpdate)
-                    {
-                        if (string.IsNullOrEmpty(part.Text))
-                        {
-                            continue;
-                        }
-
-                        assistantMessageContent.Append(part.Text);
-                        if (lastUiUpdate.ElapsedMilliseconds >= 50)
-                        {
-                            SafeUpdateChatMessageAsync(assistantMessageBorder, assistantMessageContent.ToString()).GetAwaiter().GetResult();
-                            lastUiUpdate.Restart();
-                        }
-                    }
+                    var approvalRequest = ChatAgentToolRegistry.ToApprovalRequest(toolCall);
+                    var toolOutput = await ExecuteToolCallWithApprovalAsync(
+                        approvalRequest,
+                        runtimeContext,
+                        cancellationToken).ConfigureAwait(false);
+                    messages.Add(ChatMessage.CreateToolMessage(toolCall.Id, toolOutput));
                 }
-            }, cancellationToken);
-
-            var reply = assistantMessageContent.ToString();
-            if (string.IsNullOrWhiteSpace(reply))
-            {
-                reply = "OpenAI returned an empty response.";
-                await SafeUpdateChatMessageAsync(assistantMessageBorder, reply);
-            }
-            else
-            {
-                await SafeUpdateChatMessageAsync(assistantMessageBorder, reply);
             }
 
-            return reply;
+            var limitMessage = "Agent reached maximum tool rounds without completing.";
+            messages.Add(ChatMessage.CreateAssistantMessage(limitMessage));
+            SaveChatSessionMessages(messages);
+            await SafeUpdateChatMessageAsync(assistantMessageBorder, limitMessage);
+            return limitMessage;
         }
         catch (OperationCanceledException)
         {
-            var partial = assistantMessageContent.ToString();
-            var cancelledMessage = string.IsNullOrWhiteSpace(partial)
-                ? "Request stopped."
-                : partial + "\n\n[Stopped]";
-            await SafeUpdateChatMessageAsync(assistantMessageBorder, cancelledMessage);
+            await SafeUpdateChatMessageAsync(assistantMessageBorder, "Request stopped.");
             throw;
         }
         catch (Exception ex)
         {
-            var errorMessage = $"OpenAI streaming error: {ex.Message}";
-            MssqlIntelliSensePackage.Log($"[Chat Agent Streaming Error] {ex}");
+            var errorMessage = $"OpenAI agent tool error: {ex.Message}";
+            MssqlIntelliSensePackage.Log($"[Chat Agent Tool Loop Error] {ex}");
+            var messages = BuildChatMessages(systemPrompt, message);
+            messages.Add(ChatMessage.CreateAssistantMessage(errorMessage));
+            SaveChatSessionMessages(messages);
             await SafeUpdateChatMessageAsync(assistantMessageBorder, errorMessage);
             return errorMessage;
         }
+    }
+
+    private static ChatCompletionOptions CreateAgentChatCompletionOptions(IReadOnlyList<ChatTool> tools)
+    {
+        var options = new ChatCompletionOptions
+        {
+            AllowParallelToolCalls = false
+        };
+        foreach (var tool in tools)
+        {
+            options.Tools.Add(tool);
+        }
+
+        return options;
+    }
+
+    private static string GetChatCompletionText(ChatCompletion completion)
+    {
+        if (completion.Content == null || completion.Content.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        return string.Concat(completion.Content
+            .Where(part => !string.IsNullOrEmpty(part.Text))
+            .Select(part => part.Text));
     }
 
     private List<ChatMessage> BuildChatMessages(string systemPrompt, string message)
@@ -1314,23 +1132,25 @@ public partial class ChatAgentControl : UserControl
             new SystemChatMessage(systemPrompt)
         };
 
-        AddRecentChatHistory(messages);
+        AddRecentChatSessionMessages(messages);
         messages.Add(new UserChatMessage(message));
         return messages;
     }
 
-    private void AddRecentChatHistory(List<ChatMessage> messages)
+    private void AddRecentChatSessionMessages(List<ChatMessage> messages)
     {
-        foreach (var turn in _chatHistory.Skip(Math.Max(0, _chatHistory.Count - 12)))
+        foreach (var sessionMessage in _chatSessionMessages.Skip(Math.Max(0, _chatSessionMessages.Count - MaxSessionMessages)))
         {
-            if (turn.Role == "assistant")
-            {
-                messages.Add(new AssistantChatMessage(turn.Content));
-            }
-            else
-            {
-                messages.Add(new UserChatMessage(turn.Content));
-            }
+            messages.Add(sessionMessage);
+        }
+    }
+
+    private void SaveChatSessionMessages(IReadOnlyList<ChatMessage> messages)
+    {
+        _chatSessionMessages.Clear();
+        foreach (var message in messages.Skip(1).Skip(Math.Max(0, messages.Count - 1 - MaxSessionMessages)))
+        {
+            _chatSessionMessages.Add(message);
         }
     }
 
@@ -1356,9 +1176,8 @@ public partial class ChatAgentControl : UserControl
 
     private void TrimChatHistory()
     {
-        const int maxTurns = 24;
-        if (_chatHistory.Count <= maxTurns) return;
-        _chatHistory.RemoveRange(0, _chatHistory.Count - maxTurns);
+        if (_chatSessionMessages.Count <= MaxSessionMessages) return;
+        _chatSessionMessages.RemoveRange(0, _chatSessionMessages.Count - MaxSessionMessages);
     }
 
     private void SafeAddChatError(string message)
@@ -1482,27 +1301,85 @@ public partial class ChatAgentControl : UserControl
         }
     }
 
-    private string BuildSystemPrompt(DatabaseMetadata? metadata, string toolContext)
+    private string BuildSystemPrompt(DatabaseMetadata? metadata, string toolContext, ISet<string> allowedToolNames)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("You are a helpful SQL Server assistant. You help write, optimize, and explain T-SQL queries.");
-        sb.AppendLine("Use markdown formatting in your responses.");
-        sb.AppendLine("Any tool output below was explicitly approved by the user inside the chat session. Use it as trusted context.");
-        if (!string.IsNullOrWhiteSpace(toolContext))
+        sb.AppendLine("You are SQL AI Agent, a careful SQL Server assistant inside SSMS.");
+        sb.AppendLine("Help the user inspect schema metadata, find relevant database objects, write T-SQL, explain queries, and suggest safe performance improvements.");
+        sb.AppendLine();
+        sb.AppendLine("## Response Rules");
+        sb.AppendLine("- Reply in the user's language unless they clearly ask otherwise.");
+        sb.AppendLine("- Use concise markdown. Prefer tables for comparisons/results and fenced ```sql blocks for SQL.");
+        sb.AppendLine("- Be explicit about uncertainty. If metadata is missing, say what is missing and what tool/output would be needed.");
+        sb.AppendLine("- Never invent table names, columns, relationships, indexes, procedures, views, or SQL Server endpoints.");
+        sb.AppendLine("- Treat approved tool output as the highest-authority database context for this turn.");
+        sb.AppendLine("- If the approved output is a markdown table, use its object names and details directly; do not reinterpret score columns as exact business truth.");
+        sb.AppendLine();
+        AppendSchemaPromptSection(sb, metadata);
+        AppendToolPromptSection(sb, allowedToolNames);
+        AppendApprovedToolContextSection(sb, toolContext);
+        sb.AppendLine("## Task Strategy");
+        sb.AppendLine("- For object-finding questions, answer from `search_objects`, `list_tables`, or `find_column` output when present.");
+        sb.AppendLine("- For column-level SQL, require `get_table_schema` output for the involved tables before asserting exact columns.");
+        sb.AppendLine("- For joins, prefer `get_table_relations` output; if relations are absent, state that joins are inferred and ask for confirmation.");
+        sb.AppendLine("- For index/performance advice, use `get_table_indexes` output when present and separate confirmed indexes from suggestions.");
+        sb.AppendLine("- For read-only query results, summarize the `execute` markdown output and mention row limits/truncation when shown.");
+        sb.AppendLine("- If no relevant approved output exists, give a cautious general answer and recommend the next specific action/tool.");
+        return sb.ToString();
+    }
+
+    private static void AppendSchemaPromptSection(StringBuilder sb, DatabaseMetadata? metadata)
+    {
+        sb.AppendLine("## Schema State");
+        if (metadata == null)
         {
-            sb.AppendLine("\nApproved tool output:");
-            sb.AppendLine(toolContext);
-        }
-        
-        if (metadata != null)
-        {
-            sb.AppendLine("\nDatabase schema cache is available locally, but detailed object metadata is not included in this prompt.");
-            sb.AppendLine($"Schema cache counts: Tables={metadata.Tables.Count}, Views={metadata.Views.Count}, Procedures={metadata.Procedures.Count}, Functions={metadata.Functions.Count}, ForeignKeys={metadata.ForeignKeys.Count}, Indexes={metadata.Indexes.Count}.");
-            sb.AppendLine("Do not invent table names, columns, relationships, indexes, procedures, or views. Use only approved tool output for object-specific answers.");
+            sb.AppendLine("- Schema cache is unavailable.");
+            sb.AppendLine("- Do not answer object-specific database questions as facts. Ask the user to scan schema or approve a relevant tool action.");
+            sb.AppendLine();
+            return;
         }
 
-        sb.AppendLine("\nPlease format your answers using markdown.");
-        return sb.ToString();
+        sb.AppendLine("- Schema cache exists locally, but this prompt only includes counts plus approved tool output.");
+        sb.AppendLine($"- Counts: Tables={metadata.Tables.Count}, Views={metadata.Views.Count}, Procedures={metadata.Procedures.Count}, Functions={metadata.Functions.Count}, ForeignKeys={metadata.ForeignKeys.Count}, Indexes={metadata.Indexes.Count}.");
+        sb.AppendLine("- Counts prove the cache exists; they do not prove a specific object/column exists unless shown in approved tool output.");
+        sb.AppendLine();
+    }
+
+    private static void AppendToolPromptSection(StringBuilder sb, ISet<string> allowedToolNames)
+    {
+        sb.AppendLine("## Enabled Actions");
+        if (allowedToolNames == null || allowedToolNames.Count == 0)
+        {
+            sb.AppendLine("- No metadata actions are enabled for this turn.");
+            sb.AppendLine("- Answer only from conversation history and any approved context already shown.");
+            sb.AppendLine();
+            return;
+        }
+
+        foreach (var toolName in allowedToolNames.OrderBy(SqlMetadataToolExecutor.NormalizeToolName, StringComparer.OrdinalIgnoreCase))
+        {
+            var normalized = SqlMetadataToolExecutor.NormalizeToolName(toolName);
+            sb.AppendLine($"- `{normalized}`: {SqlMetadataToolExecutor.GetToolDescription(normalized)}");
+        }
+
+        sb.AppendLine("- Actions are executed locally only after explicit user approval; you cannot assume unapproved action results.");
+        sb.AppendLine();
+    }
+
+    private static void AppendApprovedToolContextSection(StringBuilder sb, string toolContext)
+    {
+        sb.AppendLine("## Approved Tool Output");
+        if (string.IsNullOrWhiteSpace(toolContext))
+        {
+            sb.AppendLine("- No tool output was approved or available for this turn.");
+            sb.AppendLine();
+            return;
+        }
+
+        sb.AppendLine("The following markdown was produced by approved function tools. Use it as trusted context:");
+        sb.AppendLine();
+        sb.AppendLine(toolContext.Trim());
+        sb.AppendLine();
     }
 
     private Border AddChatMessage(string sender, string message, bool isUser, bool isStreaming = false)
