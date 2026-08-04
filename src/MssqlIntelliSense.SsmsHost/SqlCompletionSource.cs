@@ -255,6 +255,13 @@ internal sealed class SqlCompletionCommandFilter : IOleCommandTarget
 
         if (pguidCmdGroup == VSConstants.VSStd2K)
         {
+            if (IsEditorInputCommand(cmdID) &&
+                (ObjectReviewWindow.TryRedirectEditorCommandToActiveWindow() ||
+                 ChatAgentControl.TryRedirectEditorCommandToActiveControl()))
+            {
+                return VSConstants.S_OK;
+            }
+
             switch ((VSConstants.VSStd2KCmdID)cmdID)
             {
                 case VSConstants.VSStd2KCmdID.AUTOCOMPLETE:
@@ -408,6 +415,16 @@ internal sealed class SqlCompletionCommandFilter : IOleCommandTarget
                command == VSConstants.VSStd2KCmdID.COMPLETEWORD ||
                command == VSConstants.VSStd2KCmdID.PARAMINFO ||
                command == VSConstants.VSStd2KCmdID.SHOWMEMBERLIST;
+    }
+
+    private static bool IsEditorInputCommand(uint cmdID)
+    {
+        var command = (VSConstants.VSStd2KCmdID)cmdID;
+        return command == VSConstants.VSStd2KCmdID.TYPECHAR ||
+               command == VSConstants.VSStd2KCmdID.BACKSPACE ||
+               command == VSConstants.VSStd2KCmdID.DELETE ||
+               command == VSConstants.VSStd2KCmdID.RETURN ||
+               command == VSConstants.VSStd2KCmdID.TAB;
     }
 
     private bool TriggerCompletion()

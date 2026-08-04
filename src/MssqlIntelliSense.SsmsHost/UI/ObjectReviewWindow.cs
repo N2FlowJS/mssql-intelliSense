@@ -19,6 +19,7 @@ namespace MssqlIntelliSense.SsmsHost;
 
 public sealed class ObjectReviewWindow : Window
 {
+    private static WeakReference<ObjectReviewWindow>? _activeWindow;
     private readonly string _copyName;
     private readonly string _copyDefinition;
     private readonly string _copyAll;
@@ -61,6 +62,16 @@ public sealed class ObjectReviewWindow : Window
         Foreground = GetBrush(EnvironmentColors.ToolWindowTextBrushKey, Colors.White);
         Content = BuildContent(title, subtitle, details, definition, customDescription);
         ShowActivated = true;
+        Activated += (_, _) => _activeWindow = new WeakReference<ObjectReviewWindow>(this);
+        Closed += (_, _) =>
+        {
+            if (_activeWindow != null &&
+                _activeWindow.TryGetTarget(out var window) &&
+                ReferenceEquals(window, this))
+            {
+                _activeWindow = null;
+            }
+        };
         Loaded += (_, _) => FocusDescriptionEditor();
         PreviewKeyDown += ObjectReviewWindow_PreviewKeyDown;
     }
@@ -78,6 +89,7 @@ public sealed class ObjectReviewWindow : Window
             var (title, subtitle, details, definition, objectKey, customDescription) = BuildReviewText(item, metadata);
             var columns = GetColumns(item, metadata);
             var window = new ObjectReviewWindow(title, subtitle, details, definition, objectKey, customDescription, columns);
+            _activeWindow = new WeakReference<ObjectReviewWindow>(window);
             if (owner != null)
             {
                 window.Owner = owner;
@@ -95,6 +107,18 @@ public sealed class ObjectReviewWindow : Window
         {
             MssqlIntelliSensePackage.Log($"[Object Review Error] {ex}");
         }
+    }
+
+    public static bool TryRedirectEditorCommandToActiveWindow()
+    {
+        ThreadHelper.ThrowIfNotOnUIThread();
+        if (_activeWindow == null || !_activeWindow.TryGetTarget(out var window) || !window.IsVisible)
+        {
+            return false;
+        }
+
+        window.FocusDescriptionEditor();
+        return true;
     }
 
     private static void SetSsmsOwner(Window window)

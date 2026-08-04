@@ -23,6 +23,7 @@ namespace MssqlIntelliSense.SsmsHost;
 
 public partial class ChatAgentControl : UserControl
 {
+    private static WeakReference<ChatAgentControl>? _activeControl;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private static readonly TimeSpan ToolPlannerTimeout = TimeSpan.FromSeconds(45);
     private const string SendIconGlyph = "\uE724";
@@ -76,7 +77,39 @@ public partial class ChatAgentControl : UserControl
     public ChatAgentControl()
     {
         InitializeComponent();
+        Loaded += (_, _) => MarkActiveControl();
+        GotKeyboardFocus += (_, _) => MarkActiveControl();
+        MouseEnter += (_, _) => MarkActiveControl();
         UpdateToolSelectionSummary();
+    }
+
+    public static bool TryRedirectEditorCommandToActiveControl()
+    {
+        ThreadHelper.ThrowIfNotOnUIThread();
+        if (_activeControl == null || !_activeControl.TryGetTarget(out var control) || !control.IsVisible)
+        {
+            return false;
+        }
+
+        if (!control.IsKeyboardFocusWithin && !control.IsMouseOver)
+        {
+            return false;
+        }
+
+        control.FocusChatInput();
+        return true;
+    }
+
+    private void MarkActiveControl()
+    {
+        _activeControl = new WeakReference<ChatAgentControl>(this);
+    }
+
+    private void FocusChatInput()
+    {
+        MarkActiveControl();
+        ChatInputTextBox.Focus();
+        Keyboard.Focus(ChatInputTextBox);
     }
 
     public void SetSelectedConnection(ConnectionInfo? connection, string? databaseName = null)
@@ -196,8 +229,10 @@ public partial class ChatAgentControl : UserControl
 
     private void ClearChatButton_Click(object sender, RoutedEventArgs e)
     {
+        e.Handled = true;
         _chatHistory.Clear();
         ChatMessagesPanel.Children.Clear();
+        FocusChatInput();
     }
 
     private void ToolSelectionChanged(object sender, RoutedEventArgs e)
@@ -693,7 +728,7 @@ public partial class ChatAgentControl : UserControl
                 output = await ExecuteApprovedToolAsync(toolCall, metadata ?? DatabaseMetadata.Empty, chatConnection);
                 await SafeUpdateChatMessageAsync(
                     toolStatusBorder,
-                    $"Executed {toolCall.Name}\n{SummarizeToolOutput(output)}");
+                    FormatToolOutputForChat(toolCall.Name, output));
             }
             catch (OperationCanceledException)
             {
@@ -1683,7 +1718,7 @@ public partial class ChatAgentControl : UserControl
         });
         container.Children.Add(new TextBlock
         {
-            Text = "Arguments: " + toolCall.ArgumentsJson,
+            Text = FormatToolArgumentsForApproval(toolCall),
             Foreground = textBrush,
             FontFamily = new FontFamily("Consolas, Courier New, monospace"),
             TextWrapping = TextWrapping.Wrap,
@@ -1781,6 +1816,200 @@ public partial class ChatAgentControl : UserControl
         }
 
         return output.Length <= 700 ? output : output.Substring(0, 700) + "...";
+    }
+
+    private static string FormatToolOutputForChat(string toolName, string output)
+    {
+        if (string.IsNullOrWhiteSpace(output))
+        {
+            return $"## Tool: {toolName}\n\n(empty output)";
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(output);
+            var root = document.RootElement;
+            if (root.TryGetProperty("error", out var errorElement))
+            {
+                return $"## Tool: {toolName}\n\n**Error:** {errorElement.GetString() ?? errorElement.ToString()}";
+            }
+
+            if (string.Equals(toolName, ExecuteSqlToolName, StringComparison.OrdinalIgnoreCase))
+            {
+                return FormatExecuteToolOutput(root, output);
+            }
+        }
+        catch (JsonException)
+        {
+            // Fall through to compact raw output.
+        }
+
+        return $"## Tool: {toolName}\n\n```json\n{SummarizeToolOutput(output)}\n```";
+    }
+
+    private static string FormatExecuteToolOutput(JsonElement root, string rawOutput)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("## Tool: execute");
+        sb.AppendLine();
+        if (root.TryGetProperty("database", out var databaseElement))
+        {
+            sb.AppendLine($"**Database:** `{databaseElement.GetString()}`");
+        }
+
+        var rowCount = root.TryGetProperty("rowCount", out var rowCountElement) && rowCountElement.TryGetInt32(out var rows)
+            ? rows
+            : 0;
+        var elapsedMs = root.TryGetProperty("elapsedMs", out var elapsedElement) && elapsedElement.TryGetInt64(out var elapsed)
+            ? elapsed
+            : 0;
+        var truncated = root.TryGetProperty("truncated", out var truncatedElement) && truncatedElement.ValueKind == JsonValueKind.True;
+        sb.AppendLine($"**Rows:** `{rowCount}`  **Elapsed:** `{elapsedMs} ms`  **Truncated:** `{truncated}`");
+
+        if (root.TryGetProperty("query", out var queryElement))
+        {
+            sb.AppendLine();
+            sb.AppendLine("### Query");
+            sb.AppendLine("```sql");
+            sb.AppendLine(queryElement.GetString() ?? string.Empty);
+            sb.AppendLine("```");
+        }
+
+        if (root.TryGetProperty("rows", out var rowsElement) &&
+            rowsElement.ValueKind == JsonValueKind.Array &&
+            rowsElement.GetArrayLength() > 0)
+        {
+            var columnNames = GetResultColumnNames(root, rowsElement);
+            sb.AppendLine();
+            sb.AppendLine("### Result Preview");
+            AppendMarkdownTable(sb, columnNames, rowsElement, maxRows: 12);
+        }
+        else
+        {
+            sb.AppendLine();
+            sb.AppendLine("No rows returned.");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine("### Raw JSON");
+        sb.AppendLine("```json");
+        sb.AppendLine(SummarizeToolOutput(rawOutput));
+        sb.AppendLine("```");
+        return sb.ToString();
+    }
+
+    private static List<string> GetResultColumnNames(JsonElement root, JsonElement rowsElement)
+    {
+        if (root.TryGetProperty("columns", out var columnsElement) && columnsElement.ValueKind == JsonValueKind.Array)
+        {
+            var names = columnsElement.EnumerateArray()
+                .Select(column => column.TryGetProperty("name", out var nameElement) ? nameElement.GetString() : null)
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .Select(name => name!)
+                .ToList();
+            if (names.Count > 0)
+            {
+                return names;
+            }
+        }
+
+        return rowsElement.EnumerateArray()
+            .FirstOrDefault()
+            .EnumerateObject()
+            .Select(property => property.Name)
+            .ToList();
+    }
+
+    private static void AppendMarkdownTable(StringBuilder sb, IReadOnlyList<string> columnNames, JsonElement rowsElement, int maxRows)
+    {
+        var visibleColumns = columnNames.Take(8).ToList();
+        sb.Append("| ");
+        sb.Append(string.Join(" | ", visibleColumns.Select(EscapeMarkdownTableCell)));
+        sb.AppendLine(" |");
+        sb.Append("| ");
+        sb.Append(string.Join(" | ", visibleColumns.Select(_ => "---")));
+        sb.AppendLine(" |");
+
+        foreach (var row in rowsElement.EnumerateArray().Take(maxRows))
+        {
+            sb.Append("| ");
+            sb.Append(string.Join(" | ", visibleColumns.Select(column =>
+                EscapeMarkdownTableCell(row.TryGetProperty(column, out var value) ? FormatJsonValue(value) : string.Empty))));
+            sb.AppendLine(" |");
+        }
+
+        if (columnNames.Count > visibleColumns.Count)
+        {
+            sb.AppendLine();
+            sb.AppendLine($"Showing {visibleColumns.Count}/{columnNames.Count} columns.");
+        }
+
+        if (rowsElement.GetArrayLength() > maxRows)
+        {
+            sb.AppendLine($"Showing {maxRows}/{rowsElement.GetArrayLength()} rows.");
+        }
+    }
+
+    private static string FormatJsonValue(JsonElement value)
+    {
+        return value.ValueKind switch
+        {
+            JsonValueKind.Null => "",
+            JsonValueKind.String => value.GetString() ?? string.Empty,
+            JsonValueKind.True => "true",
+            JsonValueKind.False => "false",
+            _ => value.ToString()
+        };
+    }
+
+    private static string EscapeMarkdownTableCell(string? value)
+    {
+        return (value ?? string.Empty)
+            .Replace("|", "\\|")
+            .Replace("\r", " ")
+            .Replace("\n", " ");
+    }
+
+    private static string FormatToolArgumentsForApproval(OpenAiSqlToolCall toolCall)
+    {
+        if (string.IsNullOrWhiteSpace(toolCall.ArgumentsJson))
+        {
+            return "Arguments: {}";
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(toolCall.ArgumentsJson);
+            var root = document.RootElement;
+            var sb = new StringBuilder();
+            sb.AppendLine("Arguments:");
+            foreach (var property in root.EnumerateObject())
+            {
+                sb.Append("  ");
+                sb.Append(property.Name);
+                sb.Append(": ");
+                if (property.Name.Equals("query", StringComparison.OrdinalIgnoreCase))
+                {
+                    sb.AppendLine();
+                    sb.AppendLine(IndentMultiline(property.Value.GetString() ?? property.Value.ToString(), "    "));
+                }
+                else
+                {
+                    sb.AppendLine(FormatJsonValue(property.Value));
+                }
+            }
+
+            return sb.ToString().TrimEnd();
+        }
+        catch (JsonException)
+        {
+            return "Arguments: " + toolCall.ArgumentsJson;
+        }
+    }
+
+    private static string IndentMultiline(string value, string indent)
+    {
+        return string.Join(Environment.NewLine, value.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n').Select(line => indent + line));
     }
 
     private sealed class ToolPlannerResult

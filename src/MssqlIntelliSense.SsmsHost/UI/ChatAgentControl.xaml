@@ -122,6 +122,7 @@
                 <Button x:Name="ClearChatButton"
                         DockPanel.Dock="Right"
                         Click="ClearChatButton_Click"
+                        Focusable="False"
                         Style="{StaticResource IconCommandButtonStyle}"
                         ToolTip="Clear conversation history">
                     <TextBlock Text="&#xE74D;" Style="{StaticResource IconGlyphStyle}" />
