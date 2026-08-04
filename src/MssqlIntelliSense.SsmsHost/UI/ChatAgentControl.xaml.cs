@@ -59,6 +59,12 @@ public partial class ChatAgentControl : UserControl
         public bool FromActiveWindow { get; set; }
     }
 
+    private sealed class MetadataLoadResult
+    {
+        public DatabaseMetadata? Metadata { get; set; }
+        public string? ErrorMessage { get; set; }
+    }
+
     private readonly List<ChatTurn> _chatHistory = new();
     private readonly List<string> _sentInputHistory = new();
     private int _historyIndex = -1;
@@ -239,50 +245,26 @@ public partial class ChatAgentControl : UserControl
                 : $"Connection: {chatConnection.DisplayName}",
             isUser: false);
 
-        var metadata = await Task.Run(() =>
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            try
-            {
-                DatabaseMetadata metadata;
-                var activeConnectionString = chatConnection.ActiveConnectionString;
-                if (!string.IsNullOrWhiteSpace(activeConnectionString))
-                {
-                    metadata = MssqlIntelliSenseCacheReader.GetMetadataByConnectionString(activeConnectionString!);
-                }
-                else if (chatConnection.Connection != null)
-                {
-                    metadata = MssqlIntelliSenseCacheReader.GetSchemaDetails(chatConnection.Connection.Id).Metadata;
-                }
-                else
-                {
-                    return null;
-                }
-
-                var activeDatabase = chatConnection.ActiveDatabase;
-                return string.IsNullOrWhiteSpace(activeDatabase)
-                    ? metadata
-                    : MssqlIntelliSenseCacheReader.FilterByDatabase(metadata, activeDatabase!);
-            }
-            catch (Exception ex)
-            {
-                MssqlIntelliSensePackage.Log($"[Chat Agent Metadata Error] {ex.Message}");
-                return null;
-            }
-        }, cancellationToken);
+        await MssqlIntelliSensePackage.SwitchToMainThreadAsync(cancellationToken);
+        var metadataStatusBorder = AddChatMessage("Schema", "Loading schema cache... (1/3) Resolving cache source", isUser: false, isStreaming: true);
+        var metadataResult = await LoadChatMetadataAsync(chatConnection, metadataStatusBorder, cancellationToken);
+        var metadata = metadataResult.Metadata;
 
         var hasSchemaMetadata = HasSchemaMetadata(metadata);
         if (!hasSchemaMetadata)
         {
             metadata = null;
             await MssqlIntelliSensePackage.SwitchToMainThreadAsync(cancellationToken);
-            AddChatMessage(
-                "Schema",
-                string.IsNullOrWhiteSpace(chatConnection.DisplayName)
+            var unavailableMessage = !string.IsNullOrWhiteSpace(metadataResult.ErrorMessage)
+                ? "Schema cache load failed: " + metadataResult.ErrorMessage
+                : string.IsNullOrWhiteSpace(chatConnection.DisplayName)
                     ? "No cached schema is available. The assistant can provide general SQL guidance, but cannot verify database objects."
-                    : "Schema has not been scanned for this connection. Scan the schema before asking the assistant to verify tables, columns, relationships, or indexes.",
-                isUser: false);
+                    : "Schema has not been scanned for this connection. Scan the schema before asking the assistant to verify tables, columns, relationships, or indexes.";
+            await SafeUpdateChatMessageAsync(metadataStatusBorder, unavailableMessage);
+        }
+        else
+        {
+            await SafeUpdateChatMessageAsync(metadataStatusBorder, BuildSchemaLoadedMessage(metadata!));
         }
 
         Border? statusBorder = null;
@@ -318,6 +300,14 @@ public partial class ChatAgentControl : UserControl
             systemPrompt = $"Active SQL connection: {chatConnection.DisplayName}\n" + systemPrompt;
         }
 
+        LogAgentTrace(
+            model: string.IsNullOrWhiteSpace(options.Model) ? "gpt-4o" : options.Model,
+            chatConnection: chatConnection,
+            metadata: metadata,
+            allowedToolNames: allowedToolNames,
+            toolContext: toolContext,
+            systemPrompt: systemPrompt);
+
         Border? assistantMessageBorder = null;
         await MssqlIntelliSensePackage.SwitchToMainThreadAsync(cancellationToken);
         assistantMessageBorder = AddChatMessage("Assistant", string.Empty, isUser: false, isStreaming: true);
@@ -345,6 +335,112 @@ public partial class ChatAgentControl : UserControl
          metadata.Functions.Count > 0 ||
          metadata.UserTypes.Count > 0 ||
          metadata.Synonyms.Count > 0);
+
+    private async Task<MetadataLoadResult> LoadChatMetadataAsync(
+        ChatConnectionContext chatConnection,
+        Border? statusBorder,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await SafeUpdateChatMessageAsync(statusBorder, "Loading schema cache... (1/3) Resolving cache source");
+
+            var hasActiveConnectionString = !string.IsNullOrWhiteSpace(chatConnection.ActiveConnectionString);
+            var hasCachedConnection = chatConnection.Connection != null;
+            if (!hasActiveConnectionString && !hasCachedConnection)
+            {
+                return new MetadataLoadResult();
+            }
+
+            await SafeUpdateChatMessageAsync(statusBorder, "Loading schema cache... (2/3) Reading cached schema");
+            var metadata = await Task.Run(() =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (hasActiveConnectionString)
+                {
+                    return MssqlIntelliSenseCacheReader.GetMetadataByConnectionString(chatConnection.ActiveConnectionString!);
+                }
+
+                return MssqlIntelliSenseCacheReader.GetSchemaDetails(chatConnection.Connection!.Id).Metadata;
+            }, cancellationToken);
+
+            if (!string.IsNullOrWhiteSpace(chatConnection.ActiveDatabase))
+            {
+                await SafeUpdateChatMessageAsync(statusBorder, $"Loading schema cache... (3/3) Filtering database {chatConnection.ActiveDatabase}");
+                metadata = await Task.Run(
+                    () => MssqlIntelliSenseCacheReader.FilterByDatabase(metadata, chatConnection.ActiveDatabase!),
+                    cancellationToken);
+            }
+            else
+            {
+                await SafeUpdateChatMessageAsync(statusBorder, "Loading schema cache... (3/3) Preparing schema context");
+            }
+
+            return new MetadataLoadResult { Metadata = metadata };
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            MssqlIntelliSensePackage.Log($"[Chat Agent Metadata Error] {ex}");
+            return new MetadataLoadResult { ErrorMessage = ex.Message };
+        }
+    }
+
+    private static string BuildSchemaLoadedMessage(DatabaseMetadata metadata)
+    {
+        return "Schema cache loaded. " +
+               $"Tables: {metadata.Tables.Count}, Views: {metadata.Views.Count}, Procedures: {metadata.Procedures.Count}, " +
+               $"Functions: {metadata.Functions.Count}, Foreign keys: {metadata.ForeignKeys.Count}, Indexes: {metadata.Indexes.Count}.";
+    }
+
+    private void LogAgentTrace(
+        string model,
+        ChatConnectionContext chatConnection,
+        DatabaseMetadata? metadata,
+        ISet<string> allowedToolNames,
+        string toolContext,
+        string systemPrompt)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("[Chat Agent Trace]");
+        sb.AppendLine();
+        sb.AppendLine("| Key | Value |");
+        sb.AppendLine("| --- | --- |");
+        sb.AppendLine($"| Model | `{model}` |");
+        sb.AppendLine($"| Connection | `{(string.IsNullOrWhiteSpace(chatConnection.DisplayName) ? "(none)" : chatConnection.DisplayName)}` |");
+        sb.AppendLine($"| Active database | `{(string.IsNullOrWhiteSpace(chatConnection.ActiveDatabase) ? "(not specified)" : chatConnection.ActiveDatabase)}` |");
+        sb.AppendLine($"| History turns sent | `{Math.Min(_chatHistory.Count, 12)}` |");
+        sb.AppendLine($"| Allowed tools | `{(allowedToolNames.Count == 0 ? "(none)" : string.Join(", ", allowedToolNames))}` |");
+
+        if (metadata != null)
+        {
+            sb.AppendLine($"| Tables | `{metadata.Tables.Count}` |");
+            sb.AppendLine($"| Views | `{metadata.Views.Count}` |");
+            sb.AppendLine($"| Procedures | `{metadata.Procedures.Count}` |");
+            sb.AppendLine($"| Functions | `{metadata.Functions.Count}` |");
+            sb.AppendLine($"| Foreign keys | `{metadata.ForeignKeys.Count}` |");
+            sb.AppendLine($"| Indexes | `{metadata.Indexes.Count}` |");
+        }
+        else
+        {
+            sb.AppendLine("| Schema cache | `(unavailable)` |");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine("### Approved tool context");
+        sb.AppendLine("```text");
+        sb.AppendLine(string.IsNullOrWhiteSpace(toolContext) ? "(empty)" : toolContext);
+        sb.AppendLine("```");
+        sb.AppendLine();
+        sb.AppendLine("### System prompt");
+        sb.AppendLine("```text");
+        sb.AppendLine(systemPrompt);
+        sb.AppendLine("```");
+        MssqlIntelliSensePackage.Log(sb.ToString());
+    }
 
     private ChatConnectionContext ResolveChatConnectionContext()
     {
@@ -546,32 +642,12 @@ public partial class ChatAgentControl : UserControl
                     break;
                 }
 
-                var approved = await RequestToolApprovalAsync(plannerResult.ToolCall, cancellationToken);
-                string output;
-                if (approved)
-                {
-                    output = await ExecuteApprovedToolAsync(plannerResult.ToolCall, metadata ?? DatabaseMetadata.Empty, chatConnection);
-                    await AddChatMessageOnMainThreadAsync(
-                        "Tool",
-                        $"Executed {plannerResult.ToolCall.Name}\n{SummarizeToolOutput(output)}",
-                        isUser: false,
-                        cancellationToken);
-                }
-                else
-                {
-                    output = JsonSerializer.Serialize(new
-                    {
-                        error = "Tool call rejected by user.",
-                        tool = plannerResult.ToolCall.Name
-                    }, JsonOptions);
-                    await AddChatMessageOnMainThreadAsync(
-                        "Tool",
-                        $"Rejected {plannerResult.ToolCall.Name}",
-                        isUser: false,
-                        cancellationToken);
-                }
-
-                toolOutputs.Add($"Tool: {plannerResult.ToolCall.Name}\nArguments: {plannerResult.ToolCall.ArgumentsJson}\nOutput: {output}");
+                var approved = await ExecuteToolCallWithApprovalAsync(
+                    plannerResult.ToolCall,
+                    metadata,
+                    chatConnection,
+                    toolOutputs,
+                    cancellationToken);
 
                 if (!approved)
                 {
@@ -592,6 +668,67 @@ public partial class ChatAgentControl : UserControl
         return toolOutputs.Count == 0
             ? string.Empty
             : string.Join("\n\n", toolOutputs);
+    }
+
+    private async Task<bool> ExecuteToolCallWithApprovalAsync(
+        OpenAiSqlToolCall toolCall,
+        DatabaseMetadata? metadata,
+        ChatConnectionContext chatConnection,
+        List<string> toolOutputs,
+        CancellationToken cancellationToken)
+    {
+        var approved = await RequestToolApprovalAsync(toolCall, cancellationToken);
+        string output;
+        if (approved)
+        {
+            await MssqlIntelliSensePackage.SwitchToMainThreadAsync(cancellationToken);
+            var toolStatusBorder = AddChatMessage(
+                "Tool",
+                $"Running {toolCall.Name}...",
+                isUser: false,
+                isStreaming: true);
+
+            try
+            {
+                output = await ExecuteApprovedToolAsync(toolCall, metadata ?? DatabaseMetadata.Empty, chatConnection);
+                await SafeUpdateChatMessageAsync(
+                    toolStatusBorder,
+                    $"Executed {toolCall.Name}\n{SummarizeToolOutput(output)}");
+            }
+            catch (OperationCanceledException)
+            {
+                await SafeUpdateChatMessageAsync(toolStatusBorder, $"Cancelled {toolCall.Name}");
+                throw;
+            }
+            catch (Exception ex)
+            {
+                output = JsonSerializer.Serialize(new
+                {
+                    error = ex.Message,
+                    tool = toolCall.Name
+                }, JsonOptions);
+                MssqlIntelliSensePackage.Log($"[Chat Agent Tool Execute Error] {ex}");
+                await SafeUpdateChatMessageAsync(
+                    toolStatusBorder,
+                    $"Tool error {toolCall.Name}\n{ex.Message}");
+            }
+        }
+        else
+        {
+            output = JsonSerializer.Serialize(new
+            {
+                error = "Tool call rejected by user.",
+                tool = toolCall.Name
+            }, JsonOptions);
+            await AddChatMessageOnMainThreadAsync(
+                "Tool",
+                $"Rejected {toolCall.Name}",
+                isUser: false,
+                cancellationToken);
+        }
+
+        toolOutputs.Add($"Tool: {toolCall.Name}\nArguments: {toolCall.ArgumentsJson}\nOutput: {output}");
+        return approved;
     }
 
     private async Task<string> CompleteToolPlannerStreamingAsync(
@@ -780,11 +917,13 @@ public partial class ChatAgentControl : UserControl
             }
         }
 
-        return new List<ChatMessage>
+        var messages = new List<ChatMessage>
         {
-            new SystemChatMessage(systemPrompt.ToString()),
-            new UserChatMessage(userMessage)
+            new SystemChatMessage(systemPrompt.ToString())
         };
+        AddRecentChatHistory(messages);
+        messages.Add(new UserChatMessage(userMessage));
+        return messages;
     }
 
     private ToolPlannerResult? ParseToolPlannerResult(string plannerJson)
@@ -1742,6 +1881,13 @@ public partial class ChatAgentControl : UserControl
             new SystemChatMessage(systemPrompt)
         };
 
+        AddRecentChatHistory(messages);
+        messages.Add(new UserChatMessage(message));
+        return messages;
+    }
+
+    private void AddRecentChatHistory(List<ChatMessage> messages)
+    {
         foreach (var turn in _chatHistory.Skip(Math.Max(0, _chatHistory.Count - 12)))
         {
             if (turn.Role == "assistant")
@@ -1753,9 +1899,6 @@ public partial class ChatAgentControl : UserControl
                 messages.Add(new UserChatMessage(turn.Content));
             }
         }
-
-        messages.Add(new UserChatMessage(message));
-        return messages;
     }
 
     private static Uri? GetSdkEndpoint(string configuredEndpoint)

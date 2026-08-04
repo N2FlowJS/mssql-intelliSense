@@ -519,6 +519,7 @@ internal sealed class SqlCompletionCommandFilter : IOleCommandTarget
         _lastReviewedCompletionKey = key;
         _lastReviewedAtUtc = now;
         MssqlIntelliSensePackage.Log($"[Autocomplete] Opening object review for {match.Kind}: {match.Label}");
+        ThreadHelper.ThrowIfNotOnUIThread();
         ObjectReviewWindow.ShowForCompletion(match, metadata);
     }
 

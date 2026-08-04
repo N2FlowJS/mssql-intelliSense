@@ -5,7 +5,12 @@ using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
+using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
+using Microsoft.VisualStudio;
+using Microsoft.VisualStudio.Shell;
+using Microsoft.VisualStudio.Shell.Interop;
 using Microsoft.VisualStudio.PlatformUI;
 using MssqlIntelliSense.Core.Completion;
 using MssqlIntelliSense.Core.Metadata;
@@ -55,10 +60,14 @@ public sealed class ObjectReviewWindow : Window
         Background = GetBrush(EnvironmentColors.ToolWindowBackgroundBrushKey, Color.FromRgb(31, 31, 31));
         Foreground = GetBrush(EnvironmentColors.ToolWindowTextBrushKey, Colors.White);
         Content = BuildContent(title, subtitle, details, definition, customDescription);
+        ShowActivated = true;
+        Loaded += (_, _) => FocusDescriptionEditor();
+        PreviewKeyDown += ObjectReviewWindow_PreviewKeyDown;
     }
 
     public static void ShowForCompletion(SqlCompletionItem item, DatabaseMetadata metadata, Window? owner = null)
     {
+        ThreadHelper.ThrowIfNotOnUIThread();
         if (!SqlObjectReviewFormatter.CanReview(item.Kind))
         {
             return;
@@ -74,12 +83,64 @@ public sealed class ObjectReviewWindow : Window
                 window.Owner = owner;
                 window.WindowStartupLocation = WindowStartupLocation.CenterOwner;
             }
+            else
+            {
+                SetSsmsOwner(window);
+            }
             window.Show();
             window.Activate();
+            window.FocusDescriptionEditor();
         }
         catch (Exception ex)
         {
             MssqlIntelliSensePackage.Log($"[Object Review Error] {ex}");
+        }
+    }
+
+    private static void SetSsmsOwner(Window window)
+    {
+        try
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            if (ServiceProvider.GlobalProvider.GetService(typeof(SVsUIShell)) is IVsUIShell shell &&
+                ErrorHandler.Succeeded(shell.GetDialogOwnerHwnd(out var hwnd)) &&
+                hwnd != IntPtr.Zero)
+            {
+                new WindowInteropHelper(window).Owner = hwnd;
+                window.WindowStartupLocation = WindowStartupLocation.CenterOwner;
+            }
+        }
+        catch (Exception ex)
+        {
+            MssqlIntelliSensePackage.Log($"[Object Review Owner Error] {ex.Message}");
+        }
+    }
+
+    private void FocusDescriptionEditor()
+    {
+        if (_customDescriptionTextBox == null)
+        {
+            return;
+        }
+
+        Activate();
+        _customDescriptionTextBox.Focus();
+        Keyboard.Focus(_customDescriptionTextBox);
+        _customDescriptionTextBox.CaretIndex = _customDescriptionTextBox.Text?.Length ?? 0;
+    }
+
+    private void ObjectReviewWindow_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control && e.Key == Key.Enter)
+        {
+            e.Handled = true;
+            SaveCustomDescription();
+            return;
+        }
+
+        if (e.Key == Key.F5 || ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control && e.Key == Key.E))
+        {
+            e.Handled = true;
         }
     }
 
