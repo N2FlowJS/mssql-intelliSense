@@ -726,11 +726,7 @@ public partial class MssqlIntelliSenseWindow : Window
             }
             else
             {
-                // If we already have detail panel open, load details for selected node
-                if (DetailContentPanel.Visibility == Visibility.Visible)
-                {
-                    LoadDetailForNode(selectedNode);
-                }
+                ShowNodeDetails(selectedNode);
             }
         }
     }
@@ -1033,6 +1029,16 @@ public partial class MssqlIntelliSenseWindow : Window
         EmptyStatePanel.Visibility = Visibility.Collapsed;
         DetailContentPanel.Visibility = Visibility.Visible;
         LoadConnectionDetails(conn);
+    }
+
+    private void ShowNodeDetails(TreeViewItemViewModel node)
+    {
+        SettingsPanel.Visibility = Visibility.Collapsed;
+        AboutPanel.Visibility = Visibility.Collapsed;
+        ScanProgressPanel.Visibility = Visibility.Collapsed;
+        EmptyStatePanel.Visibility = Visibility.Collapsed;
+        DetailContentPanel.Visibility = Visibility.Visible;
+        LoadDetailForNode(node);
     }
 
     private void LoadConnectionDetails(ConnectionInfo conn)
