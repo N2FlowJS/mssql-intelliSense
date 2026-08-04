@@ -2160,13 +2160,13 @@ public partial class ChatAgentControl : UserControl
             {
                 return FormatExecuteToolOutput(root, output);
             }
+
+            return $"## Tool: {toolName}\n\n```json\n{output}\n```";
         }
         catch (JsonException)
         {
-            // Fall through to compact raw output.
+            return $"## Tool: {toolName}\n\n```\n{SummarizeToolOutput(output)}\n```";
         }
-
-        return $"## Tool: {toolName}\n\n```json\n{SummarizeToolOutput(output)}\n```";
     }
 
     private static string FormatExecuteToolOutput(JsonElement root, string rawOutput)
@@ -2215,7 +2215,7 @@ public partial class ChatAgentControl : UserControl
         sb.AppendLine();
         sb.AppendLine("### Raw JSON");
         sb.AppendLine("```json");
-        sb.AppendLine(SummarizeToolOutput(rawOutput));
+        sb.AppendLine(rawOutput);
         sb.AppendLine("```");
         return sb.ToString();
     }
