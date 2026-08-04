@@ -24,6 +24,7 @@ namespace MssqlIntelliSense.SsmsHost;
 public partial class ChatAgentControl : UserControl
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly TimeSpan ToolPlannerTimeout = TimeSpan.FromSeconds(45);
     private const string SendIconGlyph = "\uE724";
     private const string StopIconGlyph = "\uE71A";
     private const string ApproveIconGlyph = "\uE73E";
@@ -481,16 +482,46 @@ public partial class ChatAgentControl : UserControl
 
             for (var iteration = 0; iteration < 4; iteration++)
             {
-                await SafeUpdateChatMessageAsync(statusBorder, "Checking available actions...");
+                await SafeUpdateChatMessageAsync(statusBorder, $"Checking available actions... ({iteration + 1}/4)");
 
-                var plannerJson = await CompleteToolPlannerStreamingAsync(
-                    chatClient,
-                    BuildToolPlannerMessages(metadata, userMessage, toolOutputs, allowedToolNames),
-                    cancellationToken);
+                string plannerJson;
+                try
+                {
+                    plannerJson = await CompleteToolPlannerStreamingWithTimeoutAsync(
+                        chatClient,
+                        BuildToolPlannerMessages(metadata, userMessage, toolOutputs, allowedToolNames),
+                        cancellationToken);
+                }
+                catch (TimeoutException ex)
+                {
+                    var message = "Tool planner timeout: " + ex.Message;
+                    await SafeUpdateChatMessageAsync(statusBorder, message);
+                    await AddChatMessageOnMainThreadAsync("Error", message, isUser: false, cancellationToken);
+                    toolOutputs.Add(message);
+                    break;
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    var message = "Tool planner error: " + ex.Message;
+                    await SafeUpdateChatMessageAsync(statusBorder, message);
+                    await AddChatMessageOnMainThreadAsync("Error", message, isUser: false, cancellationToken);
+                    toolOutputs.Add(message);
+                    break;
+                }
 
                 var plannerResult = ParseToolPlannerResult(plannerJson);
                 if (plannerResult == null || plannerResult.Status == "completed")
                 {
+                    if (plannerResult == null)
+                    {
+                        var preview = string.IsNullOrWhiteSpace(plannerJson)
+                            ? "(empty planner response)"
+                            : plannerJson.Length > 500 ? plannerJson.Substring(0, 500) + "..." : plannerJson;
+                        var message = "Tool planner returned invalid response. Continuing without tool actions.\n" + preview;
+                        await SafeUpdateChatMessageAsync(statusBorder, message);
+                        await AddChatMessageOnMainThreadAsync("Error", message, isUser: false, cancellationToken);
+                        toolOutputs.Add(message);
+                    }
                     break;
                 }
 
@@ -593,6 +624,10 @@ public partial class ChatAgentControl : UserControl
                     }
                 }
             }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
             catch (Exception ex)
             {
                 MssqlIntelliSensePackage.Log($"[Chat Agent Tool Planner JsonSchema Error] {ex.Message}");
@@ -612,14 +647,53 @@ public partial class ChatAgentControl : UserControl
                         }
                     }
                 }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
                 catch (Exception fallbackEx)
                 {
                     MssqlIntelliSensePackage.Log($"[Chat Agent Tool Planner Fallback Error] {fallbackEx.Message}");
+                    throw new InvalidOperationException(
+                        $"Unable to check available actions. JSON planner failed: {ex.Message}. Fallback planner failed: {fallbackEx.Message}",
+                        fallbackEx);
                 }
             }
         }, cancellationToken);
 
-        return content.ToString();
+        var result = content.ToString();
+        if (string.IsNullOrWhiteSpace(result))
+        {
+            throw new InvalidOperationException("Tool planner returned an empty response.");
+        }
+
+        return result;
+    }
+
+    private async Task<string> CompleteToolPlannerStreamingWithTimeoutAsync(
+        ChatClient chatClient,
+        List<ChatMessage> messages,
+        CancellationToken cancellationToken)
+    {
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutCts.CancelAfter(ToolPlannerTimeout);
+
+        var plannerTask = CompleteToolPlannerStreamingAsync(chatClient, messages, timeoutCts.Token);
+        var completedTask = await Task.WhenAny(plannerTask, Task.Delay(ToolPlannerTimeout + TimeSpan.FromSeconds(2), cancellationToken));
+        if (completedTask != plannerTask)
+        {
+            timeoutCts.Cancel();
+            throw new TimeoutException($"No response after {ToolPlannerTimeout.TotalSeconds:0} seconds while checking available actions.");
+        }
+
+        try
+        {
+            return await plannerTask;
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new TimeoutException($"No response after {ToolPlannerTimeout.TotalSeconds:0} seconds while checking available actions.");
+        }
     }
 
     private HashSet<string> GetAllowedToolNamesFromUi()
