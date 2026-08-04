@@ -5,36 +5,33 @@ namespace MssqlIntelliSense.Core.Metadata;
 
 public static class MetadataDescriptionEditor
 {
-    private static readonly object MigrationSyncRoot = new();
-    private static bool _legacyDescriptionsMigrated;
-
-    public static void EnsureLegacyDescriptionsMigrated()
+    public static DatabaseMetadata ApplyStoredDescriptions(DatabaseMetadata metadata)
     {
-        lock (MigrationSyncRoot)
+        if (metadata == null || ReferenceEquals(metadata, DatabaseMetadata.Empty))
         {
-            if (_legacyDescriptionsMigrated)
-            {
-                return;
-            }
-
-            foreach (var entry in ObjectDescriptionStore.LoadAll())
-            {
-                if (TryParseColumnKey(entry.Key, out var columnKind, out var columnDatabase, out var columnSchema, out var columnObject, out var columnName))
-                {
-                    if (TryUpdateColumnDescription(columnKind, columnDatabase, columnSchema, columnObject, columnName, entry.Value))
-                    {
-                        ObjectDescriptionStore.SaveDescription(entry.Key, string.Empty);
-                    }
-                }
-                else if (TryParseObjectKey(entry.Key, out var kind, out var database, out var schema, out var name) &&
-                         TryUpdateObjectDescription(kind, database, schema, name, entry.Value))
-                {
-                    ObjectDescriptionStore.SaveDescription(entry.Key, string.Empty);
-                }
-            }
-
-            _legacyDescriptionsMigrated = true;
+            return metadata ?? DatabaseMetadata.Empty;
         }
+
+        var descriptions = ObjectDescriptionStore.LoadAll();
+        if (descriptions.Count == 0)
+        {
+            return metadata;
+        }
+
+        var updated = metadata;
+        foreach (var entry in descriptions)
+        {
+            if (TryParseColumnKey(entry.Key, out var columnKind, out var columnDatabase, out var columnSchema, out var columnObject, out var columnName))
+            {
+                updated = UpdateMetadata(updated, columnKind, columnDatabase, columnSchema, columnObject, columnName, entry.Value);
+            }
+            else if (TryParseObjectKey(entry.Key, out var kind, out var database, out var schema, out var name))
+            {
+                updated = UpdateMetadata(updated, kind, database, schema, name, columnName: null, entry.Value);
+            }
+        }
+
+        return updated;
     }
 
     public static bool TryUpdateObjectDescription(string kind, string database, string schema, string name, string description)

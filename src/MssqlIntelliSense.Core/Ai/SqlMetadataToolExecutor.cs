@@ -1,8 +1,10 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text.Json;
+using System.Text;
 using System.Threading.Tasks;
 using MssqlIntelliSense.Core.Metadata;
 
@@ -227,7 +229,7 @@ public static class SqlMetadataToolExecutor
 
     public static object GetTableSchemaToolResult(DatabaseMetadata metadata, JsonElement arguments)
     {
-        MetadataDescriptionEditor.EnsureLegacyDescriptionsMigrated();
+        metadata = MetadataDescriptionEditor.ApplyStoredDescriptions(metadata);
         var schemaName = GetArgument(arguments, "schemaName", "dbo");
         var tableName = GetArgument(arguments, "tableName", string.Empty);
         var table = metadata?.FindTable(schemaName, tableName);
@@ -306,7 +308,7 @@ public static class SqlMetadataToolExecutor
         ITextEmbeddingProvider? embeddingProvider,
         CancellationToken cancellationToken)
     {
-        MetadataDescriptionEditor.EnsureLegacyDescriptionsMigrated();
+        metadata = MetadataDescriptionEditor.ApplyStoredDescriptions(metadata);
         var query = GetArgument(arguments, "query", GetArgument(arguments, "tableName", string.Empty));
         var candidates = BuildObjectSearchCandidates(metadata).ToList();
         IReadOnlyDictionary<int, float>? semanticScores = null;
@@ -387,7 +389,7 @@ public static class SqlMetadataToolExecutor
     {
         if (metadata == null) return Array.Empty<object>();
 
-        MetadataDescriptionEditor.EnsureLegacyDescriptionsMigrated();
+        metadata = MetadataDescriptionEditor.ApplyStoredDescriptions(metadata);
         var candidates = BuildObjectSearchCandidates(metadata).ToList();
         IReadOnlyDictionary<int, float>? semanticScores = null;
         if (candidates.Count > 0 && !string.IsNullOrWhiteSpace(query))
@@ -506,7 +508,7 @@ public static class SqlMetadataToolExecutor
     {
         if (metadata == null) return Array.Empty<object>();
 
-        MetadataDescriptionEditor.EnsureLegacyDescriptionsMigrated();
+        metadata = MetadataDescriptionEditor.ApplyStoredDescriptions(metadata);
         var tableColumns = (metadata.Tables ?? Enumerable.Empty<TableMetadata>())
             .SelectMany(t => (t.Columns ?? Enumerable.Empty<ColumnMetadata>()).Select(c =>
             {
@@ -677,12 +679,7 @@ public static class SqlMetadataToolExecutor
             return 1;
         }
 
-        var tokens = query
-            .Split(new[] { ' ', '.', '_', '-', '/', '\\', '[', ']', '(', ')', ',', ';' }, StringSplitOptions.RemoveEmptyEntries)
-            .Select(t => t.Trim())
-            .Where(t => t.Length > 0)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
+        var tokens = TokenizeObjectSearchQuery(query);
 
         if (tokens.Length == 0)
         {
@@ -690,7 +687,7 @@ public static class SqlMetadataToolExecutor
         }
 
         var score = 0;
-        foreach (var token in tokens)
+        foreach (var token in tokens.Distinct(StringComparer.OrdinalIgnoreCase))
         {
             var tokenScore = 0;
             tokenScore = Math.Max(tokenScore, ScoreField(candidate.name, token, exact: 120, prefix: 90, contains: 60));
@@ -700,15 +697,57 @@ public static class SqlMetadataToolExecutor
             tokenScore = Math.Max(tokenScore, ScoreField(candidate.searchableText, token, exact: 25, prefix: 18, contains: 12));
             tokenScore = Math.Max(tokenScore, ScoreField(candidate.definition, token, exact: 16, prefix: 12, contains: 8));
 
-            if (tokenScore == 0)
-            {
-                return 0;
-            }
-
             score += tokenScore;
         }
 
+        var phraseScore = ScorePhrases(candidate, tokens);
+        return score == 0 && phraseScore == 0 ? 0 : score + phraseScore;
+    }
+
+    private static string[] TokenizeObjectSearchQuery(string query)
+    {
+        return query
+            .Split(new[] { ' ', '.', '_', '-', '/', '\\', '[', ']', '(', ')', ',', ';', ':', '"', '\'', '\r', '\n', '\t' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(t => t.Trim())
+            .Where(t => t.Length > 0)
+            .Where(t => NormalizeSearchText(t).Length > 1)
+            .ToArray();
+    }
+
+    private static int ScorePhrases(ObjectSearchCandidate candidate, IReadOnlyList<string> tokens)
+    {
+        if (tokens.Count < 2)
+        {
+            return 0;
+        }
+
+        var score = 0;
+        foreach (var phrase in BuildQueryPhrases(tokens, maxLength: 5))
+        {
+            var tokenCount = phrase.Count(c => c == ' ') + 1;
+            var weight = tokenCount <= 2 ? 1 : tokenCount;
+            score = Math.Max(score, ScoreNormalizedField(candidate.description, phrase, exact: 160 * weight, prefix: 130 * weight, contains: 100 * weight));
+            score = Math.Max(score, ScoreNormalizedField(candidate.name, phrase, exact: 140 * weight, prefix: 110 * weight, contains: 80 * weight));
+            score = Math.Max(score, ScoreNormalizedField(candidate.searchableText, phrase, exact: 80 * weight, prefix: 60 * weight, contains: 45 * weight));
+        }
+
         return score;
+    }
+
+    private static IEnumerable<string> BuildQueryPhrases(IReadOnlyList<string> tokens, int maxLength)
+    {
+        var normalizedTokens = tokens
+            .Select(NormalizeSearchText)
+            .Where(token => token.Length > 1)
+            .ToArray();
+
+        for (var length = Math.Min(maxLength, normalizedTokens.Length); length >= 2; length--)
+        {
+            for (var start = 0; start <= normalizedTokens.Length - length; start++)
+            {
+                yield return string.Join(" ", normalizedTokens.Skip(start).Take(length));
+            }
+        }
     }
 
     private static int ScoreField(string? value, string token, int exact, int prefix, int contains)
@@ -718,18 +757,52 @@ public static class SqlMetadataToolExecutor
             return 0;
         }
 
-        var text = value!;
-        if (text.Equals(token, StringComparison.OrdinalIgnoreCase))
+        return ScoreNormalizedField(value, token, exact, prefix, contains);
+    }
+
+    private static int ScoreNormalizedField(string? value, string token, int exact, int prefix, int contains)
+    {
+        if (string.IsNullOrWhiteSpace(value) || string.IsNullOrWhiteSpace(token))
+        {
+            return 0;
+        }
+
+        var text = NormalizeSearchText(value);
+        var normalizedToken = NormalizeSearchText(token);
+        if (text.Equals(normalizedToken, StringComparison.OrdinalIgnoreCase))
         {
             return exact;
         }
 
-        if (text.StartsWith(token, StringComparison.OrdinalIgnoreCase))
+        if (text.StartsWith(normalizedToken, StringComparison.OrdinalIgnoreCase))
         {
             return prefix;
         }
 
-        return text.IndexOf(token, StringComparison.OrdinalIgnoreCase) >= 0 ? contains : 0;
+        return text.IndexOf(normalizedToken, StringComparison.OrdinalIgnoreCase) >= 0 ? contains : 0;
+    }
+
+    private static string NormalizeSearchText(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var text = value!;
+        var builder = new StringBuilder(text.Length);
+        foreach (var c in text.Trim().ToLowerInvariant().Normalize(NormalizationForm.FormD))
+        {
+            var category = CharUnicodeInfo.GetUnicodeCategory(c);
+            if (category == UnicodeCategory.NonSpacingMark)
+            {
+                continue;
+            }
+
+            builder.Append(c == 'đ' ? 'd' : c);
+        }
+
+        return builder.ToString().Normalize(NormalizationForm.FormC);
     }
 
     private static string Snippet(string? value, int maxLength)

@@ -13,7 +13,6 @@ using MssqlIntelliSense.Core.Metadata;
 
 namespace MssqlIntelliSense.SsmsHost;
 
-#pragma warning disable VSTHRD010
 public partial class ToolLabControl : UserControl
 {
     private const string ListTablesToolName = SqlMetadataToolExecutor.ListTablesToolName;
@@ -167,7 +166,7 @@ public partial class ToolLabControl : UserControl
                 _connections.Add(connection);
             }
 
-            await MssqlIntelliSensePackage.SwitchToMainThreadAsync();
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
             var activeContext = ResolveToolConnectionContext(registerIfMissing: true);
             if (activeContext.Connection != null)
             {
@@ -222,10 +221,8 @@ public partial class ToolLabControl : UserControl
                 OutputDataGrid.ItemsSource = null;
             });
 
-            await MssqlIntelliSensePackage.SwitchToMainThreadAsync();
-#pragma warning disable VSTHRD010
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
             var request = CaptureRunRequest();
-#pragma warning restore VSTHRD010
             if (request == null)
             {
                 await UpdateToolUiAsync(() => OutputTextBox.Text = "No active or selected cached connection found.");
@@ -253,6 +250,7 @@ public partial class ToolLabControl : UserControl
 
     private ToolRunRequest? CaptureRunRequest()
     {
+        ThreadHelper.ThrowIfNotOnUIThread();
         EnsureOnUiThread();
         var toolConnection = ResolveToolConnectionContext(registerIfMissing: true);
         var connection = toolConnection.Connection ?? ConnectionsComboBox.SelectedItem as ConnectionInfo;
@@ -431,6 +429,7 @@ public partial class ToolLabControl : UserControl
 
     private ToolConnectionContext ResolveToolConnectionContext(bool registerIfMissing)
     {
+        ThreadHelper.ThrowIfNotOnUIThread();
         EnsureOnUiThread();
 
         var activeConnectionString = MssqlIntelliSensePackage.GetActiveConnectionString();

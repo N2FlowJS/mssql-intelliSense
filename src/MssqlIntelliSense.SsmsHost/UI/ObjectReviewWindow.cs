@@ -66,7 +66,6 @@ public sealed class ObjectReviewWindow : Window
 
         try
         {
-            MetadataDescriptionEditor.EnsureLegacyDescriptionsMigrated();
             var (title, subtitle, details, definition, objectKey, customDescription) = BuildReviewText(item, metadata);
             var columns = GetColumns(item, metadata);
             var window = new ObjectReviewWindow(title, subtitle, details, definition, objectKey, customDescription, columns);
