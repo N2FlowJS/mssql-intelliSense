@@ -280,7 +280,7 @@ internal static class ChatMarkdownRenderer
         return paragraph;
     }
 
-    private static Paragraph CreateSelectableMarkdownTable(IReadOnlyList<string> tableLines, Brush foreground, Brush codeBackground)
+    private static Block CreateSelectableMarkdownTable(IReadOnlyList<string> tableLines, Brush foreground, Brush codeBackground)
     {
         var rows = tableLines.Select(SplitMarkdownTableRow).Where(row => row.Count > 0).ToList();
         var columnCount = rows.Count == 0 ? 0 : rows.Max(row => row.Count);
@@ -289,34 +289,53 @@ internal static class ChatMarkdownRenderer
             return new Paragraph();
         }
 
-        var widths = Enumerable.Range(0, columnCount)
-            .Select(col => rows.Max(row => col < row.Count ? StripInlineMarkdown(row[col]).Length : 0))
-            .Select(width => Math.Max(width, 3))
-            .ToArray();
+        var table = new Table
+        {
+            CellSpacing = 0,
+            Margin = new Thickness(0, 4, 0, 8)
+        };
 
-        var formatted = new StringBuilder();
+        for (var col = 0; col < columnCount; col++)
+        {
+            table.Columns.Add(new TableColumn());
+        }
+
+        var group = new TableRowGroup();
+        table.RowGroups.Add(group);
+
         for (var rowIndex = 0; rowIndex < rows.Count; rowIndex++)
         {
             var row = rows[rowIndex];
-            formatted.Append("| ");
+            var tableRow = new TableRow();
+            group.Rows.Add(tableRow);
+
             for (var col = 0; col < columnCount; col++)
             {
                 var cell = col < row.Count ? StripInlineMarkdown(row[col]) : string.Empty;
-                formatted.Append(cell.PadRight(widths[col]));
-                formatted.Append(" | ");
+                tableRow.Cells.Add(CreateTableCell(cell, foreground, codeBackground, rowIndex == 0));
             }
-
-            formatted.AppendLine();
         }
 
-        return new Paragraph(new Run(formatted.ToString().TrimEnd()))
+        return table;
+    }
+
+    private static TableCell CreateTableCell(string text, Brush foreground, Brush background, bool isHeader)
+    {
+        var paragraph = new Paragraph
         {
-            FontFamily = new FontFamily("Consolas, Courier New, monospace"),
-            FontSize = 11.5,
+            Margin = new Thickness(0),
+            FontSize = 11,
             Foreground = foreground,
-            Background = codeBackground,
-            Margin = new Thickness(0, 4, 0, 7),
-            Padding = new Thickness(6)
+            FontWeight = isHeader ? FontWeights.SemiBold : FontWeights.Normal
+        };
+        AddInlineMarkdown(paragraph.Inlines, text, foreground, background);
+
+        return new TableCell(paragraph)
+        {
+            BorderBrush = CreateOpacityBrush(foreground, 0.18),
+            BorderThickness = new Thickness(0, 0, 0, 1),
+            Background = isHeader ? CreateOpacityBrush(foreground, 0.08) : Brushes.Transparent,
+            Padding = new Thickness(6, 4, 8, 4)
         };
     }
 

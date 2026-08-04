@@ -1049,8 +1049,7 @@ public partial class ChatAgentControl : UserControl
             Padding = new Thickness(10),
             Margin = new Thickness(5),
             CornerRadius = new CornerRadius(5),
-            HorizontalAlignment = HorizontalAlignment.Left,
-            MaxWidth = 620
+            HorizontalAlignment = HorizontalAlignment.Stretch
         };
 
         var container = new StackPanel { Orientation = Orientation.Vertical };
@@ -1073,60 +1072,59 @@ public partial class ChatAgentControl : UserControl
         tags.Children.Add(CreateToolTag(toolCall.Name, textBrush, borderBrush, backgroundBrush, false));
         container.Children.Add(tags);
 
-        container.Children.Add(new TextBlock
-        {
-            Text = toolCall.Description,
-            Foreground = textBrush,
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 3, 0, 3)
-        });
-        container.Children.Add(new TextBlock
-        {
-            Text = SqlMetadataToolExecutor.GetToolApprovalReason(toolCall.Name),
-            Foreground = textBrush,
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 0, 0, 6)
-        });
-
-        var argumentsBox = ChatMarkdownRenderer.CreateSelectableMessageBox(textBrush, backgroundBrush);
-        argumentsBox.Height = 72;
-        argumentsBox.MinHeight = 56;
-        argumentsBox.Margin = new Thickness(0, 0, 0, 6);
-        argumentsBox.Document = ChatMarkdownRenderer.CreateMarkdownDocument(
-            "```json\n" + FormatJsonForDisplay(toolCall.ArgumentsJson) + "\n```",
+        var actionBodyBox = ChatMarkdownRenderer.CreateSelectableMessageBox(textBrush, backgroundBrush);
+        actionBodyBox.MinHeight = 96;
+        actionBodyBox.Margin = new Thickness(0, 0, 0, 6);
+        actionBodyBox.Document = ChatMarkdownRenderer.CreateMarkdownDocument(
+            BuildToolApprovalMarkdown(toolCall),
             textBrush,
             backgroundBrush);
-        container.Children.Add(argumentsBox);
+        container.Children.Add(actionBodyBox);
 
         var buttons = new StackPanel { Orientation = Orientation.Horizontal };
         var approveButton = CreateActionButton("Approve");
         var rejectButton = CreateActionButton("Reject");
-        var statusText = new TextBlock
+        var statusHost = new ContentControl
         {
-            Foreground = textBrush,
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(8, 0, 0, 0)
         };
 
         approveButton.Click += (_, _) =>
         {
-            CompleteToolApproval(approveButton, rejectButton, statusText, "Approved");
+            CompleteToolApproval(approveButton, rejectButton, statusHost, textBrush, backgroundBrush, "Approved");
             completionSource.TrySetResult(true);
         };
         rejectButton.Click += (_, _) =>
         {
-            CompleteToolApproval(approveButton, rejectButton, statusText, "Rejected");
+            CompleteToolApproval(approveButton, rejectButton, statusHost, textBrush, backgroundBrush, "Rejected");
             completionSource.TrySetResult(false);
         };
 
         buttons.Children.Add(approveButton);
         buttons.Children.Add(rejectButton);
-        buttons.Children.Add(statusText);
+        buttons.Children.Add(statusHost);
         container.Children.Add(buttons);
 
         border.Child = container;
         ChatMessagesPanel.Children.Add(border);
         ChatMessagesScrollViewer.ScrollToEnd();
+    }
+
+    private static string BuildToolApprovalMarkdown(OpenAiSqlToolCall toolCall)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("### Action Request");
+        sb.AppendLine();
+        sb.AppendLine(toolCall.Description);
+        sb.AppendLine();
+        sb.AppendLine($"**Reason:** {SqlMetadataToolExecutor.GetToolApprovalReason(toolCall.Name)}");
+        sb.AppendLine();
+        sb.AppendLine("### Arguments");
+        sb.AppendLine("```json");
+        sb.AppendLine(FormatJsonForDisplay(toolCall.ArgumentsJson));
+        sb.AppendLine("```");
+        return sb.ToString();
     }
 
     private static string FormatJsonForDisplay(string? json)
@@ -1148,12 +1146,21 @@ public partial class ChatAgentControl : UserControl
         }
     }
 
-    private static void CompleteToolApproval(Button approveButton, Button rejectButton, TextBlock statusText, string status)
+    private static void CompleteToolApproval(
+        Button approveButton,
+        Button rejectButton,
+        ContentControl statusHost,
+        Brush textBrush,
+        Brush backgroundBrush,
+        string status)
     {
         approveButton.Visibility = Visibility.Collapsed;
         rejectButton.Visibility = Visibility.Collapsed;
-        statusText.Margin = new Thickness(0);
-        statusText.Text = status;
+        statusHost.Margin = new Thickness(0);
+        var statusBox = ChatMarkdownRenderer.CreateSelectableMessageBox(textBrush, backgroundBrush);
+        statusBox.MinWidth = 80;
+        statusBox.Document = ChatMarkdownRenderer.CreateMarkdownDocument($"**{status}**", textBrush, backgroundBrush);
+        statusHost.Content = statusBox;
     }
 
     private Button CreateActionButton(string text)
@@ -1516,8 +1523,8 @@ public partial class ChatAgentControl : UserControl
             Padding = new Thickness(10, 10, 10, 10),
             Margin = new Thickness(5, 5, 5, 5),
             CornerRadius = new CornerRadius(5),
-            HorizontalAlignment = isUser ? HorizontalAlignment.Right : HorizontalAlignment.Left,
-            MaxWidth = 600
+            HorizontalAlignment = isUser ? HorizontalAlignment.Right : HorizontalAlignment.Stretch,
+            MaxWidth = isUser ? 720 : double.PositiveInfinity
         };
 
         var container = new StackPanel { Orientation = Orientation.Vertical };

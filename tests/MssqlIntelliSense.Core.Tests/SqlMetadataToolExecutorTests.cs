@@ -345,21 +345,8 @@ public sealed class SqlMetadataToolExecutorTests
                 json.Should().NotContain("\"error\"", toolName);
             }
 
-            SqlMetadataToolExecutor.BuildPreviewRows(toolName, metadata, "dbo", "Users", "Email")
-                .Should().NotBeNull(toolName);
+            json.Should().StartWith("## Tool:", toolName);
         }
-    }
-
-    [Fact]
-    public void BuildPreviewRows_ReturnsEnumerableForKnownTools()
-    {
-        var metadata = TestMetadata.Create();
-
-        var tableRows = SqlMetadataToolExecutor.BuildPreviewRows(SqlMetadataToolExecutor.ListTablesToolName, metadata, "dbo", "Users", "");
-        tableRows.Should().NotBeNull();
-
-        var schemaRows = SqlMetadataToolExecutor.BuildPreviewRows(SqlMetadataToolExecutor.TableSchemaToolName, metadata, "dbo", "Users", "");
-        schemaRows.Should().NotBeNull();
     }
 
     [Fact]
@@ -393,27 +380,6 @@ public sealed class SqlMetadataToolExecutorTests
 
         json.Should().Contain("Truncated: True");
         json.Should().Contain("Total: 600");
-    }
-
-    [Fact]
-    public void BuildPreviewRows_HandlesNullCollectionsAndCapsAt500()
-    {
-        var emptyMetadata = DatabaseMetadata.Empty;
-        var tableRows = SqlMetadataToolExecutor.BuildPreviewRows(SqlMetadataToolExecutor.ListTablesToolName, emptyMetadata, "dbo", "", "");
-        tableRows.Should().NotBeNull();
-
-        var tables = new List<TableMetadata>();
-        for (int i = 0; i < 600; i++)
-        {
-            tables.Add(new TableMetadata("dbo", $"Table_{i}", Array.Empty<ColumnMetadata>(), Array.Empty<string>()));
-        }
-
-        var largeMetadata = new DatabaseMetadata(tables, Array.Empty<ForeignKeyMetadata>(), Array.Empty<IndexMetadata>(), new[] { "TestDb" }, Array.Empty<LinkedServerInfo>());
-        var preview = SqlMetadataToolExecutor.BuildPreviewRows(SqlMetadataToolExecutor.ListTablesToolName, largeMetadata, "dbo", "", "");
-        preview.Should().NotBeNull();
-        var count = 0;
-        foreach (var _ in preview!) count++;
-        count.Should().Be(500);
     }
 
     private static void DeleteDirectoryWithRetry(string path)

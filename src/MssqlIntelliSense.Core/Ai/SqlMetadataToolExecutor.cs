@@ -216,19 +216,15 @@ public static class SqlMetadataToolExecutor
         sb.AppendLine();
         AppendMarkdownTable(
             sb,
-            new[] { "Kind", "Database", "Schema", "Name", "Description", "Column Description", "Definition Snippet", "Score", "Lexical Score" },
+            new[] { "Kind", "Object", "Description", "Lexical Score" },
             rows.Select(row => new[]
             {
                 GetObjectProperty(row, "kind"),
-                GetObjectProperty(row, "database"),
-                GetObjectProperty(row, "schema"),
-                GetObjectProperty(row, "name"),
-                GetObjectProperty(row, "description"),
-                GetObjectProperty(row, "columnDescription"),
-                GetObjectProperty(row, "definitionSnippet"),
-                GetObjectProperty(row, "score"),
-                GetObjectProperty(row, "lexicalScore")
+                BuildQualifiedObjectName(row),
+                Shorten(GetObjectProperty(row, "description"), 180),
+                GetObjectProperty(row, "score")
             }));
+        AppendObjectSearchDetails(sb, rows);
         return sb.ToString();
     }
 
@@ -276,158 +272,7 @@ public static class SqlMetadataToolExecutor
         return sb.ToString();
     }
 
-    public static object GetListTablesToolResult(DatabaseMetadata metadata, JsonElement arguments)
-    {
-        if (metadata?.Tables == null) return new { tablesList = Array.Empty<object>(), totalCount = 0, truncated = false };
-
-        var schemaFilter = GetArgument(arguments, "schemaName", string.Empty);
-        var queryFilter = GetArgument(arguments, "query", string.Empty);
-        var tableNameFilter = GetArgument(arguments, "tableName", string.Empty);
-        var query = !string.IsNullOrWhiteSpace(queryFilter) ? queryFilter : tableNameFilter;
-
-        var source = metadata.Tables.AsEnumerable();
-
-        if (!string.IsNullOrWhiteSpace(query))
-        {
-            source = source.Where(t => Matches(t.Name, query) || Matches(t.Schema + "." + t.Name, query));
-        }
-
-        var allMatching = source.Select(t => new { database = t.Database, schema = t.Schema, name = t.Name }).ToList();
-        var totalCount = allMatching.Count;
-        var truncated = totalCount > 500;
-        var tablesList = truncated ? allMatching.Take(500).ToList() : allMatching;
-
-        return new { tablesList, totalCount, truncated };
-    }
-
-    public static object GetTableSchemaToolResult(DatabaseMetadata metadata, JsonElement arguments)
-    {
-        metadata = MetadataDescriptionEditor.ApplyStoredDescriptions(metadata);
-        var schemaName = GetArgument(arguments, "schemaName", "dbo");
-        var tableName = GetArgument(arguments, "tableName", string.Empty);
-        var table = metadata?.FindTable(schemaName, tableName);
-        if (table == null)
-        {
-            return new { error = "Table not found.", schemaName, tableName };
-        }
-
-        return new
-        {
-            tableSchema = new
-            {
-                database = table.Database,
-                schema = table.Schema,
-                name = table.Name,
-                columns = table.Columns.Select(c => new
-                {
-                    name = c.Name,
-                    dataType = c.DataType,
-                    isNullable = c.IsNullable,
-                    ordinal = c.Ordinal,
-                    description = c.Description
-                }).ToList(),
-                primaryKeyColumns = table.PrimaryKeyColumns,
-                description = table.Description
-            }
-        };
-    }
-
-    public static object GetTableRelationsToolResult(DatabaseMetadata metadata, JsonElement arguments)
-    {
-        var tableName = GetArgument(arguments, "tableName", string.Empty);
-        if (metadata?.ForeignKeys == null) return Array.Empty<object>();
-
-        return metadata.ForeignKeys.Where(fk =>
-                fk.FromTable.Equals(tableName, StringComparison.OrdinalIgnoreCase) ||
-                fk.ToTable.Equals(tableName, StringComparison.OrdinalIgnoreCase))
-            .Select(fk => new
-            {
-                name = fk.Name,
-                fromSchema = fk.FromSchema,
-                fromTable = fk.FromTable,
-                fromColumn = fk.FromColumn,
-                toSchema = fk.ToSchema,
-                toTable = fk.ToTable,
-                toColumn = fk.ToColumn
-            }).ToList();
-    }
-
-    public static object GetTableIndexesToolResult(DatabaseMetadata metadata, JsonElement arguments)
-    {
-        var tableName = GetArgument(arguments, "tableName", string.Empty);
-        if (metadata?.Indexes == null) return Array.Empty<object>();
-
-        return metadata.Indexes.Where(idx => idx.Table.Equals(tableName, StringComparison.OrdinalIgnoreCase))
-            .Select(idx => new
-            {
-                schema = idx.Schema,
-                table = idx.Table,
-                name = idx.Name,
-                isUnique = idx.IsUnique,
-                columns = idx.Columns
-            }).ToList();
-    }
-
-    public static object GetSearchObjectsToolResult(DatabaseMetadata metadata, JsonElement arguments)
-    {
-        var query = GetArgument(arguments, "query", GetArgument(arguments, "tableName", string.Empty));
-        var matches = BuildObjectSearchRows(metadata, query);
-        return new { query, matches };
-    }
-
-    public static object GetFindColumnToolResult(DatabaseMetadata metadata, JsonElement arguments)
-    {
-        var query = GetArgument(arguments, "query", GetArgument(arguments, "columnName", string.Empty));
-        var matches = BuildColumnSearchRows(metadata, query);
-        return new { query, matches };
-    }
-
-    public static object GetListEndpointsToolResult(DatabaseMetadata metadata)
-    {
-        var endpoints = metadata?.Endpoints != null
-            ? metadata.Endpoints.OrderBy(ep => ep.Name).Select(ep => new { ep.Name, ep.Type, ep.Protocol, ep.State, ep.Port }).ToList()
-            : (object)Array.Empty<object>();
-
-        return new { endpoints };
-    }
-
-    public static IEnumerable? BuildPreviewRows(string toolName, DatabaseMetadata metadata, string schemaName, string tableName, string query)
-    {
-        if (metadata == null) return null;
-
-        var normalized = NormalizeToolName(toolName);
-        return normalized switch
-        {
-            ListTablesToolName => BuildListTablesPreviewRows(metadata, schemaName, query),
-            TableSchemaToolName => metadata.FindTable(schemaName, tableName)?.Columns?.Select(c => new { c.Ordinal, c.Name, c.DataType, c.IsNullable })?.ToList(),
-            TableRelationsToolName => (metadata.ForeignKeys ?? Enumerable.Empty<ForeignKeyMetadata>())
-                .Where(fk => fk.FromTable.Equals(tableName, StringComparison.OrdinalIgnoreCase) || fk.ToTable.Equals(tableName, StringComparison.OrdinalIgnoreCase)).ToList(),
-            TableIndexesToolName => (metadata.Indexes ?? Enumerable.Empty<IndexMetadata>())
-                .Where(idx => idx.Table.Equals(tableName, StringComparison.OrdinalIgnoreCase))
-                .Select(idx => new { idx.Schema, idx.Table, idx.Name, idx.IsUnique, Columns = string.Join(", ", idx.Columns) }).ToList(),
-            SearchObjectsToolName or SearchSchemaObjectsToolName => BuildObjectSearchRows(metadata, query),
-            FindColumnToolName => BuildColumnSearchRows(metadata, query),
-            ListEndpointsToolName => (metadata.Endpoints ?? Enumerable.Empty<EndpointInfo>())
-                .OrderBy(ep => ep.Name).Select(ep => new { ep.Name, ep.Type, ep.Protocol, ep.State, ep.Port }).ToList(),
-            ExecuteSqlToolName => Array.Empty<object>(),
-            _ => null
-        };
-    }
-
-    public static IEnumerable BuildListTablesPreviewRows(DatabaseMetadata metadata, string schemaName, string query)
-    {
-        if (metadata?.Tables == null) return Array.Empty<object>();
-
-        var source = metadata.Tables.AsEnumerable();
-        if (!string.IsNullOrWhiteSpace(query))
-        {
-            source = source.Where(t => Matches(t.Name, query) || Matches(t.Schema + "." + t.Name, query));
-        }
-
-        return source.Select(t => new { t.Database, t.Schema, t.Name }).Take(500).ToList();
-    }
-
-    public static IEnumerable BuildObjectSearchRows(DatabaseMetadata metadata, string query)
+    private static IEnumerable BuildObjectSearchRows(DatabaseMetadata metadata, string query)
     {
         if (metadata == null) return Array.Empty<object>();
 
@@ -522,7 +367,7 @@ public static class SqlMetadataToolExecutor
         return tables.Concat(views).Concat(procedures).Concat(functions);
     }
 
-    public static IEnumerable BuildColumnSearchRows(DatabaseMetadata metadata, string query)
+    private static IEnumerable BuildColumnSearchRows(DatabaseMetadata metadata, string query)
     {
         if (metadata == null) return Array.Empty<object>();
 
@@ -672,6 +517,60 @@ public static class SqlMetadataToolExecutor
             IFormattable formattable => formattable.ToString(null, CultureInfo.InvariantCulture),
             _ => value.ToString() ?? string.Empty
         };
+    }
+
+    private static string BuildQualifiedObjectName(object row)
+    {
+        var database = GetObjectProperty(row, "database");
+        var schema = GetObjectProperty(row, "schema");
+        var name = GetObjectProperty(row, "name");
+        return string.Join(".", new[] { database, schema, name }.Where(part => !string.IsNullOrWhiteSpace(part)));
+    }
+
+    private static void AppendObjectSearchDetails(StringBuilder sb, IReadOnlyList<object> rows)
+    {
+        var rowsWithDetails = rows
+            .Select(row => new
+            {
+                Name = BuildQualifiedObjectName(row),
+                ColumnDescription = GetObjectProperty(row, "columnDescription"),
+                DefinitionSnippet = GetObjectProperty(row, "definitionSnippet")
+            })
+            .Where(row => !string.IsNullOrWhiteSpace(row.ColumnDescription) ||
+                          !string.IsNullOrWhiteSpace(row.DefinitionSnippet))
+            .Take(5)
+            .ToList();
+
+        if (rowsWithDetails.Count == 0)
+        {
+            return;
+        }
+
+        sb.AppendLine();
+        sb.AppendLine("### Details");
+        foreach (var row in rowsWithDetails)
+        {
+            sb.AppendLine($"- **{row.Name}**");
+            if (!string.IsNullOrWhiteSpace(row.ColumnDescription))
+            {
+                sb.AppendLine($"  - Columns: {Shorten(row.ColumnDescription, 240)}");
+            }
+
+            if (!string.IsNullOrWhiteSpace(row.DefinitionSnippet))
+            {
+                sb.AppendLine($"  - Definition: `{Shorten(row.DefinitionSnippet, 240)}`");
+            }
+        }
+    }
+
+    private static string Shorten(string value, int maxLength)
+    {
+        if (string.IsNullOrWhiteSpace(value) || value.Length <= maxLength)
+        {
+            return value ?? string.Empty;
+        }
+
+        return value.Substring(0, maxLength).TrimEnd() + "...";
     }
 
     private static bool Matches(string? value, string query)
