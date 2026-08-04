@@ -1,0 +1,178 @@
+<UserControl x:Class="MssqlIntelliSense.SsmsHost.ObjectReviewWindow"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vsui="clr-namespace:Microsoft.VisualStudio.PlatformUI;assembly=Microsoft.VisualStudio.Shell.15.0"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             mc:Ignorable="d"
+             d:DesignHeight="700"
+             d:DesignWidth="820"
+             Background="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowBackgroundBrushKey}}"
+             Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowTextBrushKey}}"
+             PreviewKeyDown="ObjectReviewWindow_PreviewKeyDown">
+    <UserControl.Resources>
+        <Style x:Key="IconCommandButtonStyle" TargetType="{x:Type Button}">
+            <Setter Property="Width" Value="30" />
+            <Setter Property="MinWidth" Value="30" />
+            <Setter Property="Height" Value="30" />
+            <Setter Property="MinHeight" Value="30" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Margin" Value="6,0,0,0" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Background" Value="{DynamicResource {x:Static vsui:EnvironmentColors.SystemButtonFaceBrushKey}}" />
+            <Setter Property="Foreground" Value="{DynamicResource {x:Static vsui:EnvironmentColors.SystemButtonTextBrushKey}}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowBorderBrushKey}}" />
+        </Style>
+
+        <Style x:Key="IconGlyphStyle" TargetType="{x:Type TextBlock}">
+            <Setter Property="FontFamily" Value="Segoe MDL2 Assets" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <Style x:Key="ReviewTextBoxStyle" TargetType="{x:Type TextBox}">
+            <Setter Property="IsReadOnly" Value="True" />
+            <Setter Property="AcceptsReturn" Value="True" />
+            <Setter Property="Padding" Value="10" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Background" Value="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowCodeBlockBackgroundBrushKey}}" />
+            <Setter Property="Foreground" Value="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowTextBrushKey}}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowBorderBrushKey}}" />
+            <Setter Property="VerticalScrollBarVisibility" Value="Auto" />
+        </Style>
+    </UserControl.Resources>
+
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <DockPanel LastChildFill="True" Margin="0,0,0,10">
+            <StackPanel DockPanel.Dock="Right"
+                        Orientation="Horizontal"
+                        HorizontalAlignment="Right">
+                <Button Style="{StaticResource IconCommandButtonStyle}"
+                        ToolTip="Copy object summary and definition"
+                        Click="CopyAllButton_Click">
+                    <TextBlock Text="&#xE8C8;" Style="{StaticResource IconGlyphStyle}" />
+                </Button>
+            </StackPanel>
+
+            <StackPanel Margin="0,0,12,0">
+                <TextBlock x:Name="TitleTextBlock"
+                           FontSize="18"
+                           FontWeight="SemiBold"
+                           TextTrimming="CharacterEllipsis" />
+                <TextBlock x:Name="SubtitleTextBlock"
+                           Margin="0,4,0,0"
+                           Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.PanelTextBrushKey}}"
+                           TextTrimming="CharacterEllipsis" />
+            </StackPanel>
+        </DockPanel>
+
+        <TabControl x:Name="ReviewTabs"
+                    Grid.Row="1"
+                    Background="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowBackgroundBrushKey}}"
+                    Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowTextBrushKey}}"
+                    BorderBrush="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowBorderBrushKey}}"
+                    BorderThickness="1">
+            <TabItem Header="Overview">
+                <Grid Margin="0,10,0,0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="3*" />
+                        <RowDefinition Height="2*" />
+                    </Grid.RowDefinitions>
+
+                    <TextBox x:Name="DetailsTextBox"
+                             Style="{StaticResource ReviewTextBoxStyle}"
+                             TextWrapping="Wrap" />
+
+                    <Grid Grid.Row="1" Margin="0,10,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <TextBlock Text="Description"
+                                   FontWeight="SemiBold"
+                                   Margin="0,0,0,6" />
+                        <Button Grid.Column="1"
+                                Style="{StaticResource IconCommandButtonStyle}"
+                                ToolTip="Save description"
+                                Click="SaveDescriptionButton_Click">
+                            <TextBlock Text="&#xE74E;" Style="{StaticResource IconGlyphStyle}" />
+                        </Button>
+
+                        <TextBox x:Name="CustomDescriptionTextBox"
+                                 Grid.Row="1"
+                                 Grid.ColumnSpan="2"
+                                 Style="{StaticResource ReviewTextBoxStyle}"
+                                 IsReadOnly="False"
+                                 MinHeight="80"
+                                 TextWrapping="Wrap"
+                                 ToolTip="Edit the cached object description. This field can later be synchronized with SQL Server MS_Description." />
+                    </Grid>
+                </Grid>
+            </TabItem>
+
+            <TabItem x:Name="ColumnsTab" Header="Columns">
+                <Grid Margin="0,10,0,0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <TextBlock Text="Describe the business meaning, valid values, data sensitivity, relationships, and examples for each column."
+                               Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.PanelTextBrushKey}}"
+                               Margin="0,0,0,6"
+                               TextWrapping="Wrap" />
+
+                    <DataGrid x:Name="ColumnsDataGrid"
+                              Grid.Row="1"
+                              AutoGenerateColumns="False"
+                              CanUserAddRows="False"
+                              CanUserDeleteRows="False"
+                              CanUserReorderColumns="False"
+                              IsReadOnly="False"
+                              HeadersVisibility="Column"
+                              GridLinesVisibility="Horizontal"
+                              SelectionUnit="CellOrRowHeader">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Column"
+                                                Binding="{Binding Name}"
+                                                IsReadOnly="True"
+                                                Width="150" />
+                            <DataGridTextColumn Header="Type"
+                                                Binding="{Binding DataType}"
+                                                IsReadOnly="True"
+                                                Width="120" />
+                            <DataGridTextColumn Header="Nullable"
+                                                Binding="{Binding Nullable}"
+                                                IsReadOnly="True"
+                                                Width="70" />
+                            <DataGridTextColumn Header="Business guidance / rules"
+                                                Binding="{Binding Description, UpdateSourceTrigger=PropertyChanged}"
+                                                Width="*" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Grid>
+            </TabItem>
+
+            <TabItem Header="Definition">
+                <TextBox x:Name="DefinitionTextBox"
+                         Margin="0,10,0,0"
+                         Style="{StaticResource ReviewTextBoxStyle}"
+                         FontFamily="Consolas"
+                         TextWrapping="NoWrap"
+                         HorizontalScrollBarVisibility="Auto" />
+            </TabItem>
+        </TabControl>
+    </Grid>
+</UserControl>

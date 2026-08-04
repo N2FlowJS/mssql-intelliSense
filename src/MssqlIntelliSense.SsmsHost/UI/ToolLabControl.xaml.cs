@@ -128,7 +128,7 @@ public partial class ToolLabControl : UserControl
         }
         catch (Exception ex)
         {
-            await UpdateToolUiAsync(() => OutputTextBox.Text = "Failed to load connections: " + ex.Message);
+            await UpdateToolUiAsync(() => SetJsonOutput("Failed to load connections: " + ex.Message));
             MssqlIntelliSensePackage.Log($"[Tool Lab Load Connections Handler Error] {ex}");
         }
     }
@@ -146,7 +146,7 @@ public partial class ToolLabControl : UserControl
         }
         catch (Exception ex)
         {
-            await UpdateToolUiAsync(() => OutputTextBox.Text = "Tool execution failed: " + ex.Message);
+            await UpdateToolUiAsync(() => SetJsonOutput("Tool execution failed: " + ex.Message));
             MssqlIntelliSensePackage.Log($"[Tool Lab Execute Handler Error] {ex}");
         }
     }
@@ -156,7 +156,7 @@ public partial class ToolLabControl : UserControl
         try
         {
             RefreshConnectionsButton.IsEnabled = false;
-            OutputTextBox.Text = "Loading cached connections...";
+            SetJsonOutput("Loading cached connections...");
             OutputDataGrid.ItemsSource = null;
 
             var connections = await Task.Run(MssqlIntelliSenseCacheReader.GetConnections);
@@ -193,15 +193,15 @@ public partial class ToolLabControl : UserControl
                 DatabaseTextBox.Text = activeContext.ActiveDatabase;
             }
 
-            OutputTextBox.Text = !string.IsNullOrWhiteSpace(activeContext.DisplayName)
+            SetJsonOutput(!string.IsNullOrWhiteSpace(activeContext.DisplayName)
                 ? $"Active connection: {activeContext.DisplayName}"
                 : _connections.Count == 0
                 ? "No cached connections found."
-                : $"Loaded {_connections.Count} cached connection(s).";
+                : $"Loaded {_connections.Count} cached connection(s).");
         }
         catch (Exception ex)
         {
-            OutputTextBox.Text = "Failed to load connections: " + ex.Message;
+            SetJsonOutput("Failed to load connections: " + ex.Message);
             MssqlIntelliSensePackage.Log($"[Tool Lab Load Connections Error] {ex}");
         }
         finally
@@ -217,7 +217,7 @@ public partial class ToolLabControl : UserControl
             await UpdateToolUiAsync(() =>
             {
                 RunToolButton.IsEnabled = false;
-                OutputTextBox.Text = "Running tool...";
+                SetJsonOutput("Running tool...");
                 OutputDataGrid.ItemsSource = null;
             });
 
@@ -225,21 +225,21 @@ public partial class ToolLabControl : UserControl
             var request = CaptureRunRequest();
             if (request == null)
             {
-                await UpdateToolUiAsync(() => OutputTextBox.Text = "No active or selected cached connection found.");
+                await UpdateToolUiAsync(() => SetJsonOutput("No active or selected cached connection found."));
                 return;
             }
 
             var result = await Task.Run(async () => await ExecuteToolRequestAsync(request));
             await UpdateToolUiAsync(() =>
             {
-                OutputTextBox.Text = result.OutputText;
+                SetJsonOutput(result.OutputText);
                 OutputDataGrid.ItemsSource = result.PreviewRows;
             });
             ToolExecutionCompleted?.Invoke(this, EventArgs.Empty);
         }
         catch (Exception ex)
         {
-            await UpdateToolUiAsync(() => OutputTextBox.Text = "Tool execution failed: " + ex.Message);
+            await UpdateToolUiAsync(() => SetJsonOutput("Tool execution failed: " + ex.Message));
             MssqlIntelliSensePackage.Log($"[Tool Lab Execute Error] {ex}");
         }
         finally
@@ -347,6 +347,11 @@ public partial class ToolLabControl : UserControl
             OutputText = connectionHeader + Environment.NewLine + PrettyPrintJson(output),
             PreviewRows = previewRows
         };
+    }
+
+    private void SetJsonOutput(string text)
+    {
+        OutputJsonTree.SetJson(text);
     }
 
     private static bool IsObjectSearchTool(string toolName) =>

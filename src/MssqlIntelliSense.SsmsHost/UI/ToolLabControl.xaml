@@ -2,6 +2,7 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vsui="clr-namespace:Microsoft.VisualStudio.PlatformUI;assembly=Microsoft.VisualStudio.Shell.15.0"
+             xmlns:local="clr-namespace:MssqlIntelliSense.SsmsHost"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              mc:Ignorable="d"
@@ -270,18 +271,7 @@
                           Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.ComboBoxTextBrushKey}}" />
             </TabItem>
             <TabItem Header="JSON Output">
-                <TextBox x:Name="OutputTextBox"
-                         IsReadOnly="True"
-                         TextWrapping="Wrap"
-                         AcceptsReturn="True"
-                         VerticalScrollBarVisibility="Auto"
-                         HorizontalScrollBarVisibility="Auto"
-                         FontFamily="Consolas, Courier New, monospace"
-                         FontSize="11.5"
-                         Padding="6"
-                         Background="{DynamicResource {x:Static vsui:EnvironmentColors.ComboBoxBackgroundBrushKey}}"
-                         Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.ComboBoxTextBrushKey}}"
-                         BorderBrush="{DynamicResource {x:Static vsui:EnvironmentColors.ComboBoxBorderBrushKey}}" />
+                <local:TreeJsonControl x:Name="OutputJsonTree" />
             </TabItem>
         </TabControl>
     </Grid>

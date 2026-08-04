@@ -29,6 +29,10 @@ namespace MssqlIntelliSense.SsmsHost;
     Orientation = ToolWindowOrientation.Right,
     Style = VsDockStyle.Tabbed,
     Window = "{3AE79031-E1BC-11D0-8F78-00A0C9110057}")]
+[ProvideToolWindow(typeof(ObjectReviewToolWindowPane),
+    Orientation = ToolWindowOrientation.Right,
+    Style = VsDockStyle.Tabbed,
+    Window = "{3AE79031-E1BC-11D0-8F78-00A0C9110057}")]
 [Guid(PackageGuidString)]
 public sealed class MssqlIntelliSensePackage : AsyncPackage
 {
@@ -77,7 +81,7 @@ public sealed class MssqlIntelliSensePackage : AsyncPackage
 
     public const string PackageGuidString = "16f11772-cdb0-42ca-a596-d755543518ac";
     private static readonly Guid CommandSet = new("63a8fcd9-601f-427d-a253-d4942b4ff2aa");
-    public static readonly Version CurrentVersion = new("0.2.177");
+    public static readonly Version CurrentVersion = new("0.2.181");
     public static string VersionString => CurrentVersion.ToString();
 
     private readonly List<CommandBarEvents> _commandBarEvents = new();
@@ -630,6 +634,37 @@ public sealed class MssqlIntelliSensePackage : AsyncPackage
         {
             Log($"Failed to open Tool Lab window: {ex.Message}");
             await ShowMessageAsync("MSSQL IntelliSense", $"Failed to open Tool Lab Window: {ex.Message}", OLEMSGICON.OLEMSGICON_CRITICAL);
+        }
+    }
+
+    internal async Task ShowObjectReviewPanelAsync(
+        MssqlIntelliSense.Core.Completion.SqlCompletionItem item,
+        MssqlIntelliSense.Core.Metadata.DatabaseMetadata metadata,
+        CancellationToken cancellationToken)
+    {
+        await JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
+
+        try
+        {
+            var window = await ShowToolWindowAsync(
+                typeof(ObjectReviewToolWindowPane),
+                id: 0,
+                create: true,
+                cancellationToken: cancellationToken) as ObjectReviewToolWindowPane;
+
+            if (window?.Frame is not IVsWindowFrame frame)
+            {
+                Log("Failed to open Object Review tool window: frame is null.");
+                return;
+            }
+
+            window.SetReviewContent(item, metadata);
+            ErrorHandler.ThrowOnFailure(frame.Show());
+            window.FocusReview();
+        }
+        catch (Exception ex)
+        {
+            Log($"Failed to open Object Review panel: {ex}");
         }
     }
 
@@ -1227,6 +1262,10 @@ public sealed class MssqlIntelliSensePackage : AsyncPackage
         }
     }
 }
+
+
+
+
 
 
 

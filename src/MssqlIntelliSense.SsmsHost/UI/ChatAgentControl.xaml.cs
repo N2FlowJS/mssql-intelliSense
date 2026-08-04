@@ -618,17 +618,38 @@ public partial class ChatAgentControl : UserControl
                 string plannerJson;
                 try
                 {
-                    plannerJson = await CompleteToolPlannerStreamingWithTimeoutAsync(
+                    plannerJson = await CompleteToolPlannerWithTimeoutAsync(
                         chatClient,
                         BuildToolPlannerMessages(metadata, userMessage, toolOutputs, allowedToolNames),
                         cancellationToken);
                 }
                 catch (TimeoutException ex)
                 {
-                    var message = "Tool planner timeout: " + ex.Message;
-                    await SafeUpdateChatMessageAsync(statusBorder, message);
-                    await AddChatMessageOnMainThreadAsync("Error", message, isUser: false, cancellationToken);
-                    toolOutputs.Add(message);
+                    var localPlannerResult = TryBuildLocalToolPlannerResult(userMessage, toolOutputs, allowedToolNames);
+                    if (localPlannerResult?.ToolCall != null)
+                    {
+                        MssqlIntelliSensePackage.Log($"[Chat Agent Tool Planner Timeout] {ex.Message}. Using local fallback tool '{localPlannerResult.ToolCall.Name}'.");
+                        await SafeUpdateChatMessageAsync(statusBorder, $"Planner was slow; using local fallback action {localPlannerResult.ToolCall.Name}.");
+                        var approvedFallback = await ExecuteToolCallWithApprovalAsync(
+                            localPlannerResult.ToolCall,
+                            metadata,
+                            chatConnection,
+                            toolOutputs,
+                            cancellationToken);
+
+                        if (approvedFallback)
+                        {
+                            continue;
+                        }
+                    }
+                    else
+                    {
+                        var message = "Tool planner timeout: " + ex.Message + " Continuing without tool actions.";
+                        MssqlIntelliSensePackage.Log($"[Chat Agent Tool Planner Timeout] {message}");
+                        await SafeUpdateChatMessageAsync(statusBorder, message);
+                        toolOutputs.Add(message);
+                    }
+
                     break;
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
@@ -766,12 +787,11 @@ public partial class ChatAgentControl : UserControl
         return approved;
     }
 
-    private async Task<string> CompleteToolPlannerStreamingAsync(
+    private async Task<string> CompleteToolPlannerAsync(
         ChatClient chatClient,
         List<ChatMessage> messages,
         CancellationToken cancellationToken)
     {
-        var content = new StringBuilder();
         var options = new ChatCompletionOptions
         {
             ResponseFormat = ChatResponseFormat.CreateJsonSchemaFormat(
@@ -780,60 +800,48 @@ public partial class ChatAgentControl : UserControl
                 jsonSchemaIsStrict: true)
         };
 
-        await Task.Run(() =>
+        try
         {
+            var response = await chatClient.CompleteChatAsync(messages, options, cancellationToken);
+            return GetChatCompletionText(response);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            MssqlIntelliSensePackage.Log($"[Chat Agent Tool Planner JsonSchema Error] {ex.Message}");
             try
             {
-                foreach (var update in chatClient.CompleteChatStreaming(messages, options, cancellationToken))
+                var fallbackResponse = await chatClient.CompleteChatAsync(messages, new ChatCompletionOptions(), cancellationToken);
+                var fallbackResult = GetChatCompletionText(fallbackResponse);
+                if (string.IsNullOrWhiteSpace(fallbackResult))
                 {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    foreach (var part in update.ContentUpdate)
-                    {
-                        if (!string.IsNullOrEmpty(part.Text))
-                        {
-                            content.Append(part.Text);
-                        }
-                    }
+                    throw new InvalidOperationException("Tool planner fallback returned an empty response.");
                 }
+
+                return fallbackResult;
             }
             catch (OperationCanceledException)
             {
                 throw;
             }
-            catch (Exception ex)
+            catch (Exception fallbackEx)
             {
-                MssqlIntelliSensePackage.Log($"[Chat Agent Tool Planner JsonSchema Error] {ex.Message}");
-                content.Clear();
-                try
-                {
-                    var fallbackOptions = new ChatCompletionOptions();
-                    foreach (var update in chatClient.CompleteChatStreaming(messages, fallbackOptions, cancellationToken))
-                    {
-                        cancellationToken.ThrowIfCancellationRequested();
-                        foreach (var part in update.ContentUpdate)
-                        {
-                            if (!string.IsNullOrEmpty(part.Text))
-                            {
-                                content.Append(part.Text);
-                            }
-                        }
-                    }
-                }
-                catch (OperationCanceledException)
-                {
-                    throw;
-                }
-                catch (Exception fallbackEx)
-                {
-                    MssqlIntelliSensePackage.Log($"[Chat Agent Tool Planner Fallback Error] {fallbackEx.Message}");
-                    throw new InvalidOperationException(
-                        $"Unable to check available actions. JSON planner failed: {ex.Message}. Fallback planner failed: {fallbackEx.Message}",
-                        fallbackEx);
-                }
+                MssqlIntelliSensePackage.Log($"[Chat Agent Tool Planner Fallback Error] {fallbackEx.Message}");
+                throw new InvalidOperationException(
+                    $"Unable to check available actions. JSON planner failed: {ex.Message}. Fallback planner failed: {fallbackEx.Message}",
+                    fallbackEx);
             }
-        }, cancellationToken);
+        }
+    }
 
-        var result = content.ToString();
+    private static string GetChatCompletionText(ChatCompletion response)
+    {
+        var result = response.Content == null
+            ? string.Empty
+            : string.Concat(response.Content.Select(part => part.Text));
         if (string.IsNullOrWhiteSpace(result))
         {
             throw new InvalidOperationException("Tool planner returned an empty response.");
@@ -842,7 +850,7 @@ public partial class ChatAgentControl : UserControl
         return result;
     }
 
-    private async Task<string> CompleteToolPlannerStreamingWithTimeoutAsync(
+    private async Task<string> CompleteToolPlannerWithTimeoutAsync(
         ChatClient chatClient,
         List<ChatMessage> messages,
         CancellationToken cancellationToken)
@@ -850,7 +858,7 @@ public partial class ChatAgentControl : UserControl
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeoutCts.CancelAfter(ToolPlannerTimeout);
 
-        var plannerTask = CompleteToolPlannerStreamingAsync(chatClient, messages, timeoutCts.Token);
+        var plannerTask = CompleteToolPlannerAsync(chatClient, messages, timeoutCts.Token);
         var completedTask = await Task.WhenAny(plannerTask, Task.Delay(ToolPlannerTimeout + TimeSpan.FromSeconds(2), cancellationToken));
         if (completedTask != plannerTask)
         {
@@ -866,6 +874,139 @@ public partial class ChatAgentControl : UserControl
         {
             throw new TimeoutException($"No response after {ToolPlannerTimeout.TotalSeconds:0} seconds while checking available actions.");
         }
+    }
+
+    private static ToolPlannerResult? TryBuildLocalToolPlannerResult(
+        string userMessage,
+        IReadOnlyList<string> toolOutputs,
+        ISet<string> allowedToolNames)
+    {
+        if (toolOutputs.Count > 0 || string.IsNullOrWhiteSpace(userMessage))
+        {
+            return null;
+        }
+
+        var text = userMessage.Trim();
+        var lower = text.ToLowerInvariant();
+
+        if (IsEndpointRequest(lower) && allowedToolNames.Contains(ListEndpointsToolName))
+        {
+            return CreateLocalToolPlannerResult(ListEndpointsToolName, text);
+        }
+
+        if (IsListTablesRequest(lower) && allowedToolNames.Contains(ListTablesToolName))
+        {
+            return CreateLocalToolPlannerResult(ListTablesToolName, text);
+        }
+
+        var objectName = ExtractLikelyObjectName(text);
+        if (!string.IsNullOrWhiteSpace(objectName))
+        {
+            if (IsIndexRequest(lower) && allowedToolNames.Contains(TableIndexesToolName))
+            {
+                return CreateLocalToolPlannerResult(TableIndexesToolName, objectName);
+            }
+
+            if (IsRelationRequest(lower) && allowedToolNames.Contains(TableRelationsToolName))
+            {
+                return CreateLocalToolPlannerResult(TableRelationsToolName, objectName);
+            }
+
+            if (IsSchemaRequest(lower) && allowedToolNames.Contains(TableSchemaToolName))
+            {
+                return CreateLocalToolPlannerResult(TableSchemaToolName, objectName);
+            }
+        }
+
+        if (IsColumnRequest(lower) && allowedToolNames.Contains(FindColumnToolName))
+        {
+            return CreateLocalToolPlannerResult(FindColumnToolName, text);
+        }
+
+        if (allowedToolNames.Contains(SearchObjectsToolName))
+        {
+            return CreateLocalToolPlannerResult(SearchObjectsToolName, text);
+        }
+
+        return null;
+    }
+
+    private static ToolPlannerResult CreateLocalToolPlannerResult(string toolName, string query)
+    {
+        var (schemaName, tableName) = SplitObjectName(query);
+        var arguments = JsonSerializer.Serialize(new
+        {
+            schemaName,
+            tableName,
+            query = TruncateToolQuery(query),
+            columnName = string.Empty
+        }, JsonOptions);
+
+        var toolCall = new OpenAiSqlToolCall(toolName, arguments, SqlMetadataToolExecutor.GetToolDescription(toolName));
+        return new ToolPlannerResult("tool_call", toolCall);
+    }
+
+    private static bool IsEndpointRequest(string lower) =>
+        lower.Contains("endpoint") || lower.Contains("end point");
+
+    private static bool IsListTablesRequest(string lower) =>
+        (lower.Contains("list") || lower.Contains("show") || lower.Contains("liệt kê") || lower.Contains("danh sách")) &&
+        (lower.Contains("table") || lower.Contains("tables") || lower.Contains("bảng"));
+
+    private static bool IsSchemaRequest(string lower) =>
+        lower.Contains("schema") || lower.Contains("column") || lower.Contains("columns") ||
+        lower.Contains("cột") || lower.Contains("kiểu dữ liệu") || lower.Contains("primary key");
+
+    private static bool IsRelationRequest(string lower) =>
+        lower.Contains("relation") || lower.Contains("relationship") || lower.Contains("foreign key") ||
+        lower.Contains("references") || lower.Contains("khóa ngoại") || lower.Contains("quan hệ");
+
+    private static bool IsIndexRequest(string lower) =>
+        lower.Contains("index") || lower.Contains("indexes") || lower.Contains("chỉ mục");
+
+    private static bool IsColumnRequest(string lower) =>
+        lower.Contains("column") || lower.Contains("columns") || lower.Contains("field") || lower.Contains("cột");
+
+    private static string ExtractLikelyObjectName(string text)
+    {
+        foreach (var token in text.Split(new[] { ' ', '\t', '\r', '\n', ',', ';', ':', '(', ')', '[', ']', '"', '\'', '`' }, StringSplitOptions.RemoveEmptyEntries))
+        {
+            var trimmed = token.Trim();
+            if (trimmed.Length < 2 || !trimmed.Any(char.IsLetter))
+            {
+                continue;
+            }
+
+            if (trimmed.Contains(".") || trimmed.Contains("_"))
+            {
+                return trimmed.Trim('.');
+            }
+        }
+
+        return string.Empty;
+    }
+
+    private static (string schemaName, string tableName) SplitObjectName(string query)
+    {
+        var objectName = ExtractLikelyObjectName(query);
+        if (string.IsNullOrWhiteSpace(objectName))
+        {
+            return (string.Empty, string.Empty);
+        }
+
+        var parts = objectName.Split(new[] { '.' }, StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length >= 2)
+        {
+            return (parts[parts.Length - 2], parts[parts.Length - 1]);
+        }
+
+        return (string.Empty, objectName);
+    }
+
+    private static string TruncateToolQuery(string query)
+    {
+        var normalized = query.Replace("\r", " ").Replace("\n", " ").Trim();
+        return normalized.Length <= 240 ? normalized : normalized.Substring(0, 240);
     }
 
     private HashSet<string> GetAllowedToolNamesFromUi()
@@ -937,10 +1078,7 @@ public partial class ChatAgentControl : UserControl
         {
             systemPrompt.AppendLine("Schema cache summary:");
             systemPrompt.AppendLine($"Tables: {metadata.Tables.Count}, Views: {metadata.Views.Count}, Procedures: {metadata.Procedures.Count}, Foreign keys: {metadata.ForeignKeys.Count}, Indexes: {metadata.Indexes.Count}.");
-            foreach (var table in metadata.Tables.Take(40))
-            {
-                systemPrompt.AppendLine($"- {table.Schema}.{table.Name}");
-            }
+            systemPrompt.AppendLine("Do not assume object names, columns, relationships, indexes, procedures, or views from the summary. Request an approved tool call when object-specific schema is needed.");
         }
 
         if (toolOutputs.Count > 0)
@@ -1001,8 +1139,9 @@ public partial class ChatAgentControl : UserControl
 
     private sealed class MessageControlState
     {
-        public MessageControlState(StackPanel contentPanel, Brush foreground, Brush borderBrush, Brush codeBackground, bool renderMarkdown)
+        public MessageControlState(string sender, StackPanel contentPanel, Brush foreground, Brush borderBrush, Brush codeBackground, bool renderMarkdown)
         {
+            Sender = sender;
             ContentPanel = contentPanel;
             Foreground = foreground;
             BorderBrush = borderBrush;
@@ -1010,6 +1149,7 @@ public partial class ChatAgentControl : UserControl
             RenderMarkdown = renderMarkdown;
         }
 
+        public string Sender { get; }
         public StackPanel ContentPanel { get; }
         public Brush Foreground { get; }
         public Brush BorderBrush { get; }
@@ -1023,6 +1163,12 @@ public partial class ChatAgentControl : UserControl
         state.RawText = message;
         state.ContentPanel.Children.Clear();
 
+        if (state.Sender.Equals("Tool", StringComparison.OrdinalIgnoreCase))
+        {
+            RenderToolMessageContent(state, message);
+            return;
+        }
+
         var richTextBox = CreateSelectableMessageBox(state.Foreground, state.CodeBackground);
         if (state.RenderMarkdown)
         {
@@ -1034,6 +1180,178 @@ public partial class ChatAgentControl : UserControl
         }
 
         state.ContentPanel.Children.Add(richTextBox);
+    }
+
+    private static void RenderToolMessageContent(MessageControlState state, string message)
+    {
+        var toolName = ExtractToolName(message);
+        var status = GetToolMessageStatus(message);
+
+        var tags = new WrapPanel
+        {
+            Margin = new Thickness(0, 0, 0, 7),
+            Orientation = Orientation.Horizontal
+        };
+        tags.Children.Add(CreateToolTag("TOOL", state.Foreground, state.BorderBrush, state.CodeBackground, true));
+        if (!string.IsNullOrWhiteSpace(toolName))
+        {
+            tags.Children.Add(CreateToolTag(toolName, state.Foreground, state.BorderBrush, state.CodeBackground, false));
+        }
+        tags.Children.Add(CreateToolTag(status, state.Foreground, state.BorderBrush, state.CodeBackground, false));
+        state.ContentPanel.Children.Add(tags);
+
+        if (TryExtractJsonCodeBlock(message, out var beforeJson, out var json, out var afterJson))
+        {
+            var summary = (beforeJson + Environment.NewLine + afterJson).Trim();
+            if (!string.IsNullOrWhiteSpace(summary))
+            {
+                var summaryBox = CreateSelectableMessageBox(state.Foreground, state.CodeBackground);
+                summaryBox.Document = CreateMarkdownDocument(summary, state.Foreground, state.CodeBackground);
+                state.ContentPanel.Children.Add(summaryBox);
+            }
+
+            var jsonTree = new TreeJsonControl
+            {
+                Height = 180,
+                MinHeight = 110,
+                Margin = new Thickness(0, 2, 0, 0)
+            };
+            jsonTree.SetJson(json);
+            state.ContentPanel.Children.Add(jsonTree);
+            return;
+        }
+
+        var richTextBox = CreateSelectableMessageBox(state.Foreground, state.CodeBackground);
+        richTextBox.Document = CreateMarkdownDocument(message, state.Foreground, state.CodeBackground);
+        state.ContentPanel.Children.Add(richTextBox);
+    }
+
+    private static Border CreateToolTag(string text, Brush foreground, Brush borderBrush, Brush backgroundBrush, bool strong)
+    {
+        return new Border
+        {
+            Background = strong ? CreateOpacityBrush(foreground, 0.14) : backgroundBrush,
+            BorderBrush = borderBrush,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(3),
+            Padding = new Thickness(6, 2, 6, 2),
+            Margin = new Thickness(0, 0, 5, 4),
+            Child = new TextBlock
+            {
+                Text = text,
+                Foreground = foreground,
+                FontSize = 10.5,
+                FontWeight = strong ? FontWeights.Bold : FontWeights.SemiBold,
+                FontFamily = strong
+                    ? new FontFamily("Segoe UI")
+                    : new FontFamily("Consolas, Courier New, monospace")
+            }
+        };
+    }
+
+    private static string ExtractToolName(string message)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            return string.Empty;
+        }
+
+        var firstLine = message.Replace("\r\n", "\n").Split('\n').FirstOrDefault()?.Trim() ?? string.Empty;
+        if (firstLine.StartsWith("## Tool:", StringComparison.OrdinalIgnoreCase))
+        {
+            return firstLine.Substring("## Tool:".Length).Trim();
+        }
+
+        foreach (var prefix in new[] { "Running ", "Cancelled ", "Rejected ", "Blocked " })
+        {
+            if (firstLine.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                return firstLine.Substring(prefix.Length).Trim().TrimEnd('.');
+            }
+        }
+
+        if (firstLine.StartsWith("Tool error ", StringComparison.OrdinalIgnoreCase))
+        {
+            var rest = firstLine.Substring("Tool error ".Length).Trim();
+            var newline = rest.IndexOf('\n');
+            return newline >= 0 ? rest.Substring(0, newline).Trim() : rest;
+        }
+
+        return string.Empty;
+    }
+
+    private static string GetToolMessageStatus(string message)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            return "Pending";
+        }
+
+        var text = message.Trim();
+        if (text.StartsWith("Running ", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Running";
+        }
+
+        if (text.StartsWith("Cancelled ", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Cancelled";
+        }
+
+        if (text.StartsWith("Rejected ", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Rejected";
+        }
+
+        if (text.StartsWith("Blocked ", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Blocked";
+        }
+
+        if (text.StartsWith("Tool error ", StringComparison.OrdinalIgnoreCase) ||
+            text.IndexOf("**Error:**", StringComparison.OrdinalIgnoreCase) >= 0)
+        {
+            return "Error";
+        }
+
+        return "Completed";
+    }
+
+    private static bool TryExtractJsonCodeBlock(string message, out string beforeJson, out string json, out string afterJson)
+    {
+        beforeJson = string.Empty;
+        json = string.Empty;
+        afterJson = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            return false;
+        }
+
+        const string fence = "```";
+        var start = message.IndexOf("```json", StringComparison.OrdinalIgnoreCase);
+        if (start < 0)
+        {
+            return false;
+        }
+
+        var jsonStart = message.IndexOf('\n', start);
+        if (jsonStart < 0)
+        {
+            return false;
+        }
+
+        jsonStart++;
+        var end = message.IndexOf(fence, jsonStart, StringComparison.Ordinal);
+        if (end < 0)
+        {
+            return false;
+        }
+
+        beforeJson = message.Substring(0, start).Trim();
+        json = message.Substring(jsonStart, end - jsonStart).Trim();
+        afterJson = message.Substring(end + fence.Length).Trim();
+        return !string.IsNullOrWhiteSpace(json);
     }
 
     private static RichTextBox CreateSelectableMessageBox(Brush foreground, Brush background)
@@ -1695,13 +2013,16 @@ public partial class ChatAgentControl : UserControl
             FontSize = 11,
             Margin = new Thickness(0, 0, 0, 6)
         });
-        container.Children.Add(new TextBlock
+
+        var tags = new WrapPanel
         {
-            Text = $"Tool: {toolCall.Name}",
-            Foreground = textBrush,
-            FontFamily = new FontFamily("Consolas, Courier New, monospace"),
-            TextWrapping = TextWrapping.Wrap
-        });
+            Margin = new Thickness(0, 0, 0, 6),
+            Orientation = Orientation.Horizontal
+        };
+        tags.Children.Add(CreateToolTag("APPROVAL", textBrush, borderBrush, backgroundBrush, true));
+        tags.Children.Add(CreateToolTag(toolCall.Name, textBrush, borderBrush, backgroundBrush, false));
+        container.Children.Add(tags);
+
         container.Children.Add(new TextBlock
         {
             Text = toolCall.Description,
@@ -1716,14 +2037,15 @@ public partial class ChatAgentControl : UserControl
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 0, 0, 6)
         });
-        container.Children.Add(new TextBlock
+
+        var argumentsTree = new TreeJsonControl
         {
-            Text = FormatToolArgumentsForApproval(toolCall),
-            Foreground = textBrush,
-            FontFamily = new FontFamily("Consolas, Courier New, monospace"),
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 0, 0, 8)
-        });
+            Height = 92,
+            MinHeight = 72,
+            Margin = new Thickness(0, 0, 0, 6)
+        };
+        argumentsTree.SetJson(string.IsNullOrWhiteSpace(toolCall.ArgumentsJson) ? "{}" : toolCall.ArgumentsJson);
+        container.Children.Add(argumentsTree);
 
         var buttons = new StackPanel { Orientation = Orientation.Horizontal };
         var approveButton = CreateActionButton("Approve");
@@ -1970,48 +2292,6 @@ public partial class ChatAgentControl : UserControl
             .Replace("\n", " ");
     }
 
-    private static string FormatToolArgumentsForApproval(OpenAiSqlToolCall toolCall)
-    {
-        if (string.IsNullOrWhiteSpace(toolCall.ArgumentsJson))
-        {
-            return "Arguments: {}";
-        }
-
-        try
-        {
-            using var document = JsonDocument.Parse(toolCall.ArgumentsJson);
-            var root = document.RootElement;
-            var sb = new StringBuilder();
-            sb.AppendLine("Arguments:");
-            foreach (var property in root.EnumerateObject())
-            {
-                sb.Append("  ");
-                sb.Append(property.Name);
-                sb.Append(": ");
-                if (property.Name.Equals("query", StringComparison.OrdinalIgnoreCase))
-                {
-                    sb.AppendLine();
-                    sb.AppendLine(IndentMultiline(property.Value.GetString() ?? property.Value.ToString(), "    "));
-                }
-                else
-                {
-                    sb.AppendLine(FormatJsonValue(property.Value));
-                }
-            }
-
-            return sb.ToString().TrimEnd();
-        }
-        catch (JsonException)
-        {
-            return "Arguments: " + toolCall.ArgumentsJson;
-        }
-    }
-
-    private static string IndentMultiline(string value, string indent)
-    {
-        return string.Join(Environment.NewLine, value.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n').Select(line => indent + line));
-    }
-
     private sealed class ToolPlannerResult
     {
         public ToolPlannerResult(string status, OpenAiSqlToolCall? toolCall)
@@ -2255,70 +2535,9 @@ public partial class ChatAgentControl : UserControl
         
         if (metadata != null)
         {
-            sb.AppendLine("\nDatabase schema information:");
-            // Add tables info
-            if (metadata.Tables.Count > 0)
-            {
-                sb.AppendLine("\nTables:");
-                foreach (var table in metadata.Tables.Take(50))
-                {
-                    sb.AppendLine($"- {table.Schema}.{table.Name} (Database: {table.Database})");
-                    if (!string.IsNullOrWhiteSpace(table.ExtendedDescription))
-                    {
-                        sb.AppendLine($"  Description: {table.ExtendedDescription}");
-                    }
-                    sb.AppendLine("  Columns:");
-                    foreach (var column in table.Columns.Take(20))
-                    {
-                        sb.AppendLine($"  - {column.Name} ({column.DataType}) { (column.IsNullable ? "NULL" : "NOT NULL") }");
-                        if (!string.IsNullOrWhiteSpace(column.Description))
-                        {
-                            sb.AppendLine($"    Description: {column.Description}");
-                        }
-                    }
-                }
-            }
-
-            // Add views
-            if (metadata.Views.Count > 0)
-            {
-                sb.AppendLine("\nViews:");
-                foreach (var view in metadata.Views.Take(20))
-                {
-                    sb.AppendLine($"- {view.Schema}.{view.Name} (Database: {view.Database})");
-                    if (!string.IsNullOrWhiteSpace(view.ExtendedDescription))
-                    {
-                        sb.AppendLine($"  Description: {view.ExtendedDescription}");
-                    }
-                }
-            }
-
-            // Add procedures
-            if (metadata.Procedures.Count > 0)
-            {
-                sb.AppendLine("\nStored Procedures:");
-                foreach (var proc in metadata.Procedures.Take(20))
-                {
-                    sb.AppendLine($"- {proc.Schema}.{proc.Name} (Database: {proc.Database})");
-                    if (!string.IsNullOrWhiteSpace(proc.ExtendedDescription))
-                    {
-                        sb.AppendLine($"  Description: {proc.ExtendedDescription}");
-                    }
-                }
-            }
-
-            if (metadata.Functions.Count > 0)
-            {
-                sb.AppendLine("\nFunctions:");
-                foreach (var function in metadata.Functions.Take(20))
-                {
-                    sb.AppendLine($"- {function.Schema}.{function.Name} (Database: {function.Database})");
-                    if (!string.IsNullOrWhiteSpace(function.ExtendedDescription))
-                    {
-                        sb.AppendLine($"  Description: {function.ExtendedDescription}");
-                    }
-                }
-            }
+            sb.AppendLine("\nDatabase schema cache is available locally, but detailed object metadata is not included in this prompt.");
+            sb.AppendLine($"Schema cache counts: Tables={metadata.Tables.Count}, Views={metadata.Views.Count}, Procedures={metadata.Procedures.Count}, Functions={metadata.Functions.Count}, ForeignKeys={metadata.ForeignKeys.Count}, Indexes={metadata.Indexes.Count}.");
+            sb.AppendLine("Do not invent table names, columns, relationships, indexes, procedures, or views. Use only approved tool output for object-specific answers.");
         }
 
         sb.AppendLine("\nPlease format your answers using markdown.");
@@ -2441,7 +2660,7 @@ public partial class ChatAgentControl : UserControl
         container.Children.Add(contentPanel);
 
         border.Child = container;
-        var state = new MessageControlState(contentPanel, messageForeground, borderBrush, messageBackground, renderMarkdown: !isUser);
+        var state = new MessageControlState(sender, contentPanel, messageForeground, borderBrush, messageBackground, renderMarkdown: !isUser);
         RenderMessageContent(state, message);
         border.Tag = state;
         ChatMessagesPanel.Children.Add(border);
